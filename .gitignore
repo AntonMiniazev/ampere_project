@@ -5,6 +5,13 @@ build/
 dist/
 wheels/
 *.egg-info
+*.yaml.dec
 
 # Virtual environments
 .venv
+.devcontainer/
+Dockerfile
+
+# Temp folder
+data_source/
+secret_enc/
