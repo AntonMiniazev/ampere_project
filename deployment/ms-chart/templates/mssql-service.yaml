@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: mssql-service
+  name: {{ .Values.mssql.serviceName }}
   labels:
     app: mssql
 spec:
