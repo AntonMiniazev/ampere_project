@@ -6,9 +6,12 @@ dist/
 wheels/
 *.egg-info
 *.yaml.dec
+*.env
+ruff.toml
 
 # Virtual environments
 .venv
+.vscode
 .devcontainer/
 Dockerfile
 
