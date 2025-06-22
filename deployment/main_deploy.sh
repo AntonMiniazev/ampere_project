@@ -14,4 +14,4 @@ helm plugin install https://github.com/jkroepke/helm-secrets || echo "Helm plugi
 
 # Add Bitnami Helm repo and update
 helm repo add bitnami https://charts.bitnami.com/bitnami || true
-helm repo update
+helm repo updates
