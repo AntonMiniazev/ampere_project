@@ -16,7 +16,6 @@ ruff.toml
 Dockerfile
 
 # Temp folder
-data_source/
 secret_enc/
 .secret_enc/
 deployment/sql_scripts/

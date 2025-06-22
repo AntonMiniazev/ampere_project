@@ -1,0 +1,25 @@
+﻿id,store_id,zone_name,_chance
+1,1,Arcadia,0.18
+2,1,Olympus Heights,0.22
+3,1,Hephaestus,0.20
+4,1,Fort Frolic,0.19
+5,1,Neptune's Bounty,0.21
+6,2,Sector 7 Slums,0.20
+7,2,Wall Market,0.21
+8,2,Sector 5 Slums,0.20
+9,2,Plate Edge,0.19
+10,2,Shinra Headquarters,0.20
+11,3,Watson,0.21
+12,3,Heywood,0.18
+13,3,Westbrook,0.21
+14,3,Santo Domingo,0.20
+15,3,Pacifica,0.20
+16,4,Gildorf,0.23
+17,4,Silverton,0.27
+18,4,Temple Isle,0.27
+19,4,Fishmarket,0.23
+20,5,Vinewood,0.22
+21,5,Davis,0.18
+22,5,Rockford Hills,0.21
+23,5,Del Perro,0.18
+24,5,Sandy Shores,0.21

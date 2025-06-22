@@ -1,0 +1,73 @@
+﻿id,product_name,price,unit_type,category_id,_chance
+1,Milk,3.17,units,1,0.80
+2,Milk extra,4.25,units,1,0.79
+3,Milk premium,5.15,units,1,0.54
+4,Cheese,1.79,units,1,0.31
+5,Butter,5.01,units,1,0.56
+6,Yogurt,12.75,units,1,0.56
+7,Cream,5.94,units,1,0.33
+8,Cottage Cheese,12.07,kg,1,0.31
+9,Sour Cream,3.65,units,1,0.31
+10,Mozzarella,7.39,units,1,0.56
+11,Feta,1.15,units,1,0.31
+12,Ice Cream,3.07,units,1,0.34
+13,White Bread,3.77,units,2,0.44
+14,Whole Grain Bread,11.22,units,2,0.52
+15,Croissant,1.27,units,2,0.43
+16,Baguette,5.73,units,2,0.31
+17,Muffin,13.62,units,2,0.58
+18,Donut,5.59,units,2,0.49
+19,Pita,14.02,units,2,0.60
+20,Bun,0.87,units,2,0.50
+21,Bagel,9.94,units,2,0.40
+22,Cake Slice,8.58,units,2,0.50
+23,Apple,1.01,kg,3,0.31
+24,Banana,4.74,kg,3,0.41
+25,Tomato,8.3,kg,3,0.34
+26,Cucumber,9.11,kg,3,0.54
+27,Carrot,1.7,kg,3,0.42
+28,Onion,6.61,kg,3,0.52
+29,Potato,7.63,kg,3,0.40
+30,Orange,8.48,kg,3,0.57
+31,Lettuce,10.34,kg,3,0.56
+32,Broccoli,6.36,kg,3,0.34
+33,Chicken Breast,14.43,kg,4,0.55
+34,Ground Beef,4.18,kg,4,0.49
+35,Pork Chops,3.95,kg,4,0.51
+36,Sausages,2.36,kg,4,0.59
+37,Bacon,5.45,kg,4,0.51
+38,Turkey,10.32,kg,4,0.41
+39,Steak,5.76,kg,4,0.51
+40,Ham,4.38,kg,4,0.52
+41,Chicken Wings,7.07,kg,4,0.60
+42,Minced Pork,0.56,kg,4,0.38
+43,Water Bottle,7.65,units,5,0.54
+44,Cola Can,6.86,units,5,0.37
+45,Orange Juice,11.94,units,5,0.51
+46,Apple Juice,5.73,units,5,0.23
+47,Iced Tea,14.86,units,5,0.40
+48,Lemonade,5.23,units,5,0.25
+49,Energy Drink,12.01,units,5,0.20
+50,Coffee beans,13.95,units,5,0.32
+51,Milkshake,1.04,units,5,0.37
+52,Green Tea,5.74,units,5,0.32
+53,Potato Chips,13.03,units,6,0.40
+54,Chocolate Bar,13.19,units,6,0.31
+55,Granola Bar,2.94,units,6,0.26
+56,Popcorn,5.68,units,6,0.32
+57,Crackers,2.15,units,6,0.29
+58,Frozen Pizza,11.89,units,7,0.59
+59,Ice Cubes,10.89,units,7,0.24
+60,Frozen Vegetables,0.54,units,7,0.34
+61,Frozen Berries,3.95,units,7,0.23
+62,Frozen Fries,5.63,units,7,0.37
+63,Toilet Paper,9.14,units,8,0.56
+64,Paper Towels,1.37,units,8,0.50
+65,Dish Soap,4.92,units,8,0.34
+66,Laundry Detergent,8.27,units,8,0.32
+67,Trash Bags,7.94,units,8,0.36
+68,Shampoo,6.36,units,9,0.68
+69,Toothpaste,10.78,units,9,0.54
+70,Soap,1.82,units,9,0.61
+71,Deodorant,5.18,units,9,0.40
+72,Face Wash,1.92,units,9,0.40

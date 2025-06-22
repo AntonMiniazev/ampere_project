@@ -1,0 +1,5 @@
+﻿id,order_status
+1,Created
+2,Packing
+3,Delivered
+4,Cancelled
