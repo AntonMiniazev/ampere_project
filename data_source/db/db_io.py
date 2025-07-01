@@ -24,7 +24,9 @@ def exec_sql(query: str) -> pd.DataFrame | None:
             return None
 
 
-def upload_new_data(table: pd.DataFrame, target_table: str, yesterday: datetime.date):
+def upload_new_data(
+    table: pd.DataFrame, target_table: str, yesterday: datetime.date = None
+):
     """
     Upload new data to target_table. Clears delivery_tracking if needed.
 
@@ -58,3 +60,30 @@ def upload_new_data(table: pd.DataFrame, target_table: str, yesterday: datetime.
         index=False,
     )
     print(f"{len(table)} records inserted into [core].[{target_table}]")
+
+
+def table_exists(schema: str, table: str) -> bool:
+    """
+    Check if a table exists in the specified schema.
+    Returns True if exists, False otherwise.
+    """
+    query = """
+        SELECT 1
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table
+    """
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query), {"schema": schema, "table": table}
+        ).fetchone()
+        return result is not None
+
+
+def truncate_table(schema: str, table: str):
+    """
+    Truncate the specified table in the schema.
+    """
+    query = f"TRUNCATE TABLE [{schema}].[{table}]"
+    with engine.begin() as conn:
+        conn.execute(text(query))
+        print(f"Truncated table: [{schema}].[{table}]")

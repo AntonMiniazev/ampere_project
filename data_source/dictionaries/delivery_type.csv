@@ -1,4 +1,4 @@
-﻿id,courier_type,_chance
-1,Unmounted,0.5
-2,Bicycle,0.35
-3,Car,0.15
+﻿id,courier_type
+1,Unmounted
+2,Bicycle
+3,Car

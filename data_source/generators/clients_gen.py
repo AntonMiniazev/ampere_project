@@ -1,12 +1,12 @@
 import numpy as np
-from config import churn_rates, new_clients_rates
+from generators.config import churn_rates, new_clients_rates
 from db.mssql import engine
 from dotenv import load_dotenv
 from faker import Faker
 from generators.utils import today
 from sqlalchemy import text
 
-from data_source.db.db_io import exec_sql
+from db.db_io import exec_sql
 
 # Load environment variables
 load_dotenv()

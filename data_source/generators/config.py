@@ -1,3 +1,12 @@
+# Initialization parameters
+n_of_init_clients = 4000
+n_delivery_resource = 125
+schema_init = "core"
+
+
+# Orders constants
+n_orders_days = 1
+
 # Client constants
 churn_rates = [0.004, 0.007]
 new_clients_rates = [0.006, 0.01]

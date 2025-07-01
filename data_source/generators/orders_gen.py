@@ -458,7 +458,7 @@ def generate_delivery_tracking(delivery_tracking_input: pd.DataFrame) -> pd.Data
                 "courier_id": courier_id,
                 "delivery_status_id": 1,
                 "status": "pick up",
-                "status_time": pickup_time,
+                "status_datetime": pickup_time,
             }
         )
         records.append(
@@ -467,7 +467,7 @@ def generate_delivery_tracking(delivery_tracking_input: pd.DataFrame) -> pd.Data
                 "courier_id": courier_id,
                 "delivery_status_id": 2,
                 "status": "delivery",
-                "status_time": delivery_time,
+                "status_datetime": delivery_time,
             }
         )
 
