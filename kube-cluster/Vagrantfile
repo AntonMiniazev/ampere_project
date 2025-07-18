@@ -8,6 +8,7 @@ Vagrant.configure("2") do |config|
 
   nodes.each do |name, opts|
     config.vm.define name do |node|
+      node.vm.synced_folder "/home/oppie/.ssh", "/home/vagrant/host_ssh", type: "virtualbox"
       node.vm.box = "ubuntu/jammy64"
       node.vm.hostname = name
       node.vm.network "public_network", bridge: "wlp2s0"
