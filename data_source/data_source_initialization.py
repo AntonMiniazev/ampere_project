@@ -2,15 +2,25 @@
 # It checks and creates tables in database, uploads dictionaries, generates first clients and uploads them
 
 from db.ddl_init import table_queries
-from db.db_io import table_exists, truncate_table, exec_sql, upload_new_data
-from generators.config import schema_init, n_of_init_clients, n_delivery_resource
+from db.db_io import (
+    table_exists,
+    truncate_table,
+    exec_sql,
+    upload_new_data,
+)
+
+from generators.config import (
+    schema_init,
+    n_of_init_clients,
+    n_delivery_resource,
+)
 from generators.assortment_gen import generate_assortment
 from generators.clients_gen_init import generate_clients
 from generators.delivery_resource_gen_init import generate_delivery_resource
 import importlib.resources
 import pandas as pd
 
-
+# Configuring schema with initial data sources
 for table_name, data in table_queries.items():
     print(">>>>>>>>>> Starting work on " + table_name)
 

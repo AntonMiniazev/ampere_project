@@ -1,11 +1,12 @@
 # Initialization parameters
 n_of_init_clients = 4000
 n_delivery_resource = 125
+database_init = "source"
 schema_init = "core"
 
 
 # Orders constants
-n_orders_days = 1
+n_orders_days = 10
 
 # Client constants
 churn_rates = [0.004, 0.007]

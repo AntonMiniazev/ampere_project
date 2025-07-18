@@ -2,7 +2,8 @@
 set -e
 
 # Update package lists and install required tools
-sudo apt-get update && sudo apt-get install -y gnupg curl
+sudo apt-get update
+sudo apt-get install -y gnupg curl
 
 # Install helm
 if ! command -v helm &>/dev/null; then

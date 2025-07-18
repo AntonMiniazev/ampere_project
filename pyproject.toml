@@ -13,4 +13,5 @@ dependencies = [
     "pyodbc>=5.2.0",
     "ruff>=0.11.13",
     "sqlalchemy>=2.0.41",
+    "sqlalchemy-utils>=0.41.2",
 ]
