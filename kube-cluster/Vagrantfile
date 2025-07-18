@@ -1,9 +1,9 @@
 Vagrant.configure("2") do |config|
   nodes = {
-    "k8s-master" => { cpus: 2, memory: 4096},
-    "k8s-node1"  => { cpus: 2, memory: 4096},
-    "k8s-node2"  => { cpus: 2, memory: 4096},
-    "k8s-node3"  => { cpus: 2, memory: 4096},
+    "ampere-k8s-master" => { cpus: 2, memory: 4096},
+    "ampere-k8s-node1"  => { cpus: 2, memory: 4096},
+    "ampere-k8s-node2"  => { cpus: 2, memory: 4096},
+    "ampere-k8s-node3"  => { cpus: 2, memory: 4096},
   }
 
   nodes.each do |name, opts|
