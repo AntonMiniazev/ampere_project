@@ -91,40 +91,22 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/custom-resources.yaml
   kubectl apply -f custom-resources.yaml
 
-  # Install gnupg and helm
-  sudo apt-get install -y gnupg curl
-  if ! command -v helm &>/dev/null; then
-    echo "[INFO] Installing helm..."
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-  fi
+  echo ">> Saving join command to shared folder"
+  kubeadm token create --print-join-command > /vagrant/join.sh
+  chmod +x /vagrant/join.sh
   
-  # Download and install sops binary
-  curl -LO https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64
-  sudo mv sops-v3.10.2.linux.amd64 /usr/local/bin/sops
-  sudo chmod +x /usr/local/bin/sops
-  
-  # Install helm-secrets plugin (as the current user, NOT with sudo)
-  helm plugin install https://github.com/jkroepke/helm-secrets || echo "Helm plugin already installed"
-  
-  # Add Bitnami Helm repo and update
-  helm repo add bitnami https://charts.bitnami.com/bitnami || true
-  helm repo updates
-  
-  echo ">> Importing GPG private key"
-  gpg --import /home/vagrant/gpg_key/private-key.asc
-  rm -f /home/vagrant/gpg_key/private-key.asc
-
-  # SQL Server on node1
-  echo ">> Deploying SQL Server via Helm"
-  cd /home/vagrant/ms-chart
-  kubectl get ns ampere-project >/dev/null 2>&1 || kubectl create ns ampere-project
-  
-  helm secrets upgrade --install mssql . \
-  -f values.yaml \
-  -f credentials.yaml \
-  -n ampere-project
 
   echo ">> Master setup complete"
+fi
+
+if [[ "$(hostname)" != "ampere-k8s-master" ]]; then
+  echo ">> Waiting for join.sh to appear from master"
+  while [ ! -f /vagrant/join.sh ]; do
+    sleep 5
+  done
+
+  echo ">> Joining cluster"
+  bash /vagrant/join.sh
 fi
 
 sudo sysctl --system
