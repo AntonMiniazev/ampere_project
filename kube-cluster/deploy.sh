@@ -16,3 +16,7 @@ vagrant up
 echo "Removing private key from host..."
 rm -f "$KEY_PATH"
 echo "Private key removed."
+
+# post-deployment
+vagrant ssh ampere-k8s-master
+bash /vagrant/provision/post-deployment.sh

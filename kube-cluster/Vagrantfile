@@ -1,9 +1,9 @@
 Vagrant.configure("2") do |config|
   nodes = {
-    "ampere-k8s-master" => { cpus: 2, memory: 4096},
-    "ampere-k8s-node1"  => { cpus: 2, memory: 4096},
-    "ampere-k8s-node2"  => { cpus: 2, memory: 4096},
-    "ampere-k8s-node3"  => { cpus: 2, memory: 4096},
+    "ampere-k8s-master" => { cpus: 2, memory: 4096}, # master node
+    "ampere-k8s-node1"  => { cpus: 2, memory: 4096}, # SQL Server
+    "ampere-k8s-node2"  => { cpus: 2, memory: 4096}, # MinIO, DuckDB, dbt
+    "ampere-k8s-node3"  => { cpus: 2, memory: 4096}, # Airflow
   }
 
   nodes.each do |name, opts|
@@ -24,9 +24,6 @@ Vagrant.configure("2") do |config|
         vb.cpus = opts[:cpus]
       end
       node.vm.provision "shell", path: "provision/bootstrap.sh"
-      if name == "ampere-k8s-master"
-        node.vm.provision "shell", path: "provision/post-deployment.sh", run: "always"
-      end
     end
   end
 end

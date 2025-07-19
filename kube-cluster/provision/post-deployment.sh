@@ -2,6 +2,7 @@
 set -e
 
 # Wait for all nodes to be Ready
+echo ">> Started post-deployment"
 EXPECTED_NODES=4
 for i in {1..60}; do
   READY_NODES=$(kubectl get nodes --no-headers | grep -c " Ready")
