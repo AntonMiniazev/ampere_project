@@ -78,22 +78,22 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
     --control-plane-endpoint=$IP_ADDR \
     --pod-network-cidr=192.168.0.0/16
 
-  for i in {1..30}; do
+  for i in {1..16}; do
     if kubectl version --request-timeout='10s' &>/dev/null; then
       echo "Kube-apiserver is ready!"
       break
     else
       echo "Waiting for kube-apiserver to be ready..."
-      sleep 4
+      sleep 15
     fi
   done
 
   echo ">> Setting up kubeconfig for kubectl"
   
   # Waiting for admin.conf
-  for i in {1..10}; do
+  for i in {1..8}; do
     if [ -f /etc/kubernetes/admin.conf ]; then break; fi
-    sleep 2
+    sleep 15
   done
 
   # Copying config
