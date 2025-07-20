@@ -42,7 +42,7 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   
   echo ">> Importing GPG private key"
   gpg --import /home/vagrant/gpg_key/private-key.asc
-  rm -f /home/vagrant/gpg_key/private-key.asc
+  #rm -f /home/vagrant/gpg_key/private-key.asc
 
   # SQL Server on node1
   echo ">> Deploying SQL Server via Helm"

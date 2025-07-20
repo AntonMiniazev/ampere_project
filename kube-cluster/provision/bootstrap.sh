@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+VAGRANT_HOME="/home/vagrant"
+
 echo ">> Updating system packages"
 apt-get update -y
 apt-get upgrade -y
@@ -77,9 +79,25 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
     --pod-network-cidr=192.168.0.0/16
 
   echo ">> Setting up kubeconfig for kubectl"
-  mkdir -p $HOME/.kube
-  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+if [ "$(hostname)" = "ampere-k8s-master" ]; then
+  
+  # Waiting for admin.conf
+  for i in {1..10}; do
+    if [ -f /etc/kubernetes/admin.conf ]; then break; fi
+    sleep 2
+  done
+
+  # Copying config
+  if [ -f /etc/kubernetes/admin.conf ]; then
+    mkdir -p $VAGRANT_HOME/.kube
+    cp /etc/kubernetes/admin.conf $VAGRANT_HOME/.kube/config
+    chown vagrant:vagrant $VAGRANT_HOME/.kube/config
+  else
+    echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
+    exit 1
+  fi
+
+fi
 
   echo ">> Installing Calico CNI"
   kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
@@ -108,6 +126,8 @@ if [[ "$(hostname)" != "ampere-k8s-master" ]]; then
   echo ">> Joining cluster"
   bash /vagrant/join.sh
 fi
+
+chmod +x /vagrant/provision/post-deployment.sh
 
 sudo sysctl --system
 
