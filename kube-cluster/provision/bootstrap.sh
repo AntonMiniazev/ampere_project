@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-VAGRANT_HOME="/home/vagrant"
-
 echo ">> Updating system packages"
 apt-get update -y
 apt-get upgrade -y
@@ -88,23 +86,13 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
 
   # Copying config
   if [ -f /etc/kubernetes/admin.conf ]; then
-    mkdir -p $VAGRANT_HOME/.kube
-    cp /etc/kubernetes/admin.conf $VAGRANT_HOME/.kube/config
-    chown vagrant:vagrant $VAGRANT_HOME/.kube/config
+    mkdir -p $HOME/.kube
+    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
   else
     echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
     exit 1
   fi
-
-  for i in {1..24}; do
-    if kubectl version --request-timeout='10s' &>/dev/null; then
-      echo "Kube-apiserver is ready!"
-      break
-    else
-      echo "Waiting for kube-apiserver to be ready..."
-      sleep 15
-    fi
-  done
 
   echo ">> Installing Calico CNI"
   kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
