@@ -29,7 +29,7 @@ EOF
 
 echo ">> Creating .ssh directory and copying public keys"
 mkdir -p /home/vagrant/.ssh
-cat /home/vagrant/host_ssh/authorized_keys > /home/vagrant/.ssh/authorized_keys
+cat /home/vagrant/host_ssh/authorized_keys >> /home/vagrant/.ssh/authorized_keys
 
 chmod 700 /home/vagrant/.ssh
 chmod 600 /home/vagrant/.ssh/authorized_keys
@@ -97,9 +97,9 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
 
   # Copying config
   if [ -f /etc/kubernetes/admin.conf ]; then
-    mkdir /home/vagrant/.kube
-    cp /etc/kubernetes/admin.conf /home/vagrant/.kube/config
-    chown -R vagrant:vagrant /home/vagrant/.kube
+    mkdir -p $HOME/.kube
+    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
   else
     echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
     exit 1
