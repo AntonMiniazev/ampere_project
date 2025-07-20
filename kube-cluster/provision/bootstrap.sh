@@ -93,21 +93,23 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   if [ -f /etc/kubernetes/admin.conf ]; then
     mkdir -p /home/vagrant/.kube
     sudo cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
-    sudo chown $(id -u):$(id -g) /home/vagrant/.kube/config
+    sudo chown vagrant:vagrant /home/vagrant/.kube/config
+    sudo chmod 600 /home/vagrant/.kube/config    
   else
     echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
     exit 1
   fi
 
   echo ">> Installing Calico CNI"
-  kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
+  kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
 
   echo ">> Waiting for Calico CRD to be ready"
   kubectl wait --for=condition=Established crd/installations.operator.tigera.io --timeout=60s
 
   echo ">> Applying Calico configuration"
-  curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/custom-resources.yaml
-  kubectl apply -f custom-resources.yaml
+  curl https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/custom-resources.yaml -O
+  sed -i 's/cidr: 192\.168\.0\.0\/16/cidr: 10.10.0.0\/16/g' custom-resources.yaml
+  kubectl create -f custom-resources.yaml
 
   echo ">> Saving join command to shared folder"
   kubeadm token create --print-join-command > /vagrant/join.sh
