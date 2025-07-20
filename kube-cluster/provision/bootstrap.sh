@@ -20,10 +20,10 @@ sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/ho
 # Add new cluster host entries
 sudo tee -a /etc/hosts > /dev/null <<EOF
 # --- K8S CLUSTER BEGIN ---
-192.168.56.100 ampere-k8s-master
-192.168.56.101 ampere-k8s-node1
-192.168.56.102 ampere-k8s-node2
-192.168.56.103 ampere-k8s-node3
+192.168.10.100 ampere-k8s-master
+192.168.10.101 ampere-k8s-node1
+192.168.10.102 ampere-k8s-node2
+192.168.10.103 ampere-k8s-node3
 # --- K8S CLUSTER END ---
 EOF
 
