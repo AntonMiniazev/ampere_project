@@ -123,6 +123,41 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   echo ">> Master setup complete"
 fi
 
+if [ "$(hostname)" = "ampere-k8s-master" ]; then
+
+  echo "=== SSH DEBUG INFO (master node) ==="
+
+  echo -n "[1] .ssh directory: "
+  if [ -d /home/vagrant/.ssh ]; then echo "OK"; else echo "NOT FOUND"; fi
+
+  echo -n "[2] authorized_keys: "
+  if [ -f /home/vagrant/.ssh/authorized_keys ]; then
+    echo "OK"
+    echo -n "[3] authorized_keys permissions: "
+    stat -c "%A %U:%G" /home/vagrant/.ssh/authorized_keys
+    echo "[4] First line of authorized_keys:"
+    head -n 1 /home/vagrant/.ssh/authorized_keys
+  else
+    echo "NOT FOUND"
+  fi
+
+  echo -n "[5] .ssh directory permissions: "
+  stat -c "%A %U:%G" /home/vagrant/.ssh
+
+  echo "[6] SSH service status:"
+  sudo systemctl status ssh | head -n 10
+
+  echo "[7] Whoami: $(whoami)"
+  echo "[8] IP addresses:"
+  ip -4 addr show | grep inet
+
+  echo "[9] Last SSH logins:"
+  last -n 5 -a | grep "sshd"
+
+  echo "=== END OF SSH DEBUG INFO ==="
+fi
+
+
 if [[ "$(hostname)" != "ampere-k8s-master" ]]; then
   echo ">> Waiting for join.sh to appear from master"
   while [ ! -f /vagrant/join.sh ]; do
