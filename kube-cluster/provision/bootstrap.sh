@@ -12,8 +12,20 @@ echo ">> Disabling swap"
 swapoff -a
 sed -i '/ swap / s/^/#/' /etc/fstab
 
-echo ">> Appending hostname to /etc/hosts"
-echo "127.0.1.1 $(hostname)" >> /etc/hosts
+echo ">> Adding cluster node hostnames to /etc/hosts"
+
+# Remove any previous cluster entries between markers
+sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/hosts
+
+# Add new cluster host entries
+sudo tee -a /etc/hosts > /dev/null <<EOF
+# --- K8S CLUSTER BEGIN ---
+192.168.56.100 ampere-k8s-master
+192.168.56.101 ampere-k8s-node1
+192.168.56.102 ampere-k8s-node2
+192.168.56.103 ampere-k8s-node3
+# --- K8S CLUSTER END ---
+EOF
 
 echo ">> Creating .ssh directory and copying public keys"
 mkdir -p /home/vagrant/.ssh
