@@ -77,8 +77,8 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
 
   echo ">> Initializing kubeadm..."
   sudo kubeadm init \
-  --apiserver-advertise-address=192.168.56.100 \
-  --apiserver-cert-extra-sans=192.168.56.100 \
+  --apiserver-advertise-address=192.168.10.100 \
+  --apiserver-cert-extra-sans=192.168.10.100 \
   --pod-network-cidr=10.10.0.0/16
 
   echo ">> Setting up kubeconfig for kubectl"
