@@ -78,7 +78,7 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
     --control-plane-endpoint=$IP_ADDR \
     --pod-network-cidr=192.168.0.0/16
 
-  for i in {1..16}; do
+  for i in {1..24}; do
     if kubectl version --request-timeout='10s' &>/dev/null; then
       echo "Kube-apiserver is ready!"
       break
