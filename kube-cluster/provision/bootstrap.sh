@@ -83,10 +83,9 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
 
   echo ">> Initializing kubeadm..."
   sudo kubeadm init \
-    --apiserver-advertise-address=$IP_ADDR \
-    --apiserver-cert-extra-sans=$IP_ADDR \
-    --control-plane-endpoint=$IP_ADDR \
-    --pod-network-cidr=192.168.0.0/16
+  --apiserver-advertise-address=192.168.56.100 \
+  --apiserver-cert-extra-sans=192.168.56.100 \
+  --pod-network-cidr=10.10.0.0/16
 
   echo ">> Setting up kubeconfig for kubectl"
   
@@ -98,9 +97,9 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
 
   # Copying config
   if [ -f /etc/kubernetes/admin.conf ]; then
-    mkdir -p $HOME/.kube
-    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+    mkdir /home/vagrant/.kube
+    cp /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+    chown -R vagrant:vagrant /home/vagrant/.kube
   else
     echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
     exit 1
@@ -163,6 +162,9 @@ if [[ "$(hostname)" != "ampere-k8s-master" ]]; then
   while [ ! -f /vagrant/join.sh ]; do
     sleep 5
   done
+
+  echo ">> join.sh contents:"
+  cat /vagrant/join.sh
 
   echo ">> Joining cluster"
   bash /vagrant/join.sh
