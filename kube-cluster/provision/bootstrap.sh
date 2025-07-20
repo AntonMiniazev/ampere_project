@@ -100,16 +100,19 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
     exit 1
   fi
 
-  echo ">> Installing Calico CNI"
-  kubectl apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
-
-  echo ">> Waiting for Calico CRD to be ready"
-  kubectl wait --for=condition=Established crd/installations.operator.tigera.io --timeout=60s
-
   for i in {1..20}; do
     kubectl get nodes && break
     echo "[INFO] Waiting for API server ($i/20)..."
     sleep 3
+  done
+
+  echo ">> Installing Calico CNI"
+  kubectl apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
+
+  for i in {1..6}; do
+    kubectl get crd installations.operator.tigera.io &>/dev/null && break
+    echo "[INFO] Waiting for Calico CRDs to be established ($i/30)..."
+    sleep 10
   done
 
   echo ">> Applying Calico configuration"
