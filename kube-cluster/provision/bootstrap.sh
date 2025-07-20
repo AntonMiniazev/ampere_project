@@ -12,20 +12,20 @@ echo ">> Disabling swap"
 swapoff -a
 sed -i '/ swap / s/^/#/' /etc/fstab
 
-#echo ">> Adding cluster node hostnames to /etc/hosts"
-#
-## Remove any previous cluster entries between markers
-#sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/hosts
-#
-## Add new cluster host entries
-#sudo tee -a /etc/hosts > /dev/null <<EOF
-## --- K8S CLUSTER BEGIN ---
-#192.168.56.100 ampere-k8s-master
-#192.168.56.101 ampere-k8s-node1
-#192.168.56.102 ampere-k8s-node2
-#192.168.56.103 ampere-k8s-node3
-## --- K8S CLUSTER END ---
-#EOF
+echo ">> Adding cluster node hostnames to /etc/hosts"
+
+# Remove any previous cluster entries between markers
+sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/hosts
+
+# Add new cluster host entries
+sudo tee -a /etc/hosts > /dev/null <<EOF
+# --- K8S CLUSTER BEGIN ---
+192.168.56.100 ampere-k8s-master
+192.168.56.101 ampere-k8s-node1
+192.168.56.102 ampere-k8s-node2
+192.168.56.103 ampere-k8s-node3
+# --- K8S CLUSTER END ---
+EOF
 
 # SSH config
 echo ">> Disabling password authentication in SSH"
@@ -101,24 +101,24 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   fi
 
   for i in {1..20}; do
-    kubectl get nodes && break
+    sudo -u vagrant kubectl get nodes && break
     echo "[INFO] Waiting for API server ($i/20)..."
     sleep 3
   done
 
   echo ">> Installing Calico CNI"
-  kubectl apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
+  sudo -u vagrant kubectl apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
 
   for i in {1..6}; do
-    kubectl get crd installations.operator.tigera.io &>/dev/null && break
+    sudo -u vagrant kubectl get crd installations.operator.tigera.io &>/dev/null && break
     echo "[INFO] Waiting for Calico CRDs to be established ($i/30)..."
     sleep 10
   done
 
   echo ">> Applying Calico configuration"
-  kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/custom-resources.yaml
+  curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/custom-resources.yaml
   sed -i 's/cidr: 192\.168\.0\.0\/16/cidr: 10.10.0.0\/16/g' custom-resources.yaml
-  kubectl create -f custom-resources.yaml
+  sudo -u vagrant kubectl apply -f custom-resources.yaml
 
   echo ">> Saving join command to shared folder"
   kubeadm token create --print-join-command > /vagrant/join.sh

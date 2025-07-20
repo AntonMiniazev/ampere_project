@@ -11,12 +11,23 @@ for i in {1..60}; do
     echo ">> All nodes are Ready"
     break
   fi
+  # Для отладки выводим текущее состояние всех нод
+  kubectl get nodes
   sleep 5
 done
 
 if [ "$READY_NODES" -ne "$EXPECTED_NODES" ]; then
-  echo "[ERROR] Timeout waiting for nodes"
+  echo "[ERROR] Timeout waiting for all $EXPECTED_NODES nodes to become Ready."
+  echo ">>> Final node status:"
+  kubectl get nodes
+  NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready" | awk '{print $1, $2}')
+  if [ -n "$NOT_READY" ]; then
+    echo ">>> Nodes not Ready:"
+    echo "$NOT_READY"
+  fi
   exit 1
+else
+  echo ">> Proceeding with deployment: all $READY_NODES nodes are Ready."
 fi
 
 # Configuring nodes through master

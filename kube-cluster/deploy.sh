@@ -23,5 +23,6 @@ echo "Removing private key from host..."
 echo "Private key removed."
 
 # post-deployment
-ssh vagrant@ampere-k8s-master
+cd ~/projects/ampere_project/kube-cluster
+vagrant ssh ampere-k8s-master
 bash /vagrant/provision/post-deployment.sh
