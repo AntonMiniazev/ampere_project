@@ -152,7 +152,7 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   ip -4 addr show | grep inet
 
   echo "[9] Last SSH logins:"
-  last -n 5 -a | grep "sshd"
+  last -n 5 -a | grep "sshd" || true
 
   echo "=== END OF SSH DEBUG INFO ==="
 fi
