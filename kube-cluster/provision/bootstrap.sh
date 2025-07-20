@@ -78,16 +78,6 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
     --control-plane-endpoint=$IP_ADDR \
     --pod-network-cidr=192.168.0.0/16
 
-  for i in {1..24}; do
-    if kubectl version --request-timeout='10s' &>/dev/null; then
-      echo "Kube-apiserver is ready!"
-      break
-    else
-      echo "Waiting for kube-apiserver to be ready..."
-      sleep 15
-    fi
-  done
-
   echo ">> Setting up kubeconfig for kubectl"
   
   # Waiting for admin.conf
@@ -105,6 +95,16 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
     echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
     exit 1
   fi
+
+  for i in {1..24}; do
+    if kubectl version --request-timeout='10s' &>/dev/null; then
+      echo "Kube-apiserver is ready!"
+      break
+    else
+      echo "Waiting for kube-apiserver to be ready..."
+      sleep 15
+    fi
+  done
 
   echo ">> Installing Calico CNI"
   kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
