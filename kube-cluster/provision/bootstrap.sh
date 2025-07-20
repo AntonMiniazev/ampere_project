@@ -12,29 +12,22 @@ echo ">> Disabling swap"
 swapoff -a
 sed -i '/ swap / s/^/#/' /etc/fstab
 
-echo ">> Adding cluster node hostnames to /etc/hosts"
+#echo ">> Adding cluster node hostnames to /etc/hosts"
+#
+## Remove any previous cluster entries between markers
+#sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/hosts
+#
+## Add new cluster host entries
+#sudo tee -a /etc/hosts > /dev/null <<EOF
+## --- K8S CLUSTER BEGIN ---
+#192.168.56.100 ampere-k8s-master
+#192.168.56.101 ampere-k8s-node1
+#192.168.56.102 ampere-k8s-node2
+#192.168.56.103 ampere-k8s-node3
+## --- K8S CLUSTER END ---
+#EOF
 
-# Remove any previous cluster entries between markers
-sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/hosts
-
-# Add new cluster host entries
-sudo tee -a /etc/hosts > /dev/null <<EOF
-# --- K8S CLUSTER BEGIN ---
-192.168.56.100 ampere-k8s-master
-192.168.56.101 ampere-k8s-node1
-192.168.56.102 ampere-k8s-node2
-192.168.56.103 ampere-k8s-node3
-# --- K8S CLUSTER END ---
-EOF
-
-echo ">> Creating .ssh directory and copying public keys"
-mkdir -p /home/vagrant/.ssh
-cat /home/vagrant/host_ssh/authorized_keys >> /home/vagrant/.ssh/authorized_keys
-
-chmod 700 /home/vagrant/.ssh
-chmod 600 /home/vagrant/.ssh/authorized_keys
-chown -R vagrant:vagrant /home/vagrant/.ssh
-
+# SSH config
 echo ">> Disabling password authentication in SSH"
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
@@ -42,6 +35,7 @@ sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_co
 echo ">> Restarting SSH service"
 systemctl restart ssh
 
+# Kubernetes preparation
 echo ">> Kubernetes prep"
 sudo modprobe overlay
 sudo modprobe br_netfilter
