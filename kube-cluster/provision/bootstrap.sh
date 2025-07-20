@@ -91,10 +91,9 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
 
   # Copying config
   if [ -f /etc/kubernetes/admin.conf ]; then
-    echo "initialization of .kube"
-    mkdir -p $HOME/.kube
-    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+    mkdir -p /home/vagrant/.kube
+    sudo cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+    sudo chown $(id -u):$(id -g) /home/vagrant/.kube/config
   else
     echo "[ERROR] /etc/kubernetes/admin.conf not found after kubeadm init!"
     exit 1
