@@ -4,7 +4,7 @@ Vagrant.configure("2") do |config|
     "ampere-k8s-master" => { cpus: 2, memory: 4096, ip: "192.168.10.100" },   # master node
     "ampere-k8s-node1"  => { cpus: 2, memory: 4096, ip: "192.168.10.101" },  # SQL Server node
     "ampere-k8s-node2"  => { cpus: 2, memory: 4096, ip: "192.168.10.102" },  # MinIO, DuckDB, dbt node
-    "ampere-k8s-node3"  => { cpus: 2, memory: 4096, ip: "192.168.10.103" },  # Airflow node
+    "ampere-k8s-node3"  => { cpus: 4, memory: 8192, ip: "192.168.10.103" },  # Airflow node
   }
 
   nodes.each do |name, opts|

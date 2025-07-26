@@ -12,6 +12,9 @@ echo ">> Disabling swap"
 swapoff -a
 sed -i '/ swap / s/^/#/' /etc/fstab
 
+sudo mkdir -p /opt/local-path-provisioner
+sudo chmod -R 777 /opt/local-path-provisioner
+
 echo ">> Adding cluster node hostnames to /etc/hosts"
 
 # Remove any previous cluster entries between markers
