@@ -11,7 +11,6 @@ for i in {1..60}; do
     echo ">> All nodes are Ready"
     break
   fi
-  # Для отладки выводим текущее состояние всех нод
   kubectl get nodes
   sleep 5
 done
@@ -64,5 +63,21 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   -f values.yaml \
   -f credentials.yaml \
   -n ampere-project
+
+  # MinIO on node2
+  echo ">> Deploying MinIO via Helm"
+  cd /home/vagrant/minio-chart
+  helm upgrade --install minio . --namespace ampere-project --create-namespace
+
+  # Airflow on node3
+  echo ">> Deploying Airflow via Helm"
+  cd /home/vagrant/airflow-chart
+  
+  helm secrets upgrade airflow apache-airflow/airflow \
+    -n ampere-project \
+    -f values.yaml \
+    -f git-credentials.yaml \
+    --create-namespace \
+    --timeout 10m0s
 
 fi

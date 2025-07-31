@@ -3,12 +3,12 @@ Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
 
   # ---- Kubernetes Master Node ----
-  config.vm.define "ampere-k8s-master" do |master|
-    master.vm.hostname = "ampere-k8s-master"
+  config.vm.define "ampere-t-k8s-master" do |master|
+    master.vm.hostname = "ampere-t-k8s-master"
     master.vm.network "private_network", ip: "192.168.10.100"
 
     master.vm.provider "virtualbox" do |vb|
-      vb.name = "ampere-k8s-master"
+      vb.name = "ampere-t-k8s-master"
       vb.memory = 4096
       vb.cpus = 2
     end
@@ -24,12 +24,12 @@ Vagrant.configure("2") do |config|
   end
 
   # ---- SQL Server Node ----
-  config.vm.define "ampere-k8s-node1" do |node1|
-    node1.vm.hostname = "ampere-k8s-node1"
+  config.vm.define "ampere-t-k8s-node1" do |node1|
+    node1.vm.hostname = "ampere-t-k8s-node1"
     node1.vm.network "private_network", ip: "192.168.10.101"
 
     node1.vm.provider "virtualbox" do |vb|
-      vb.name = "ampere-k8s-node1"
+      vb.name = "ampere-t-k8s-node1"
       vb.memory = 4096
       vb.cpus = 2
     end
@@ -38,12 +38,12 @@ Vagrant.configure("2") do |config|
   end
 
   # ---- MinIO, DuckDB, dbt Node ----
-  config.vm.define "ampere-k8s-node2" do |node2|
-    node2.vm.hostname = "ampere-k8s-node2"
+  config.vm.define "ampere-t-k8s-node2" do |node2|
+    node2.vm.hostname = "ampere-t-k8s-node2"
     node2.vm.network "private_network", ip: "192.168.10.102"
 
     node2.vm.provider "virtualbox" do |vb|
-      vb.name = "ampere-k8s-node2"
+      vb.name = "ampere-t-k8s-node2"
       vb.memory = 4096
       vb.cpus = 2
     end
@@ -52,12 +52,12 @@ Vagrant.configure("2") do |config|
   end
 
   # ---- Airflow Node ----
-  config.vm.define "ampere-k8s-node3" do |node3|
-    node3.vm.hostname = "ampere-k8s-node3"
+  config.vm.define "ampere-t-k8s-node3" do |node3|
+    node3.vm.hostname = "ampere-t-k8s-node3"
     node3.vm.network "private_network", ip: "192.168.10.103"
 
     node3.vm.provider "virtualbox" do |vb|
-      vb.name = "ampere-k8s-node3"
+      vb.name = "ampere-t-k8s-node3"
       vb.memory = 8192
       vb.cpus = 4
     end

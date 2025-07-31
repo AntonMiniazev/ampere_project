@@ -1,0 +1,52 @@
+executor: CeleryExecutor
+
+nodeSelector:
+  kubernetes.io/hostname: ampere-t-k8s-node3
+
+workers:
+  persistence:
+    storageClassName: local-path
+
+triggerer:
+  persistence:
+    storageClassName: local-path
+
+redis:
+  persistence:
+    storageClassName: local-path
+
+dags:
+  persistence:
+    storageClassName: local-path
+  gitSync:
+    enabled: true
+    repo: https://github.com/AntonMiniazev/ampere_project.git
+    branch: master
+    subPath: "dags"
+    credentialsSecret: git-credentials
+    ref: HEAD
+    period: 5s
+
+logs:
+  persistence:
+    storageClassName: local-path
+
+postgresql:
+  primary:
+    persistence:
+      storageClass: local-path
+
+webserver:
+  enabled: true
+
+apiServer:
+  service:
+    type: NodePort
+    ports:
+      - name: api-server
+        port: 8080
+        targetPort: api-server
+        nodePort: 30080
+  env:
+    - name: AIRFLOW__API__BASE_URL
+      value: "http://airflow.local"
