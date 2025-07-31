@@ -73,11 +73,16 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   echo ">> Deploying Airflow via Helm"
   cd /home/vagrant/airflow-chart
   
-  helm secrets upgrade airflow apache-airflow/airflow \
+  helm repo add apache-airflow https://airflow.apache.org
+  helm repo update
+
+  sops -d git-credentials.yaml | kubectl apply -f -
+
+  helm install airflow apache-airflow/airflow \
     -n ampere-project \
     -f values.yaml \
-    -f git-credentials.yaml \
     --create-namespace \
-    --timeout 10m0s
+    --timeout 10m0s \
+    --debug
 
 fi
