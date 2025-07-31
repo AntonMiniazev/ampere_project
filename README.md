@@ -18,7 +18,6 @@
 		- [x] Prepare sub-script (bootstrap.sh) for VM deployment ✅ 
 		- [ ] Organize Vagrantfile for separate deployment
 		- [ ] Prepare sub-script for helm charts on Master
-		- [ ] 
 - [ ] ETL
 	* [ ] Establish DS - Stage layer
 	* [ ] Uploading to MSSQL
