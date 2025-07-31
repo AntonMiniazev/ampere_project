@@ -2,8 +2,31 @@
 
 <b> [WIP:] </b> Establishing Generation + ETL + Reporting on homelab (Ubuntu server).
 
-<b> [Current stage:] </b> Brewing, creating python scripts for data generation.
+<b> [Current stage:] </b> Deployment.
 
+- [ ] Create master diagram
+	- [x] Initialized ✅ 
+	- [ ] Update tables
+	- [ ] Complete Web part
+- [x] Prepare python generators ✅ 
+- [ ] Deployment
+	- [x] Prepare helm charts ✅ 
+		- [x] Airflow ✅ 
+		- [x] Minio ✅ 
+		- [x] MSSQL ✅ 
+	- [ ] Prepare One script
+		- [x] Prepare sub-script (bootstrap.sh) for VM deployment ✅ 
+		- [ ] Organize Vagrantfile for separate deployment
+		- [ ] Prepare sub-script for helm charts on Master
+		- [ ] 
+- [ ] ETL
+	* [ ] Establish DS - Stage layer
+	* [ ] Uploading to MSSQL
+		* [ ] DDL / DML
+		* [ ] Backups
+	* [ ] Testing
+- [ ] Data Marts preparation
+- [ ] BI
 ---
 
 <p align="center">
