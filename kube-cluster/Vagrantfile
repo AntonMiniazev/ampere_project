@@ -20,6 +20,7 @@ Vagrant.configure("2") do |config|
     master.vm.synced_folder "./airflow-chart", "/home/vagrant/airflow-chart", type: "virtualbox"
     master.vm.synced_folder "./other_scripts", "/home/vagrant/other_scripts", type: "virtualbox"
 
+    master.vm.provision "shell", path: "provision/requirements.sh"
     master.vm.provision "shell", path: "provision/master.sh"
   end
 
@@ -34,6 +35,7 @@ Vagrant.configure("2") do |config|
       vb.cpus = 2
     end
 
+    node1.vm.provision "shell", path: "provision/requirements.sh"
     node1.vm.provision "shell", path: "provision/node.sh"
   end
 
@@ -48,6 +50,7 @@ Vagrant.configure("2") do |config|
       vb.cpus = 2
     end
 
+    node2.vm.provision "shell", path: "provision/requirements.sh"
     node2.vm.provision "shell", path: "provision/node.sh"
   end
 
@@ -62,6 +65,7 @@ Vagrant.configure("2") do |config|
       vb.cpus = 4
     end
 
+    node3.vm.provision "shell", path: "provision/requirements.sh"
     node3.vm.provision "shell", path: "provision/node.sh"
   end
 end
