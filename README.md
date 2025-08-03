@@ -5,19 +5,19 @@
 <b> [Current stage:] </b> Deployment.
 
 - [ ] Create master diagram
-	- [x] Initialized ✅ 
+	- [x] Initialized 
 	- [ ] Update tables
 	- [ ] Complete Web part
-- [x] Prepare python generators ✅ 
-- [ ] Deployment
-	- [x] Prepare helm charts ✅ 
-		- [x] Airflow ✅ 
-		- [x] Minio ✅ 
-		- [x] MSSQL ✅ 
-	- [ ] Prepare One script
-		- [x] Prepare sub-script (bootstrap.sh) for VM deployment ✅ 
-		- [ ] Organize Vagrantfile for separate deployment
-		- [ ] Prepare sub-script for helm charts on Master
+- [x] Prepare python generators 
+- [x] Deployment
+	- [x] Prepare helm charts 
+		- [x] Airflow 
+		- [x] Minio 
+		- [x] MSSQL 
+	- [x] Prepare One script
+		- [x] Prepare sub-script (bootstrap.sh) for VM deployment 
+		- [x] Organize Vagrantfile for separate deployment
+		- [x] Prepare sub-script for helm charts on Master
 - [ ] ETL
 	* [ ] Establish DS - Stage layer
 	* [ ] Uploading to MSSQL

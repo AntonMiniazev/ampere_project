@@ -20,11 +20,11 @@ The following nodes are provisioned:
    - Local-path provisioner
 
 2. **ampere-k8s-node1** (192.168.10.101)
-   - SQL Server
+   - SQL Server (Business logic layer)
 
 3. **ampere-k8s-node2** (192.168.10.102)
-   - MinIO (Bronze/ingestion)
-   - DuckDB and dbt (Silver/processing)
+   - MinIO (Ingestion layer)
+   - DuckDB and dbt (Processing layer)
 
 4. **ampere-k8s-node3** (192.168.10.103)
    - Airflow (Orchestration)
