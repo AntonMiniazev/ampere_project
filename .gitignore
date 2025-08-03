@@ -7,7 +7,6 @@ wheels/
 *.egg-info
 *.yaml.dec
 *.dec.yaml
-*.env
 ruff.toml
 
 # Virtual environments
@@ -22,3 +21,4 @@ secret_enc/
 .secret_enc/
 deployment/sql_scripts/
 kube-cluster copy/
+deployment_old/

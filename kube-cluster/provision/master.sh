@@ -1,14 +1,15 @@
 #!/bin/bash
 set -e
+source /vagrant/deploy.env
 
 echo ">> [MASTER] Running master-only setup"
 
 ### --- KUBEADM INITIALIZATION --- ###
-echo ">> Initializing kubeadm control plane"
+echo ">> Initializing kubeadm..."
 sudo kubeadm init \
-  --apiserver-advertise-address=192.168.10.100 \
-  --apiserver-cert-extra-sans=192.168.10.100 \
-  --pod-network-cidr=10.10.0.0/16
+  --apiserver-advertise-address=$MASTER_IP \
+  --apiserver-cert-extra-sans=$MASTER_IP \
+  --pod-network-cidr=$CALICO_CIDR
 
 ### --- KUBECONFIG SETUP FOR VAGRANT USER --- ###
 echo ">> Configuring kubeconfig for user 'vagrant'"
@@ -42,7 +43,7 @@ done
 
 ### --- INSTALLING CALICO CNI --- ###
 echo ">> Installing Calico (CNI plugin)"
-sudo -u vagrant kubectl apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
+sudo -u vagrant kubectl apply --validate=false -f $CALICO_URL
 
 # Wait for Calico CRDs to be registered
 for i in {1..6}; do
@@ -52,15 +53,15 @@ for i in {1..6}; do
 done
 
 # Download and apply Calico config with custom CIDR
-echo ">> Applying Calico configuration with custom CIDR (10.10.0.0/16)"
-curl -LO https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/custom-resources.yaml
-sed -i 's/cidr: 192\.168\.0\.0\/16/cidr: 10.10.0.0\/16/g' custom-resources.yaml
+echo ">> Applying Calico configuration with custom CIDR ($CALICO_CIDR)"
+curl -LO $CALICO_CONF_URL
+sed -i "s|cidr: 192\.168\.0\.0/16|cidr: ${CALICO_CIDR}|g" custom-resources.yaml
 sudo -u vagrant kubectl apply -f custom-resources.yaml
 
 echo ">> Installing local-path-provisioner"
 
 # Apply the official manifest as the vagrant user (kubectl is configured under their context)
-sudo -u vagrant kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+sudo -u vagrant kubectl apply -f $LOCAL_PATH_URL
 
 # Wait briefly to ensure the StorageClass is created
 sleep 5

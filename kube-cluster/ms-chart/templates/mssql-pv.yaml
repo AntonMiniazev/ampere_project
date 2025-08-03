@@ -4,7 +4,7 @@ metadata:
   name: mssql-pv
 spec:
   capacity:
-    storage: 10Gi
+    storage: {{ .Values.mssql.storage }}
   accessModes:
     - ReadWriteOnce
   hostPath:
@@ -16,5 +16,5 @@ spec:
         - key: kubernetes.io/hostname
           operator: In
           values:
-          - ampere-k8s-node1
+          - {{ index .Values.mssql.nodeSelector "kubernetes.io/hostname" }}
   persistentVolumeReclaimPolicy: Retain

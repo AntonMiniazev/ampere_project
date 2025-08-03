@@ -1,0 +1,30 @@
+namespace: ${PROJECT_NAME}
+replicaCount: 1
+
+image:
+  repository: quay.io/minio/minio
+  tag: ${MINIO_RELEASE}
+
+service:
+  type: NodePort
+  port: 9001
+  nodePort: ${MINIO_NODEPORT}
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+persistence:
+  size: 5Gi
+  storageClassName: ${DEFAULT_STORAGE_CLASS}
+
+users:
+  - accessKey: externalSecret
+    existingSecret: minio-creds
+
+nodeSelector:
+  kubernetes.io/hostname: ${NODE2_NAME}

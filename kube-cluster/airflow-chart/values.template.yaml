@@ -1,26 +1,26 @@
 executor: CeleryExecutor
 
 nodeSelector:
-  kubernetes.io/hostname: ampere-k8s-node3
+  kubernetes.io/hostname: $NODE3_NAME
 
 workers:
   persistence:
-    storageClassName: local-path
+    storageClassName: $DEFAULT_STORAGE_CLASS
 
 triggerer:
   persistence:
-    storageClassName: local-path
+    storageClassName: $DEFAULT_STORAGE_CLASS
 
 redis:
   persistence:
-    storageClassName: local-path
+    storageClassName: $DEFAULT_STORAGE_CLASS
 
 dags:
   persistence:
-    storageClassName: local-path
+    storageClassName: $DEFAULT_STORAGE_CLASS
   gitSync:
     enabled: true
-    repo: https://github.com/AntonMiniazev/ampere_project.git
+    repo: $GIT_REPO
     branch: master
     subPath: "dags"
     credentialsSecret: git-credentials
@@ -29,12 +29,12 @@ dags:
 
 logs:
   persistence:
-    storageClassName: local-path
+    storageClassName: $DEFAULT_STORAGE_CLASS
 
 postgresql:
   primary:
     persistence:
-      storageClass: local-path
+      storageClass: $DEFAULT_STORAGE_CLASS
 
 webserver:
   enabled: true
@@ -46,7 +46,7 @@ apiServer:
       - name: api-server
         port: 8080
         targetPort: api-server
-        nodePort: 30080
+        nodePort: $AIRFLOW_NODEPORT
   env:
     - name: AIRFLOW__API__BASE_URL
       value: "http://airflow.local"

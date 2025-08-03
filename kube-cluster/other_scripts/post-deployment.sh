@@ -1,13 +1,16 @@
 #!/bin/bash
 set -e
+set -a
+source /vagrant/deploy.env
+set +a
 
 # Wait for all nodes to be Ready
 echo ">> Started post-deployment"
-EXPECTED_NODES=4
+
 for i in {1..60}; do
   READY_NODES=$(kubectl get nodes --no-headers | grep -c " Ready")
-  echo "[$i] Ready nodes: $READY_NODES/$EXPECTED_NODES"
-  if [ "$READY_NODES" -eq "$EXPECTED_NODES" ]; then
+  echo "[$i] Ready nodes: $READY_NODES/$NODE_NUMBER"
+  if [ "$READY_NODES" -eq "$NODE_NUMBER" ]; then
     echo ">> All nodes are Ready"
     break
   fi
@@ -15,8 +18,8 @@ for i in {1..60}; do
   sleep 5
 done
 
-if [ "$READY_NODES" -ne "$EXPECTED_NODES" ]; then
-  echo "[ERROR] Timeout waiting for all $EXPECTED_NODES nodes to become Ready."
+if [ "$READY_NODES" -ne "$NODE_NUMBER" ]; then
+  echo "[ERROR] Timeout waiting for all $NODE_NUMBER nodes to become Ready."
   echo ">>> Final node status:"
   kubectl get nodes
   NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready" | awk '{print $1, $2}')
@@ -30,7 +33,7 @@ else
 fi
 
 # Configuring nodes through master
-if [ "$(hostname)" = "ampere-k8s-master" ]; then
+if [ "$(hostname)" = "$MASTER_NAME" ]; then
   # Install gnupg and helm
   sudo apt-get install -y gnupg curl
   if ! command -v helm &>/dev/null; then
@@ -57,17 +60,23 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   # SQL Server on node1
   echo ">> Deploying SQL Server via Helm"
   cd /home/vagrant/ms-chart
-  kubectl get ns ampere-project >/dev/null 2>&1 || kubectl create ns ampere-project
+  kubectl get ns $PROJECT_NAME >/dev/null 2>&1 || kubectl create ns $PROJECT_NAME
   
+  envsubst < values.template.yaml > values.generated.yaml
   helm secrets upgrade --install mssql . \
-  -f values.yaml \
-  -f credentials.yaml \
-  -n ampere-project
+    -f values.generated.yaml \
+    -f credentials.yaml \
+    -n $PROJECT_NAME
 
   # MinIO on node2
   echo ">> Deploying MinIO via Helm"
   cd /home/vagrant/minio-chart
-  helm upgrade --install minio . --namespace ampere-project --create-namespace
+
+  envsubst < values.template.yaml > values.generated.yaml
+  helm secrets upgrade --install minio . \
+    -f values.generated.yaml \
+    -f credentials.yaml \
+    -n $PROJECT_NAME
 
   # Airflow on node3
   echo ">> Deploying Airflow via Helm"
@@ -75,13 +84,14 @@ if [ "$(hostname)" = "ampere-k8s-master" ]; then
   
   helm repo add apache-airflow https://airflow.apache.org
   helm repo update
-
+  
   sops -d git-credentials.yaml | kubectl apply -f -
-
-  helm install airflow apache-airflow/airflow \
-    -n ampere-project \
+  
+  envsubst < values.template.yaml > values.generated.yaml
+  helm secrets install airflow apache-airflow/airflow \
+    -n $PROJECT_NAME \
     -f values.yaml \
-    --create-namespace \
+    -f credentials.yaml \
     --timeout 10m0s \
     --debug
 

@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+source /vagrant/deploy.env
 
 ### --- SYSTEM UPDATE AND BASE UTILITIES --- ###
 echo ">> [1/8] Updating system packages"
@@ -16,7 +17,7 @@ swapoff -a
 sed -i '/ swap / s/^/#/' /etc/fstab
 
 ### --- LOCAL PATH PROVISIONER PREP (OPTIONAL FOR PVC TESTING) --- ###
-echo ">> Creating local path provisioner directory (used for dynamic PVC provisioning in development)"
+echo ">> Creating local path provisioner directory"
 sudo mkdir -p /opt/local-path-provisioner
 sudo chmod -R 777 /opt/local-path-provisioner
 
@@ -29,10 +30,10 @@ sudo sed -i '/# --- K8S CLUSTER BEGIN ---/,/# --- K8S CLUSTER END ---/d' /etc/ho
 # Append fresh entries
 sudo tee -a /etc/hosts > /dev/null <<EOF
 # --- K8S CLUSTER BEGIN ---
-192.168.10.100 ampere-k8s-master
-192.168.10.101 ampere-k8s-node1
-192.168.10.102 ampere-k8s-node2
-192.168.10.103 ampere-k8s-node3
+$MASTER_IP $MASTER_NAME
+$NODE1_IP $NODE1_NAME
+$NODE2_IP $NODE2_NAME
+$NODE3_IP $NODE3_NAME
 # --- K8S CLUSTER END ---
 EOF
 
@@ -85,8 +86,8 @@ echo ">> [7/8] Installing Kubernetes components: kubelet, kubeadm, kubectl"
 # Add Kubernetes repo
 sudo apt-get install -y curl ca-certificates apt-transport-https
 sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+curl -fsSL $KUBE_APT_REP/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] $KUBE_APT_REP/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
 
 # Install components
 sudo apt update
@@ -95,8 +96,8 @@ sudo apt-mark hold kubelet kubeadm kubectl
 
 
 ### --- TIMEZONE CONFIGURATION --- ###
-echo ">> [8/8] Setting system timezone to Europe/Belgrade"
-timedatectl set-timezone Europe/Belgrade
+echo ">> [8/8] Setting system timezone"
+timedatectl set-timezone $TIMEZONE
 
 
 ### --- FINALIZATION --- ###
