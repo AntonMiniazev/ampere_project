@@ -64,6 +64,7 @@ Airflow configured with gitsync keys.
 
 ## MS SQL /etc/nginx/nginx.conf
 
+```
 stream {
   upstream mssql_upstream {
     server 192.168.10.101:31433;
@@ -74,9 +75,11 @@ stream {
     proxy_pass mssql_upstream;
   }
 }
+```
 
 ## Airflow /etc/nginx/sites-available/airflow
 
+```
 server {
     listen 80;
     server_name airflow.local;
@@ -94,9 +97,10 @@ server {
         proxy_redirect off;
     }
 }
+```
 
 ## Minio /etc/nginx/sites-available/minio
-
+```
 server {
     listen 80;
     server_name minio.local;
@@ -116,3 +120,4 @@ server {
         proxy_request_buffering off;
     }
 }
+```
