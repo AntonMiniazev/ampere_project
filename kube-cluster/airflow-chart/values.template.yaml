@@ -1,5 +1,11 @@
 executor: CeleryExecutor
 
+images:
+  airflow:
+    repository: $AIRFLOW_REPO
+    tag: latest
+    pullPolicy: IfNotPresent
+
 nodeSelector:
   kubernetes.io/hostname: $NODE3_NAME
 
