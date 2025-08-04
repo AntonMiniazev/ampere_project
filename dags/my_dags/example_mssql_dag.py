@@ -16,6 +16,7 @@ DAG_ID = "example_mssql"
 def print_sql_result(**context):
     # Pull the result from the SQL task via XCom
     row = context["ti"].xcom_pull(task_ids="get_orders")
+    print("🧪 Raw XCom:", row)
     # Generate and print a client message
     message = build_client_message(row)
     print("🟢", message)
