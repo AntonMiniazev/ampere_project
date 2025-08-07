@@ -6,6 +6,12 @@ from datetime import datetime
 test_sql = """ SELECT TOP 1 * FROM Source.core.orders"""
 
 
+def _run_test_sql():
+    df = exec_sql(test_sql)
+    print(df)
+    return df
+
+
 def print_sql_result(**context):
     result = context["ti"].xcom_pull(task_ids="get_orders")
 
@@ -31,7 +37,10 @@ with DAG(
     catchup=True,
 ) as dag:
 
-    test_output = exec_sql(test_sql)
+    test_output = PythonOperator(
+        task_id="test_sql",
+        python_callable=_run_test_sql,
+    )
 
     print_result = PythonOperator(
         task_id="print_result",
