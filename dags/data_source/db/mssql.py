@@ -21,7 +21,6 @@ connection_url = (
     f"?driver={driver.replace(' ', '+')}&TrustServerCertificate=yes"
 )
 
-print(connection_url)
 # SQLAlchemy engine
 engine = create_engine(connection_url)
 

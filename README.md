@@ -5,27 +5,31 @@
 <b> [Current stage:] </b> Deployment.
 
 - [ ] Create master diagram
-	- [x] Initialized 
-	- [ ] Update tables
-	- [ ] Complete Web part
-- [x] Prepare python generators 
+  - [x] Initialized
+  - [ ] Update tables
+  - [ ] Complete Web part
+- [x] Prepare Python generators
 - [x] Deployment
-	- [x] Prepare helm charts 
-		- [x] Airflow 
-		- [x] Minio 
-		- [x] MSSQL 
-	- [x] Prepare One script
-		- [x] Prepare sub-script (bootstrap.sh) for VM deployment 
-		- [x] Organize Vagrantfile for separate deployment
-		- [x] Prepare sub-script for helm charts on Master
+  - [x] Prepare Helm charts
+    - [x] Airflow
+    - [x] MinIO
+    - [x] MSSQL
+    - [ ] DuckDB + dbt
+  - [x] Prepare one script
+    - [x] Prepare sub-script (`bootstrap.sh`) for VM deployment
+    - [x] Organize `Vagrantfile` for separate deployment
+    - [x] Prepare sub-script for Helm charts on master
 - [ ] ETL
-	* [ ] Establish DS - Stage layer
-	* [ ] Uploading to MSSQL
-		* [ ] DDL / DML
-		* [ ] Backups
-	* [ ] Testing
+  - [ ] Establish DS → Stage layer
+	  - [ ] Launch generators in Airflow
+	  - [ ] Create sensor to push to dbt model
+	  - [ ] Downstream DAGs to push data to golden layer
+  - [ ] Upload to MSSQL
+    - [ ] DDL / DML
+    - [ ] Backups
+  - [ ] Testing
 - [ ] Data Marts preparation
-- [ ] BI
+- [ ] BI layer
 ---
 
 <p align="center">
