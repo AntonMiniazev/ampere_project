@@ -29,7 +29,7 @@ def print_sql_result(**context):
     print("🟢", message)
 
 
-DAG_ID = "init_data_source_dag"
+DAG_ID = "test_data_source_dag"
 
 with DAG(
     DAG_ID,

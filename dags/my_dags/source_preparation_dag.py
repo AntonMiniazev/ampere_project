@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
-from data_source.initialize_data import initialize_data_sources
+from generators.data_source_initialization import initialize_data_sources
 
 default_args = {
     "owner": "airflow",
