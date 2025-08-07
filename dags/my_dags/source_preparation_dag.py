@@ -12,15 +12,13 @@ default_args = {
 with DAG(
     dag_id="source_preparation_dag",
     default_args=default_args,
-    schedule_interval=None,  # Only run manually
+    schedule=None,  # Only run manually
     catchup=False,
     description="Initial data source creation and dictionary population",
     tags=["init", "database"],
 ) as dag:
-
     init_data_task = PythonOperator(
-        task_id="initialize_data_sources",
-        python_callable=initialize_data_sources
+        task_id="initialize_data_sources", python_callable=initialize_data_sources
     )
 
     init_data_task

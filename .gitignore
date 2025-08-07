@@ -15,10 +15,11 @@ ruff.toml
 .devcontainer/
 Dockerfile
 
-# Temp folderы
+# Temp folders
 _old
 secret_enc/
 .secret_enc/
 deployment/sql_scripts/
 kube-cluster copy/
 deployment_old/
+Docker_image/

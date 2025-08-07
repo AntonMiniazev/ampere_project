@@ -97,7 +97,7 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   envsubst < values.template.yaml > values.generated.yaml
   helm secrets install airflow apache-airflow/airflow \
     -n $PROJECT_NAME \
-    -f values.yaml \
+    -f values.generated.yaml \
     -f credentials.yaml \
     --timeout 10m0s \
     --debug

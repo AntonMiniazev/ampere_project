@@ -8,7 +8,7 @@ images:
   airflow:
     repository: $AIRFLOW_REPO
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
 
 nodeSelector:
   kubernetes.io/hostname: $NODE3_NAME
