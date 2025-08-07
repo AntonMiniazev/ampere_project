@@ -40,6 +40,8 @@ with DAG(
     test_output = PythonOperator(
         task_id="test_sql",
         python_callable=_run_test_sql,
+        do_xcom_push=True,
+        return_last=True,
     )
 
     print_result = PythonOperator(
