@@ -1,5 +1,9 @@
 executor: CeleryExecutor
 
+env:
+  - name: MSSQL_PASSWORD
+    value: $MSSQL_SECRET
+
 images:
   airflow:
     repository: $AIRFLOW_REPO

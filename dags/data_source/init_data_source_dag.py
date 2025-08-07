@@ -1,4 +1,4 @@
-from db.db_io import exec_sql
+from dags.db.db_io import exec_sql
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime

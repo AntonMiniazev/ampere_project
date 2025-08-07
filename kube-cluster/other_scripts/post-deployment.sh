@@ -79,6 +79,13 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
     -n $PROJECT_NAME
 
   # Airflow on node3
+
+  MSSQL_SECRET=$(kubectl get secret mssql-sa-secret \
+    -n $PROJECT_NAME \
+    -o jsonpath="{.data.SA_PASSWORD}" | base64 --decode)
+
+  export MSSQL_SECRET
+
   echo ">> Deploying Airflow via Helm"
   cd /home/vagrant/airflow-chart
   
