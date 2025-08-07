@@ -14,10 +14,10 @@ def _run_test_sql():
 
 
 def print_sql_result(**context):
-    result = context["ti"].xcom_pull(task_ids="test_sql")
-    execution_date = context["execution_date"].date()
-    print(f"📅 Execution date: {execution_date}")  # ← печать даты исполнения
+    execution_date = context["logical_date"].date()
+    print(f"📅 Execution date: {execution_date}")
 
+    result = context["ti"].xcom_pull(task_ids="test_sql")
     print("🧪 Raw XCom:", result)
 
     if isinstance(result, list) and len(result) > 0:
