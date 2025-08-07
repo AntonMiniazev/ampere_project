@@ -1,7 +1,6 @@
 from db.db_io import exec_sql
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from utils.messages import build_client_message
 from datetime import datetime
 
 test_sql = """ SELECT TOP 1 * FROM Source.core.orders"""
