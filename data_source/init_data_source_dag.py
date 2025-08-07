@@ -1,4 +1,4 @@
-from data_source.db.db_io import exec_sql
+from db.db_io import exec_sql
 
 test_sql = """ SELECT TOP 1 * FROM Source.core.orders"""
 
