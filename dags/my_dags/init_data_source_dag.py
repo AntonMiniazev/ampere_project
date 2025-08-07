@@ -1,4 +1,5 @@
 from db.db_io import exec_sql
+from utils.messages import build_client_message
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
@@ -14,6 +15,9 @@ def _run_test_sql():
 
 def print_sql_result(**context):
     result = context["ti"].xcom_pull(task_ids="test_sql")
+    execution_date = context["execution_date"].date()
+    print(f"📅 Execution date: {execution_date}")  # ← печать даты исполнения
+
     print("🧪 Raw XCom:", result)
 
     if isinstance(result, list) and len(result) > 0:
