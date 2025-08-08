@@ -39,7 +39,6 @@ def update_churned(ids: list):
 
     with engine.connect() as conn:
         conn.execute(text(query))
-        conn.commit()
         print(f"Updated {len(ids)} clients (churned = 1)")
 
 
