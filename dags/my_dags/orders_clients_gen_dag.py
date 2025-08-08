@@ -1,4 +1,4 @@
-
+from datetime import datetime
 from airflow import DAG
 from airflow.sdk import task
 
@@ -22,7 +22,6 @@ with DAG(
     tags=["example"],
     catchup=True,
 ) as dag:
-
     run_this = gen_clients()
     and_this = gen_orders()
 

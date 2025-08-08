@@ -11,14 +11,5 @@ dependencies = [
     "numpy>=2.2.6",
     "pandas>=2.3.0",
     "pyodbc>=5.2.0",
-    "ruff>=0.11.13",
-    "sqlalchemy>=2.0.41",
-    "sqlalchemy-utils>=0.41.2",
-]
-
-[dependency-groups]
-dev = [
-    "apache-airflow-task-sdk==1.0.3",
-    "pytest>=8.4.1",
-    "ruff>=0.11.13",
+    "ruff>=0.11.13"
 ]
