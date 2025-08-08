@@ -10,7 +10,7 @@ test_sql = """ SELECT TOP 1 * FROM Source.core.orders"""
 def _run_test_sql():
     df = exec_sql(test_sql)
     print(df)
-    return df.to_dict(orient="records")  # ✅ safe for XCom
+    return df.to_dict(orient="records")
 
 
 def print_sql_result(**context):
@@ -38,7 +38,6 @@ with DAG(
     tags=["example"],
     catchup=True,
 ) as dag:
-
     test_output = PythonOperator(
         task_id="test_sql",
         python_callable=_run_test_sql,

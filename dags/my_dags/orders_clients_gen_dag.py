@@ -1,0 +1,29 @@
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+
+@task(task_id="generate_and_update_clients")
+def gen_clients():
+    print("Clients task will be executed as if it was" &
+          context["logical_date"].date())
+
+
+@task(task_id="generate_orders")
+def gen_orders():
+    print("Orders task will be executed as if it was" &
+          context["logical_date"].date())
+
+
+with DAG(
+    DAG_ID,
+    schedule="@daily",
+    start_date=datetime(2025, 8, 1),
+    tags=["example"],
+    catchup=True,
+) as dag:
+
+    run_this = gen_clients()
+    and_this = gen_orders()
+
+    run_this >> and_this
