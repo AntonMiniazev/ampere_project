@@ -1,6 +1,6 @@
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.sdk import task
 
 
 @task(task_id="generate_and_update_clients")
