@@ -10,7 +10,7 @@ def gen_clients(**context):
 
 
 @task(task_id="generate_orders")
-def gen_orders(**kwargs):
+def gen_orders(**context):
     print("Orders task will be executed as if it was " +
           str(context["logical_date"].date()))
 
