@@ -15,7 +15,7 @@ with DAG(
     schedule=None,  # Only run manually
     catchup=False,
     description="Initial data source creation and dictionary population",
-    tags=["init", "database"],
+    tags=["init", "source_layer", "database"],
 ) as dag:
     init_data_task = PythonOperator(
         task_id="initialize_data_sources", python_callable=initialize_data_sources
