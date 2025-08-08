@@ -16,7 +16,7 @@ def gen_orders():
 
 
 with DAG(
-    DAG_ID,
+    dag_id="orders_clients_generation",
     schedule="@daily",
     start_date=datetime(2025, 8, 1),
     tags=["example"],
