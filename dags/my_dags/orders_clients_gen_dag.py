@@ -34,6 +34,7 @@ with DAG(
     start_date=datetime(2025, 8, 1),
     tags=["init", "source_layer", "database", "generator"],
     catchup=True,
+    max_active_runs=1,
 ) as dag:
     run_this = gen_clients()
     and_this = gen_orders()
