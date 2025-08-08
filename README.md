@@ -21,7 +21,7 @@
     - [x] Prepare sub-script for Helm charts on master
 - [ ] ETL
   - [ ] Establish DS → Stage layer
-	  - [ ] Launch generators in Airflow
+	  - [x] Launch generators in Airflow (deployed through orders_clients_generation dag)
 	  - [ ] Create sensor to push to dbt model
 	  - [ ] Downstream DAGs to push data to golden layer
   - [ ] Upload to MSSQL
