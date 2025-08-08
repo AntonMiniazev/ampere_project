@@ -5,13 +5,13 @@ from airflow.sdk import task
 
 @task(task_id="generate_and_update_clients")
 def gen_clients(**context):
-    print("Clients task will be executed as if it was" &
+    print("Clients task will be executed as if it was " +
           context["logical_date"].date())
 
 
 @task(task_id="generate_orders")
 def gen_orders(**kwargs):
-    print("Orders task will be executed as if it was" &
+    print("Orders task will be executed as if it was " +
           context["logical_date"].date())
 
 
