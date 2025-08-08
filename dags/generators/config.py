@@ -3,6 +3,7 @@ n_of_init_clients = 4000
 n_delivery_resource = 125
 database_init = "source"
 schema_init = "core"
+project_start_date = "2025-08-01"
 
 
 # Orders constants

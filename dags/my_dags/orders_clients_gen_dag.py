@@ -1,18 +1,30 @@
-from datetime import datetime
-from airflow import DAG
-from airflow.sdk import task
+from datetime import datetime, timedelta
+from airflow import DAG  # type: ignore
+from airflow.sdk import task  # type: ignore
+from generators.orders_gen import prepare_orders_statuses
+
+import pandas as pd
+from db.db_io import upload_new_data
+from generators.clients_gen import (
+    prepare_clients_update_and_generation,
+    update_churned,
+)
 
 
 @task(task_id="generate_and_update_clients")
 def gen_clients(**context):
-    print("Clients task will be executed as if it was " +
-          str(context["logical_date"].date()))
+    today = context["logical_date"].date()
+    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation()
+    update_churned(to_churn_ids)
+    upload_new_data(pd.DataFrame(clients_for_upload), "clients", today)
 
 
 @task(task_id="generate_orders")
 def gen_orders(**context):
-    print("Orders task will be executed as if it was " +
-          str(context["logical_date"].date()))
+    today = context["logical_date"].date()
+    yesterday = today - timedelta(days=1)
+    print("Generation for " + str(today) + " and " + str(yesterday))
+    prepare_orders_statuses(today, yesterday)
 
 
 with DAG(

@@ -24,7 +24,8 @@ def generate_assortment():
 
         for idx in df_store["id"]:
             for cat_id in range(1, num_of_categories + 1):
-                category_len = len(df_products[df_products["category_id"] == cat_id])
+                category_len = len(
+                    df_products[df_products["category_id"] == cat_id])
                 mask = np.zeros(category_len, dtype=int)
                 num_ones = np.random.randint(1, 4)
                 ones_indices = np.random.choice(

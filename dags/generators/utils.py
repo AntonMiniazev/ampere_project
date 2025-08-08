@@ -1,10 +1,4 @@
-from datetime import datetime, timedelta
-
 import numpy as np
-
-# Dates
-today = datetime.today().date()
-yesterday = today - timedelta(days=1)
 
 
 def scaled_beta(mean_target: float, low: float, high: float, alpha: float = 2) -> float:

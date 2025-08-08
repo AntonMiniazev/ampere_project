@@ -3,8 +3,8 @@ from generators.config import churn_rates, new_clients_rates
 from db.mssql import engine
 from dotenv import load_dotenv
 from faker import Faker
-from generators.utils import today
 from sqlalchemy import text
+from datetime import datetime
 
 from db.db_io import exec_sql
 
@@ -43,7 +43,7 @@ def update_churned(ids: list):
         print(f"Updated {len(ids)} clients (churned = 1)")
 
 
-def generate_clients(n: int, store_id: int):
+def generate_clients(n: int, store_id: int, today: datetime.date):
     clients = []
 
     for i in range(1, n + 1):
@@ -61,7 +61,7 @@ def generate_clients(n: int, store_id: int):
     return clients
 
 
-def prepare_clients_update_and_generation():
+def prepare_clients_update_and_generation(today: datetime.date):
     clients_df = exec_sql(client_query)
     active_clients = clients_df[clients_df["churned"] == 0].copy()
 
@@ -83,6 +83,7 @@ def prepare_clients_update_and_generation():
             new_clients_rates[0], new_clients_rates[1]
         )  # between 0.6% and 1%
         n_new_clients = int(len(store_clients) * new_clients_rate)
-        clients_for_upload.extend(generate_clients(n_new_clients, store_id))
+        clients_for_upload.extend(
+            generate_clients(n_new_clients, store_id, today))
 
     return to_churn_ids, clients_for_upload
