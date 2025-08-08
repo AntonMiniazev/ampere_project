@@ -14,9 +14,10 @@ from generators.clients_gen import (
 @task(task_id="generate_and_update_clients")
 def gen_clients(**context):
     today = context["logical_date"].date()
-    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation()
+    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
+        today)
     update_churned(to_churn_ids)
-    upload_new_data(pd.DataFrame(clients_for_upload), "clients", today)
+    upload_new_data(pd.DataFrame(clients_for_upload), "clients")
 
 
 @task(task_id="generate_orders")
