@@ -13,7 +13,7 @@ import uuid
 RAW_BUCKET = "ampere-prod-raw"
 minio_conn = "minio_conn"
 mssql_conn = "mssql_conn"
-table_names = list(table_queries.keys())
+TABLE_NAMES = list(table_queries.keys())
 
 
 @task(task_id="get_source_table")
@@ -52,17 +52,12 @@ def export_table(database_init: str, schema_init: str, table_name: str, **contex
     return {"table": table_name, "rows": int(len(df)), "key": key}
 
 
-@task
+@task(task_id="summarize")
 def summarize(results: list[dict]):
-    # results is a list of dicts returned by export_table
-    total = sum(r["rows"] for r in results)
-    print(f"Total rows exported: {total}")
-
-
-@task(task_id="upload_to_minio")
-def upload_to_minio(table_queries: dict):
-    for tname in table_queries.keys():
-        summarize(export_table.expand(table_name=tname))
+    # Aggregate results from mapped tasks
+    total_rows = sum(r.get("rows", 0) for r in results)
+    tables = ", ".join(r.get("table", "?") for r in results)
+    print(f"Exported rows total: {total_rows}; tables: {tables}")
 
 
 with DAG(
@@ -73,5 +68,9 @@ with DAG(
     max_active_runs=1,
     tags=["source_layer", "s3", "transfer", "prod"],
 ) as dag:
-    run_dag = upload_to_minio(table_queries)
-    run_dag
+    mapped = export_table.partial(
+        database_init=database_init,
+        schema_init=schema_init,
+    ).expand(table_name=TABLE_NAMES)
+
+    summarize(mapped)
