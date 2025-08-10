@@ -1,5 +1,6 @@
 from datetime import datetime
-from airflow.decorators import dag, task
+from airflow import DAG
+from airflow.decorators import task
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from db.ddl_init import table_queries  # your file with table definitions
@@ -15,15 +16,15 @@ mssql_conn = "mssql_conn"
 table_names = list(table_queries.keys())
 
 
-@dag(
+with DAG(
     dag_id="source_to_minio",
     schedule="0 4 * * *",
     start_date=datetime(2025, 8, 10),
     catchup=True,
     max_active_runs=1,
     tags=["source_layer", "s3", "transfer", "prod"],
-)
-def source_to_minio():
+) as dag:
+
     @task(task_id="get_source_table")
     def export_table(database_init: str, schema_init: str, table_name: str, **context):
         # Read from SQL Server
@@ -70,4 +71,4 @@ def source_to_minio():
         for tname in table_queries.keys():
             summarize(export_table.expand(table_name=tname))
 
-    upload_to_minio()
+    run_dag = upload_to_minio()
