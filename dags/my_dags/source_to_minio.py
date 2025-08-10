@@ -11,6 +11,13 @@ RAW_BUCKET = "ampere-prod-raw"
 minio_conn = "minio_conn"
 mssql_conn = "mssql_conn"
 TABLE_NAMES = list(table_queries.keys())
+CHUNK_SIZE = 3  # process 3 tables at a time
+
+
+def chunk(lst, size):
+    # Simple chunking helper
+    for i in range(0, len(lst), size):
+        yield lst[i : i + size]
 
 
 @task(task_id="get_source_table")
@@ -53,10 +60,18 @@ def export_table(database_init: str, schema_init: str, table_name: str, **contex
     return {"table": table_name, "rows": int(len(df)), "key": key}
 
 
+@task(task_id="merge_results")
+def merge_results(results_lists: list[list[dict]]):
+    # Flatten list-of-lists of dicts into a single list
+    flat = []
+    for sub in results_lists:
+        flat.extend(sub)
+    return flat
+
+
 @task(task_id="summarize")
 def summarize(results: list[dict]):
-    # Aggregate results from mapped tasks
-    total_rows = sum(r.get("rows", 0) for r in results)
+    total_rows = sum(int(r.get("rows", 0)) for r in results)
     tables = ", ".join(r.get("table", "?") for r in results)
     print(f"Exported rows total: {total_rows}; tables: {tables}")
 
@@ -69,9 +84,20 @@ with DAG(
     max_active_runs=1,
     tags=["source_layer", "s3", "transfer", "prod"],
 ) as dag:
-    mapped = export_table.partial(
-        database_init=database_init,
-        schema_init=schema_init,
-    ).expand(table_name=TABLE_NAMES)
+    chunk_results = []
+    prev_group = None
 
-    summarize(mapped)
+    for idx, names in enumerate(chunk(TABLE_NAMES, CHUNK_SIZE), start=1):
+        group = export_table.partial(
+            database_init=database_init,
+            schema_init=schema_init,
+        ).expand(table_name=names)
+
+        if prev_group:
+            prev_group >> group
+
+        chunk_results.append(group)
+        prev_group = group
+
+    merged = merge_results(chunk_results)
+    summarize(merged)
