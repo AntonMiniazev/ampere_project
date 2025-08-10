@@ -52,7 +52,7 @@ def export_table(database_init: str, schema_init: str, table_name: str, **contex
 
 
 with DAG(
-    dag_id="source_to_minio_seq",
+    dag_id="source_to_minio",
     schedule="0 4 * * *",
     start_date=datetime(2025, 8, 10),
     catchup=True,
