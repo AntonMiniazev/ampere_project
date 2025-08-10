@@ -1,11 +1,8 @@
 from datetime import datetime
 from airflow import DAG
 from airflow.decorators import task
-from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from db.ddl_init import table_queries  # your file with table definitions
 from generators.config import database_init, schema_init
-import pandas as pd
 import io
 import uuid
 
@@ -18,6 +15,10 @@ TABLE_NAMES = list(table_queries.keys())
 
 @task(task_id="get_source_table")
 def export_table(database_init: str, schema_init: str, table_name: str, **context):
+    from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
+    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+    import pandas as pd
+
     # Read from SQL Server
     mssql = MsSqlHook(mssql_conn_id=mssql_conn)
     sql = f"SELECT * FROM [{schema_init}].[{table_name}]"
