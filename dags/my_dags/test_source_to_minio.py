@@ -18,7 +18,7 @@ SOURCE_NAME = "sqlserver"
     start_date=datetime(2025, 8, 1),
     catchup=False,
     default_args={"owner": "ampere"},
-    tags=["raw", "minio", "sqlserver"],
+    tags=["test"],
 )
 def source_to_minio_raw():
     @task

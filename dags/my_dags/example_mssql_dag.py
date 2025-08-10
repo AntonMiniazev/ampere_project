@@ -32,7 +32,7 @@ with DAG(
     DAG_ID,
     schedule="@daily",
     start_date=datetime(2025, 8, 1),
-    tags=["example"],
+    tags=["test"],
     catchup=False,
 ) as dag:
     # Execute a SQL query to get the latest order

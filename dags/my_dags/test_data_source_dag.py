@@ -35,7 +35,7 @@ with DAG(
     DAG_ID,
     schedule="@daily",
     start_date=datetime(2025, 8, 1),
-    tags=["example"],
+    tags=["test"],
     catchup=True,
 ) as dag:
     test_output = PythonOperator(
