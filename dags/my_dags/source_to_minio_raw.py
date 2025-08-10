@@ -3,7 +3,7 @@ from datetime import datetime
 from airflow.decorators import dag, task
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from ddl_init import table_queries  # your file with table definitions
+from db.ddl_init import table_queries  # your file with table definitions
 import pandas as pd
 import io
 import uuid
