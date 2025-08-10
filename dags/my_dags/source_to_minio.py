@@ -71,4 +71,4 @@ with DAG(
         for tname in table_queries.keys():
             summarize(export_table.expand(table_name=tname))
 
-    run_dag = upload_to_minio()
+    run_dag = upload_to_minio(table_queries)
