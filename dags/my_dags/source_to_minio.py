@@ -62,7 +62,7 @@ def summarize(results: list[dict]):
 @task(task_id="upload_to_minio")
 def upload_to_minio(table_queries: dict):
     for tname in table_queries.keys():
-        summarize(export_table.expand(database_init, schema_init, table_name=tname))
+        summarize(export_table.expand(table_name=tname))
 
 
 with DAG(
