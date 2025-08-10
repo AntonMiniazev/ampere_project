@@ -68,6 +68,6 @@ with DAG(
     catchup=True,
     max_active_runs=1,
 ) as dag:
-    etl_proc = upload_to_minio()
+    etl_proc = upload_to_minio(table_queries)
 
     etl_proc
