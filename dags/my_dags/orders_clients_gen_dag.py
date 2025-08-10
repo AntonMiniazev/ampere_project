@@ -14,8 +14,7 @@ from generators.clients_gen import (
 @task(task_id="generate_and_update_clients")
 def gen_clients(**context):
     today = context["logical_date"].date()
-    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
-        today)
+    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(today)
     update_churned(to_churn_ids)
     upload_new_data(pd.DataFrame(clients_for_upload), "clients")
 
@@ -30,9 +29,9 @@ def gen_orders(**context):
 
 with DAG(
     dag_id="orders_clients_generation",
-    schedule='0 4 * * *',
+    schedule="0 4 * * *",
     start_date=datetime(2025, 8, 1),
-    tags=["init", "source_layer", "database", "generator"],
+    tags=["init", "source_layer", "database", "generator", "prod"],
     catchup=True,
     max_active_runs=1,
 ) as dag:
