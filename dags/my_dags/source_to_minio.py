@@ -63,5 +63,5 @@ with DAG(
     for tname in TABLE_NAMES:
         t = export_table(database_init, schema_init, tname)
         if prev_task:
-            prev_task >> t  # Ensure sequential execution
+            prev_task >> t
         prev_task = t
