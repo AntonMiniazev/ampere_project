@@ -14,7 +14,7 @@ Vagrant.configure("2") do |config|
         vb.cpus = cfg[:cpus]
       end
 
-      node.vm.synced_folder "./deploy.env", "/vagrant/deploy.env", type: "virtualbox"
+      node.vm.provision "file", source: "deploy.env", destination: "/home/vagrant/deploy.env"
       node.vm.provision "shell", path: "provision/requirements.sh"
       if role == "master"
         node.vm.synced_folder "/home/gpg_key", "/home/vagrant/gpg_key", type: "virtualbox"
