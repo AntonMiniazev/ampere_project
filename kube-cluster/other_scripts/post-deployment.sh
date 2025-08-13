@@ -59,7 +59,7 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
 
   helm upgrade --install keda kedacore/keda \
     -n keda --create-namespace \
-    --set watchNamespace="ampere-project"
+    --set watchNamespace=$PROJECT_NAME
 
   echo ">> Importing GPG private key"
   gpg --import /home/vagrant/gpg_key/private-key.asc
