@@ -14,6 +14,7 @@ import pendulum
 MSSQL_CONN_ID = "mssql_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
 BUCKET = "ampere-prod-raw"
+DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product"
 ID_COLUMN = (
@@ -28,7 +29,7 @@ default_args = {"owner": "airflow", "retries": 0}
 with DAG(
     dag_id="export_order_product_full_parallel",
     description="Parallel full snapshot of test.order_product to MinIO with daily partition",
-    start_date=datetime(2025, 1, 1),
+    start_date=datetime(2025, 8, 1),
     schedule=None,  # set to cron if needed
     catchup=False,
     default_args=default_args,
@@ -63,7 +64,7 @@ with DAG(
         Requires a numeric, monotonically increasing column (ID_COLUMN).
         """
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
-        sql = f"SELECT MIN([{ID_COLUMN}]) AS min_id, MAX([{ID_COLUMN}]) AS max_id FROM [{SCHEMA}].[{TABLE}];"
+        sql = f"SELECT MIN([{ID_COLUMN}]) AS min_id, MAX([{ID_COLUMN}]) AS max_id FROM [{DB}].[{SCHEMA}].[{TABLE}];"
         df = mssql.get_pandas_df(sql)
         min_id, max_id = int(df.loc[0, "min_id"]), int(df.loc[0, "max_id"])
         return {"min_id": min_id, "max_id": max_id}
@@ -107,7 +108,7 @@ with DAG(
         # Read the chunk deterministically by ID range
         # NOTE: Make sure ID_COLUMN is indexed for performance
         sql = (
-            f"SELECT * FROM [{SCHEMA}].[{TABLE}] "
+            f"SELECT * FROM [{SCHEMA}].[{SCHEMA}].[{TABLE}] "
             f"WHERE [{ID_COLUMN}] BETWEEN {start_id} AND {end_id} "
             f"ORDER BY [{ID_COLUMN}] ASC"
         )
