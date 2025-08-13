@@ -52,7 +52,15 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   # Add Bitnami Helm repo and update
   helm repo add bitnami https://charts.bitnami.com/bitnami || true
   helm repo updates
-  
+
+  # Add KEDA for Airflow workers scalling
+  helm repo add kedacore https://kedacore.github.io/charts
+  helm repo update
+
+  helm upgrade --install keda kedacore/keda \
+    -n keda --create-namespace \
+    --set watchNamespace="ampere-project"
+
   echo ">> Importing GPG private key"
   gpg --import /home/vagrant/gpg_key/private-key.asc
   #rm -f /home/vagrant/gpg_key/private-key.asc

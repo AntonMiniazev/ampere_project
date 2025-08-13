@@ -8,6 +8,7 @@ wheels/
 *.yaml.dec
 *.dec.yaml
 ruff.toml
+data_source/.env
 
 # Virtual environments
 .venv
