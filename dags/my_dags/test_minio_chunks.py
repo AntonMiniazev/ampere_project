@@ -4,7 +4,6 @@ from airflow.decorators import task
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime
-from airflow.utils.task_group import TaskGroup
 import pandas as pd
 import os
 import tempfile
@@ -53,47 +52,60 @@ with DAG(
 
         keys = s3.list_keys(bucket_name=bucket, prefix=prefix) or []
         if keys:
-            # Delete in bulk
             s3.delete_objects(bucket, keys)
         return prefix_info
 
     @task
     def get_id_bounds() -> dict:
         """
-        Fetch MIN(ID) and MAX(ID) to prepare deterministic ranges.
-        Requires a numeric, monotonically increasing column (ID_COLUMN).
+        Fetch MIN(ID) and MAX(ID) excluding NULLs.
+        Returns {"empty": True, ...} when no valid rows exist to keep the DAG green.
         """
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
-        sql = f"SELECT MIN([{ID_COLUMN}]) AS min_id, MAX([{ID_COLUMN}]) AS max_id FROM [{DB}].[{SCHEMA}].[{TABLE}];"
+        sql = (
+            f"SELECT "
+            f"MIN(CAST([{ID_COLUMN}] AS BIGINT)) AS min_id, "
+            f"MAX(CAST([{ID_COLUMN}] AS BIGINT)) AS max_id "
+            f"FROM [{DB}].[{SCHEMA}].[{TABLE}] "
+            f"WHERE [{ID_COLUMN}] IS NOT NULL;"
+        )
         df = mssql.get_pandas_df(sql)
-        min_id, max_id = int(df.loc[0, "min_id"]), int(df.loc[0, "max_id"])
-        return {"min_id": min_id, "max_id": max_id}
+
+        if df.empty or pd.isna(df.loc[0, "min_id"]) or pd.isna(df.loc[0, "max_id"]):
+            return {"empty": True, "min_id": None, "max_id": None}
+
+        min_id = int(df.loc[0, "min_id"])
+        max_id = int(df.loc[0, "max_id"])
+        return {"empty": False, "min_id": min_id, "max_id": max_id}
 
     @task
     def build_chunks(bounds: dict) -> list[dict]:
         """
         Build list of chunk descriptors like:
-        {"start_id": X, "end_id": Y, "chunk_idx": i}
+        {"start_id": X, "end_id": Y, "idx": i}
+        Returns [] if no data -> dynamic mapping emits zero tasks.
         """
+        if bounds.get("empty"):
+            return []
+
         start = bounds["min_id"]
         end = bounds["max_id"]
-        chunks = []
-        chunk_idx = 0
 
-        # Create half-open [lo, hi] contiguous ID ranges (inclusive)
+        chunks: list[dict] = []
+        idx = 0
         lo = start
         while lo <= end:
             hi = min(lo + CHUNK_SIZE - 1, end)
-            chunks.append({"start_id": lo, "end_id": hi, "idx": chunk_idx})
-            chunk_idx += 1
+            chunks.append({"start_id": lo, "end_id": hi, "idx": idx})
+            idx += 1
             lo = hi + 1
         return chunks
 
     @task
-    def export_chunk(prefix_info: dict, chunk: dict) -> dict:
+    def export_chunk(prefix_info: dict, chunk: dict) -> dict | None:
         """
         Export a single ID range [start_id, end_id] to one file in MinIO.
-        This task is designed to run in parallel via dynamic task mapping.
+        Returns None when the range yields zero rows (e.g., gaps in identity values).
         """
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
@@ -103,20 +115,26 @@ with DAG(
         start_id, end_id, idx = chunk["start_id"], chunk["end_id"], chunk["idx"]
 
         # Deterministic filename per chunk (easy to debug and deduplicate)
-        filename = f"part-{idx:05d}_{start_id}-{end_id}.{'parquet' if FILE_FORMAT == 'parquet' else 'csv'}"
+        ext = "parquet" if FILE_FORMAT == "parquet" else "csv"
+        filename = f"part-{idx:05d}_{start_id}-{end_id}.{ext}"
 
-        # Read the chunk deterministically by ID range
-        # NOTE: Make sure ID_COLUMN is indexed for performance
+        # Read the chunk deterministically by ID range (ensure ID is NOT NULL)
+        # NOTE: Ensure ID_COLUMN is indexed for performance
         sql = (
-            f"SELECT * FROM [{SCHEMA}].[{SCHEMA}].[{TABLE}] "
-            f"WHERE [{ID_COLUMN}] BETWEEN {start_id} AND {end_id} "
+            f"SELECT * FROM [{DB}].[{SCHEMA}].[{TABLE}] "
+            f"WHERE [{ID_COLUMN}] IS NOT NULL AND [{ID_COLUMN}] BETWEEN {start_id} AND {end_id} "
             f"ORDER BY [{ID_COLUMN}] ASC"
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = os.path.join(tmpdir, filename)
+
             # Fetch data
             df = mssql.get_pandas_df(sql)
+
+            # Skip upload if no rows in this slice (sparse ranges are fine)
+            if df.empty:
+                return None
 
             # Write locally
             if FILE_FORMAT == "parquet":
@@ -128,15 +146,23 @@ with DAG(
             key = prefix + filename
             s3.load_file(filename=local_path, key=key, bucket_name=bucket, replace=True)
 
-        return {"rows": len(df), "file": filename, "key": key}
+        return {"rows": int(len(df)), "file": filename, "key": key}
 
     @task
-    def summarize(results: list[dict], prefix_info: dict):
-        total = sum(r.get("rows", 0) for r in results if r)
-        parts = len([r for r in results if r])
-        print(
-            f"Exported {total} rows into {parts} file(s) at s3://{BUCKET}/{prefix_info['prefix']}"
-        )
+    def summarize(results: list[dict] | None, prefix_info: dict):
+        # Summarize safely even when no chunks produced files
+        safe = [r for r in (results or []) if r]
+        total = sum(int(r.get("rows", 0)) for r in safe)
+        parts = len(safe)
+
+        if parts == 0:
+            print(
+                f"No data exported to s3://{BUCKET}/{prefix_info['prefix']} (empty table or gaps only)."
+            )
+        else:
+            print(
+                f"Exported {total} rows into {parts} file(s) at s3://{BUCKET}/{prefix_info['prefix']}"
+            )
 
     # === Orchestration ===
     prefix = compute_prefix()
@@ -144,7 +170,7 @@ with DAG(
     bounds = get_id_bounds()
     chunks = build_chunks(bounds)
 
-    # Map chunk exports in parallel (Airflow dynamic task mapping)
+    # Map chunk exports in parallel (Airflow dynamic task mapping). If chunks == [], nothing runs.
     mapped_results = export_chunk.partial(prefix_info=cleaned).expand(chunk=chunks)
 
     summarize(mapped_results, cleaned)
