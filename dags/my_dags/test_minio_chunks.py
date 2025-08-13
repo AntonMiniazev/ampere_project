@@ -9,6 +9,7 @@ import os
 import tempfile
 import pendulum
 
+# v1
 # === CONFIG ===
 MSSQL_CONN_ID = "mssql_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
@@ -16,9 +17,7 @@ BUCKET = "ampere-prod-raw"
 DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product"
-ID_COLUMN = (
-    "order_id"  # IMPORTANT: integer PK/identity column for deterministic chunking
-)
+ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
 CHUNK_SIZE = 200_000  # ~200k rows per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
@@ -36,30 +35,30 @@ with DAG(
 ) as dag:
 
     @task
-    def compute_prefix():
+    def compute_prefix() -> str:
         # Build today's S3 prefix: s3://BUCKET/test/order_product/snapshot_type=full/load_date=YYYY-MM-DD/
         today = pendulum.now(TIMEZONE).to_date_string()
         base_prefix = f"{SCHEMA}/{TABLE}/snapshot_type=full"
         prefix = f"{base_prefix}/load_date={today}/"
-        return {"today": today, "prefix": prefix, "base_prefix": base_prefix}
+        # Return compact string to avoid XCom validation issues
+        return prefix
 
     @task
-    def drop_today_partition(prefix_info: dict):
+    def drop_today_partition(prefix: str) -> str:
         # Delete today's partition in MinIO to make the run idempotent
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
-        bucket = BUCKET
-        prefix = prefix_info["prefix"]
-
-        keys = s3.list_keys(bucket_name=bucket, prefix=prefix) or []
+        keys = s3.list_keys(bucket_name=BUCKET, prefix=prefix) or []
         if keys:
-            s3.delete_objects(bucket, keys)
-        return prefix_info
+            s3.delete_objects(BUCKET, keys)
+        return prefix
 
     @task
-    def get_id_bounds() -> dict:
+    def get_id_bounds() -> str:
         """
         Fetch MIN(ID) and MAX(ID) excluding NULLs.
-        Returns {"empty": True, ...} when no valid rows exist to keep the DAG green.
+        Return a compact string:
+          - "EMPTY" if no usable rows
+          - "min,max" otherwise
         """
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
         sql = (
@@ -72,24 +71,29 @@ with DAG(
         df = mssql.get_pandas_df(sql)
 
         if df.empty or pd.isna(df.loc[0, "min_id"]) or pd.isna(df.loc[0, "max_id"]):
-            return {"empty": True, "min_id": None, "max_id": None}
+            return "EMPTY"
 
         min_id = int(df.loc[0, "min_id"])
         max_id = int(df.loc[0, "max_id"])
-        return {"empty": False, "min_id": min_id, "max_id": max_id}
+        return f"{min_id},{max_id}"
 
     @task
-    def build_chunks(bounds: dict) -> list[dict]:
+    def build_chunks(bounds_str: str) -> list[dict]:
         """
-        Build list of chunk descriptors like:
-        {"start_id": X, "end_id": Y, "idx": i}
-        Returns [] if no data -> dynamic mapping emits zero tasks.
+        Create chunk descriptors: {"start_id": X, "end_id": Y, "idx": i}
+        When bounds_str == 'EMPTY' -> return [] (no mapped tasks).
         """
-        if bounds.get("empty"):
+        if bounds_str == "EMPTY":
             return []
 
-        start = bounds["min_id"]
-        end = bounds["max_id"]
+        # Parse "min,max"
+        try:
+            min_s, max_s = bounds_str.split(",", 1)
+            start = int(min_s)
+            end = int(max_s)
+        except Exception as e:
+            # Fail fast with clear reason
+            raise ValueError(f"Invalid bounds string: {bounds_str}") from e
 
         chunks: list[dict] = []
         idx = 0
@@ -102,24 +106,21 @@ with DAG(
         return chunks
 
     @task
-    def export_chunk(prefix_info: dict, chunk: dict) -> dict | None:
+    def export_chunk(prefix: str, chunk: dict) -> str | None:
         """
         Export a single ID range [start_id, end_id] to one file in MinIO.
-        Returns None when the range yields zero rows (e.g., gaps in identity values).
+        Returns a compact result string "rows=<n>;key=<s3_key>" or None when the slice is empty.
         """
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
 
-        bucket = BUCKET
-        prefix = prefix_info["prefix"]
         start_id, end_id, idx = chunk["start_id"], chunk["end_id"], chunk["idx"]
 
-        # Deterministic filename per chunk (easy to debug and deduplicate)
+        # Deterministic filename per chunk
         ext = "parquet" if FILE_FORMAT == "parquet" else "csv"
         filename = f"part-{idx:05d}_{start_id}-{end_id}.{ext}"
 
-        # Read the chunk deterministically by ID range (ensure ID is NOT NULL)
-        # NOTE: Ensure ID_COLUMN is indexed for performance
+        # Correct three-part name: [DB].[SCHEMA].[TABLE]
         sql = (
             f"SELECT * FROM [{DB}].[{SCHEMA}].[{TABLE}] "
             f"WHERE [{ID_COLUMN}] IS NOT NULL AND [{ID_COLUMN}] BETWEEN {start_id} AND {end_id} "
@@ -128,49 +129,53 @@ with DAG(
 
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = os.path.join(tmpdir, filename)
-
-            # Fetch data
             df = mssql.get_pandas_df(sql)
 
-            # Skip upload if no rows in this slice (sparse ranges are fine)
             if df.empty:
                 return None
 
-            # Write locally
             if FILE_FORMAT == "parquet":
                 df.to_parquet(local_path, index=False)
             else:
                 df.to_csv(local_path, index=False)
 
-            # Upload to MinIO
             key = prefix + filename
-            s3.load_file(filename=local_path, key=key, bucket_name=bucket, replace=True)
+            s3.load_file(filename=local_path, key=key, bucket_name=BUCKET, replace=True)
 
-        return {"rows": int(len(df)), "file": filename, "key": key}
+        return f"rows={len(df)};key={key}"
 
     @task
-    def summarize(results: list[dict] | None, prefix_info: dict):
-        # Summarize safely even when no chunks produced files
+    def summarize(results: list[str] | None, prefix: str) -> None:
+        """
+        Summarize export. Accept compact strings to avoid XCom schema issues.
+        """
         safe = [r for r in (results or []) if r]
-        total = sum(int(r.get("rows", 0)) for r in safe)
-        parts = len(safe)
+        total_rows = 0
+        for r in safe:
+            # Parse "rows=<n>;key=<...>"
+            try:
+                parts = dict(p.split("=", 1) for p in r.split(";"))
+                total_rows += int(parts.get("rows", "0"))
+            except Exception:
+                # Ignore malformed entries; keep run going
+                pass
 
-        if parts == 0:
+        if not safe:
             print(
-                f"No data exported to s3://{BUCKET}/{prefix_info['prefix']} (empty table or gaps only)."
+                f"No data exported to s3://{BUCKET}/{prefix} (empty table or gaps only)."
             )
         else:
             print(
-                f"Exported {total} rows into {parts} file(s) at s3://{BUCKET}/{prefix_info['prefix']}"
+                f"Exported {total_rows} rows into {len(safe)} file(s) at s3://{BUCKET}/{prefix}"
             )
 
     # === Orchestration ===
     prefix = compute_prefix()
-    cleaned = drop_today_partition(prefix)
-    bounds = get_id_bounds()
-    chunks = build_chunks(bounds)
+    cleaned_prefix = drop_today_partition(prefix)
+    bounds_str = get_id_bounds()
+    chunks = build_chunks(bounds_str)
 
-    # Map chunk exports in parallel (Airflow dynamic task mapping). If chunks == [], nothing runs.
-    mapped_results = export_chunk.partial(prefix_info=cleaned).expand(chunk=chunks)
+    # Dynamic task mapping; if chunks == [], nothing is scheduled
+    mapped_results = export_chunk.partial(prefix=cleaned_prefix).expand(chunk=chunks)
 
-    summarize(mapped_results, cleaned)
+    summarize(mapped_results, cleaned_prefix)
