@@ -43,7 +43,7 @@ done
 
 ### --- INSTALLING CALICO CNI --- ###
 echo ">> Installing Calico (CNI plugin)"
-sudo -u vagrant kubectl apply --validate=false -f $CALICO_URL
+sudo -u vagrant kubectl apply --validate=false -f $CALICO_CNI_URL
 
 # Wait for Calico CRDs to be registered
 for i in {1..6}; do
