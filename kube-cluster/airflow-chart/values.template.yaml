@@ -40,14 +40,14 @@ config:
 triggerer:
   persistence:
     storageClassName: $DEFAULT_STORAGE_CLASS
-  replicas: 2
+  replicas: 1
   resources:
     requests:
-      cpu: "200m"
-      memory: "256Mi"
-    limits:
-      cpu: "500m"
+      cpu: "400m"
       memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
 
 redis:
   persistence:
@@ -97,7 +97,7 @@ apiServer:
       value: "http://airflow.local"
 
 scheduler:
-  replicas: 2
+  replicas: 1
   resources:
     requests:
       cpu: "500m"
@@ -107,11 +107,11 @@ scheduler:
       memory: "2Gi"
 
 dagProcessor:
-  replicas: 2
+  replicas: 1
   resources:
     requests:
       cpu: "1"
-      memory: "1.5Gi"
+      memory: "2Gi"
     limits:
       cpu: "2"
-      memory: "3Gi"
+      memory: "4Gi"
