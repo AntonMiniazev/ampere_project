@@ -3,7 +3,7 @@ name: airflow-chart
 description: Helm chart to deploy Apache Airflow
 type: application
 version: 0.1.0
-appVersion: "3.0.2"  
+appVersion: "3.0.4"  
 
 dependencies:
   - name: airflow

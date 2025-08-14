@@ -26,10 +26,10 @@ workers:
     cooldownPeriod: 180
   resources:
     requests:
-      cpu: "500m"
+      cpu: "300m"
       memory: "768Mi"
     limits:
-      cpu: "1"
+      cpu: "700m"
       memory: "1536Mi"
 
 config:
@@ -43,11 +43,11 @@ triggerer:
   replicas: 1
   resources:
     requests:
-      cpu: "400m"
-      memory: "512Mi"
+      cpu: "200m"
+      memory: "256Mi"
     limits:
-      cpu: "1"
-      memory: "1Gi"
+      cpu: "500m"
+      memory: "512Mi"
 
 redis:
   persistence:
@@ -63,7 +63,7 @@ dags:
     subPath: "dags"
     credentialsSecret: git-credentials
     ref: HEAD
-    period: 5s
+    period: 15s
 
 logs:
   persistence:
@@ -75,16 +75,40 @@ postgresql:
       storageClass: $DEFAULT_STORAGE_CLASS
 
 webserver:
-  enabled: true
+  enabled: false
 
 apiServer:
+  waitForMigrations:
+    enabled: false
+
+  startupProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+    scheme: HTTP
+
+  readinessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 10
+    scheme: HTTP
+
+  livenessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 10
+    scheme: HTTP
+
   resources:
     requests:
-      cpu: "500m"
-      memory: "512Mi"
+      cpu: "400m"
+      memory: "1Gi"
     limits:
       cpu: "1"
-      memory: "1Gi"
+      memory: "2Gi"
   service:
     type: NodePort
     ports:
@@ -95,23 +119,25 @@ apiServer:
   env:
     - name: AIRFLOW__API__BASE_URL
       value: "http://airflow.local"
+    - name: AIRFLOW__API__WORKERS
+      value: "1"
 
 scheduler:
   replicas: 1
   resources:
     requests:
-      cpu: "500m"
-      memory: "1Gi"
+      cpu: "300m"
+      memory: "512Mi"
     limits:
-      cpu: "1"
-      memory: "2Gi"
+      cpu: "600m"
+      memory: "1Gi"
 
 dagProcessor:
   replicas: 1
   resources:
     requests:
+      cpu: "500m"
+      memory: "1.2Gi"
+    limits:
       cpu: "1"
       memory: "2Gi"
-    limits:
-      cpu: "2"
-      memory: "4Gi"
