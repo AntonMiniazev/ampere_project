@@ -105,7 +105,7 @@ with DAG(
             lo = hi + 1
         return chunks
 
-    @task(pool="export_order_product_full_parallel", max_active_tis_per_dag=8)
+    @task(max_active_tis_per_dag=8)
     def export_chunk(prefix: str, chunk: dict) -> str | None:
         """
         Export a single ID range [start_id, end_id] to one file in MinIO.
