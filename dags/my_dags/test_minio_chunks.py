@@ -16,9 +16,9 @@ MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
 BUCKET = "ampere-prod-raw"
 DB = "Source"
 SCHEMA = "test"
-TABLE = "order_product"
+TABLE = "order_product_small"
 ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
-CHUNK_SIZE = 2000  # ~20k rows per chunk
+CHUNK_SIZE = 20000  # ~20k rows per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
