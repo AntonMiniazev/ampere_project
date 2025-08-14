@@ -53,6 +53,8 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   helm repo add bitnami https://charts.bitnami.com/bitnami || true
   helm repo updates
 
+  kubectl create ns $PROJECT_NAME
+
   # Add KEDA for Airflow workers scalling
   helm repo add kedacore https://kedacore.github.io/charts
   helm repo update
