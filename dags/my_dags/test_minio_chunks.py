@@ -18,7 +18,7 @@ DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product_small"
 ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
-CHUNK_SIZE = 10000  # ~10k orders per chunk
+CHUNK_SIZE = 5000  # ~10k orders per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
@@ -105,7 +105,12 @@ with DAG(
             lo = hi + 1
         return chunks
 
-    @task(max_active_tis_per_dag=8)
+    @task(
+        max_active_tis_per_dag=8,
+        retries=2,
+        retry_delay=pendulum.duration(minutes=2),
+        retry_exponential_backoff=True,
+    )
     def export_chunk(prefix: str, chunk: dict) -> str | None:
         """
         Export a single ID range [start_id, end_id] to one file in MinIO.
