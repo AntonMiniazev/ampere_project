@@ -40,6 +40,14 @@ config:
 triggerer:
   persistence:
     storageClassName: $DEFAULT_STORAGE_CLASS
+  replicas: 2
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
 
 redis:
   persistence:
@@ -70,6 +78,13 @@ webserver:
   enabled: true
 
 apiServer:
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
   service:
     type: NodePort
     ports:
@@ -80,3 +95,23 @@ apiServer:
   env:
     - name: AIRFLOW__API__BASE_URL
       value: "http://airflow.local"
+
+scheduler:
+  replicas: 2
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
+dagProcessor:
+  replicas: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1.5Gi"
+    limits:
+      cpu: "2"
+      memory: "3Gi"
