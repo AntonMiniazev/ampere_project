@@ -30,7 +30,7 @@ def gen_orders(**context):
 with DAG(
     dag_id="orders_clients_generation",
     schedule="0 3 * * *",
-    start_date=datetime(2025, 8, 1),
+    start_date=datetime(2025, 8, 16),
     tags=["init", "source_layer", "database", "generator", "prod"],
     catchup=True,
     max_active_runs=1,

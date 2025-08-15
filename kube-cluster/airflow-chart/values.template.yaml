@@ -35,8 +35,8 @@ workers:
       cpu: "300m"
       memory: "768Mi"
     limits:
-      cpu: "500m"
-      memory: "1280Mi"
+      cpu: "750m"
+      memory: "2Gi"
 
 config:
   celery:
@@ -134,6 +134,10 @@ apiServer:
       value: "1"
 
 scheduler:
+  livenessProbe:
+    timeoutSeconds: 90
+    periodSeconds: 60
+    failureThreshold: 5
   replicas: 1
   resources:
     requests:
@@ -152,3 +156,8 @@ dagProcessor:
     limits:
       cpu: "1"
       memory: "2Gi"
+  livenessProbe:
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 5
+    initialDelaySeconds: 30
