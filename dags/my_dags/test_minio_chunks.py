@@ -18,7 +18,7 @@ DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product_small"
 ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
-CHUNK_SIZE = 15000  # ~10k orders per chunk
+CHUNK_SIZE = 25000  # ~10k orders per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
