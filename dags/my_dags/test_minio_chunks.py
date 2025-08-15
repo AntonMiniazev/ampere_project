@@ -20,7 +20,7 @@ DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product_small"
 ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
-CHUNK_SIZE = 20000  # ~10k orders per chunk
+CHUNK_SIZE = 40000  # ~10k orders per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
@@ -28,17 +28,8 @@ default_args = {"owner": "airflow", "retries": 0}
 
 
 def get_odbc_conn():
-    # Pass driver explicitly to avoid relying on providers.odbc.allow_driver_in_extra
-    hook = OdbcHook(
-        odbc_conn_id=MSSQL_CONN_ID,
-        driver="ODBC Driver 18 for SQL Server",
-        connect_kwargs={
-            "Encrypt": "yes",
-            "TrustServerCertificate": "yes",  # ok for internal cluster; tighten if needed
-            # "ApplicationIntent": "ReadOnly",  # optional
-            # "Autocommit": True,               # uncomment if you prefer autocommit
-        },
-    )
+    # Rely on ODBC connection + Extra; no driver/connect_kwargs here
+    hook = OdbcHook(odbc_conn_id=MSSQL_CONN_ID)
     return hook.get_conn()
 
 

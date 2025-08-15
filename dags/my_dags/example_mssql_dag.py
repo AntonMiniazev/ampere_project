@@ -42,14 +42,6 @@ with DAG(
         sql="SELECT TOP 1 * FROM Source.core.orders",
         do_xcom_push=True,
         return_last=True,
-        hook_params={
-            "driver": "ODBC Driver 18 for SQL Server",
-            "connect_kwargs": {
-                "Encrypt": "yes",
-                "TrustServerCertificate": "yes",
-                # "ApplicationIntent": "ReadOnly",  # optional
-            },
-        },
     )
 
     # Print a message based on the SQL result

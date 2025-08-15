@@ -3,7 +3,9 @@ executor: CeleryExecutor
 env:
   - name: MSSQL_PASSWORD
     value: $MSSQL_SECRET
-
+  - name: AIRFLOW__PROVIDERS__ODBC__ALLOW_DRIVER_IN_EXTRA
+    value: "true"
+    
 webserverSecretKeySecretName: my-airflow-secret
 
 images:
