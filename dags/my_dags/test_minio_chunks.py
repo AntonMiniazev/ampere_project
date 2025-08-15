@@ -11,7 +11,7 @@ import time
 from sqlalchemy.engine import Connection
 from contextlib import closing
 
-# v2.4
+# v2.5
 # === CONFIG ===
 MSSQL_CONN_ID = "mssql_odbc_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
@@ -20,7 +20,7 @@ DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product_small"
 ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
-CHUNK_SIZE = 40000  # ~10k orders per chunk
+CHUNK_SIZE = 40000  # ~40k orders per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
