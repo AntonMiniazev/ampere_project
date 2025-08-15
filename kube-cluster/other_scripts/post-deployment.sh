@@ -55,6 +55,16 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
 
   kubectl create ns $PROJECT_NAME
 
+  #Creating secret for webserver
+  WEB_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+
+  echo "$WEB_KEY" > /home/vagrant/my-airflow-secret.txt
+
+  kubectl -n ampere create secret generic my-airflow-secret \
+  --from-literal=webserver-secret-key="$WEB_KEY" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+
   # Add KEDA for Airflow workers scalling
   helm repo add kedacore https://kedacore.github.io/charts
   helm repo update

@@ -4,6 +4,8 @@ env:
   - name: MSSQL_PASSWORD
     value: $MSSQL_SECRET
 
+webserverSecretKeySecretName: my-airflow-secret
+
 images:
   airflow:
     repository: $AIRFLOW_REPO
@@ -16,7 +18,11 @@ nodeSelector:
 workers:
   persistence:
     storageClassName: $DEFAULT_STORAGE_CLASS
-
+  livenessProbe:
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 3
+    initialDelaySeconds: 30
   replicas: 2
   keda:
     enabled: true
@@ -48,6 +54,11 @@ triggerer:
     limits:
       cpu: "500m"
       memory: "1Gi"
+  livenessProbe:
+    timeoutSeconds: 60
+    periodSeconds: 60
+    failureThreshold: 3
+    initialDelaySeconds: 20
 
 redis:
   persistence:
