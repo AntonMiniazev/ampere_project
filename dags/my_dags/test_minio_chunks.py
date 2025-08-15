@@ -11,7 +11,7 @@ import pendulum
 import time
 from sqlalchemy.engine import Connection
 
-# v2.1
+# v2.2
 # === CONFIG ===
 MSSQL_CONN_ID = "mssql_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
