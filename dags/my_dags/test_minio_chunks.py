@@ -146,7 +146,7 @@ with DAG(
             start = time.perf_counter()  # check
 
             local_path = os.path.join(tmpdir, filename)
-            df = mssql.get_pandas_df(sql)
+            df = pl.read_database(query=sql, connection=mssql)
 
             point = time.perf_counter() - start  # check
             print(f"Extracted from SQL Server in {point:.3f}")
