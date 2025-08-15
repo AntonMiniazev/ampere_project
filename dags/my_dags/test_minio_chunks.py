@@ -29,7 +29,11 @@ default_args = {"owner": "airflow", "retries": 0}
 
 def get_odbc_conn():
     # Rely on ODBC connection + Extra; no driver/connect_kwargs here
-    hook = OdbcHook(odbc_conn_id=MSSQL_CONN_ID)
+    hook = OdbcHook(
+        odbc_conn_id=MSSQL_CONN_ID,
+        driver="ODBC Driver 18 for SQL Server",
+        connect_kwargs={"Encrypt": "no", "TrustServerCertificate": "yes"},
+    )
     return hook.get_conn()
 
 
