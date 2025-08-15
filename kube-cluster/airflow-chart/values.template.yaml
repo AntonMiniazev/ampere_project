@@ -21,12 +21,12 @@ workers:
   keda:
     enabled: true
     minReplicaCount: 2
-    maxReplicaCount: 4
+    maxReplicaCount: 3
     pollingInterval: 30
     cooldownPeriod: 180
   resources:
     requests:
-      cpu: "150m"
+      cpu: "300m"
       memory: "768Mi"
     limits:
       cpu: "500m"
@@ -44,10 +44,10 @@ triggerer:
   resources:
     requests:
       cpu: "200m"
-      memory: "512Mi"
+      memory: "768Mi"
     limits:
       cpu: "500m"
-      memory: "768Mi"
+      memory: "1Gi"
 
 redis:
   persistence:
