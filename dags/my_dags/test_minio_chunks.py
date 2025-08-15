@@ -8,8 +8,9 @@ import polars as pl
 import os
 import tempfile
 import pendulum
+import time
 
-# v1
+# v2
 # === CONFIG ===
 MSSQL_CONN_ID = "mssql_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
@@ -117,12 +118,16 @@ with DAG(
         retry_exponential_backoff=True,
     )
     def export_chunk(prefix: str, chunk: dict) -> str | None:
+        start = time.perf_counter()  # check
         """
         Export a single ID range [start_id, end_id] to one file in MinIO.
         Returns a compact result string "rows=<n>;key=<s3_key>" or None when the slice is empty.
         """
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
+
+        point = time.perf_counter() - start  # check
+        print(f"Connection in {point:.3f}")
 
         start_id, end_id, idx = chunk["start_id"], chunk["end_id"], chunk["idx"]
 
@@ -138,20 +143,38 @@ with DAG(
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            start = time.perf_counter()  # check
+
             local_path = os.path.join(tmpdir, filename)
             df = mssql.get_pandas_df(sql)
+
+            point = time.perf_counter() - start  # check
+            print(f"Extracted from SQL Server in {point:.3f}")
+
+            start = time.perf_counter()  # check
             df = pl.from_pandas(df)
+
+            point = time.perf_counter() - start  # check
+            print(f"Converted from pandas to polars in {point:.3f}")
 
             if df.is_empty():
                 return None
 
+            start = time.perf_counter()  # check
             if FILE_FORMAT == "parquet":
                 df.write_parquet(local_path)
             else:
                 df.write_csv(local_path)
 
+            point = time.perf_counter() - start  # check
+            print(f"Local write in {point:.3f}")
+
+            start = time.perf_counter()  # check
             key = prefix + filename
             s3.load_file(filename=local_path, key=key, bucket_name=BUCKET, replace=True)
+
+            point = time.perf_counter() - start  # check
+            print(f"Loaded to MinIO in {point:.3f}")
 
         return f"rows={len(df)};key={key}"
 
