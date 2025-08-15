@@ -4,7 +4,7 @@ from airflow.decorators import task
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime
-import pandas as pd
+import polars as pl
 import os
 import tempfile
 import pendulum
@@ -69,12 +69,17 @@ with DAG(
             f"WHERE [{ID_COLUMN}] IS NOT NULL;"
         )
         df = mssql.get_pandas_df(sql)
+        df = pl.from_pandas(df)
 
-        if df.empty or pd.isna(df.loc[0, "min_id"]) or pd.isna(df.loc[0, "max_id"]):
+        if (
+            df.is_empty()
+            or df.select("min_id").head(1).item() == None
+            or df.select("max_id").head(1).item() == None
+        ):
             return "EMPTY"
 
-        min_id = int(df.loc[0, "min_id"])
-        max_id = int(df.loc[0, "max_id"])
+        min_id = int(df.select("min_id").head(1).item())
+        max_id = int(df.select("max_id").head(1).item())
         return f"{min_id},{max_id}"
 
     @task
@@ -135,14 +140,15 @@ with DAG(
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = os.path.join(tmpdir, filename)
             df = mssql.get_pandas_df(sql)
+            df = pl.from_pandas(df)
 
-            if df.empty:
+            if df.is_empty():
                 return None
 
             if FILE_FORMAT == "parquet":
-                df.to_parquet(local_path, index=False)
+                df.write_parquet(local_path)
             else:
-                df.to_csv(local_path, index=False)
+                df.write_csv(local_path)
 
             key = prefix + filename
             s3.load_file(filename=local_path, key=key, bucket_name=BUCKET, replace=True)

@@ -26,10 +26,10 @@ workers:
     cooldownPeriod: 180
   resources:
     requests:
-      cpu: "300m"
+      cpu: "150m"
       memory: "768Mi"
     limits:
-      cpu: "700m"
+      cpu: "500m"
       memory: "1536Mi"
 
 config:
@@ -126,10 +126,10 @@ scheduler:
   replicas: 1
   resources:
     requests:
-      cpu: "300m"
-      memory: "512Mi"
+      cpu: "500m"
+      memory: "768Mi"
     limits:
-      cpu: "600m"
+      cpu: "750m"
       memory: "1Gi"
 
 dagProcessor:
