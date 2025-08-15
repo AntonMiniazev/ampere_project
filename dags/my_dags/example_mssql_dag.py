@@ -38,7 +38,7 @@ with DAG(
     # Execute a SQL query to get the latest order
     get_orders = SQLExecuteQueryOperator(
         task_id="get_orders",
-        conn_id="mssql_conn",
+        conn_id="mssql_odbc_conn",
         sql="SELECT TOP 1 * FROM Source.core.orders",
         do_xcom_push=True,
         return_last=True,
