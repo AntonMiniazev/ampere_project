@@ -9,6 +9,7 @@ import os
 import tempfile
 import pendulum
 import time
+from sqlalchemy.engine import Connection
 
 # v2.1
 # === CONFIG ===
@@ -125,6 +126,7 @@ with DAG(
         """
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
         mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
+        engine = mssql.get_sqlalchemy_engine()
 
         point = time.perf_counter() - start  # check
         print(f"Connection in {point:.3f}")
@@ -146,7 +148,8 @@ with DAG(
             start = time.perf_counter()  # check
 
             local_path = os.path.join(tmpdir, filename)
-            df = pl.read_database(query=sql, connection=mssql)
+            with engine.connect() as conn:
+                df = pl.read_database(query=sql, connection=conn)
 
             point = time.perf_counter() - start  # check
             print(f"Extracted from SQL Server in {point:.3f}")
