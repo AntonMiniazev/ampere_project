@@ -1,7 +1,6 @@
-# All comments inside code are in English
 from airflow import DAG
 from airflow.decorators import task
-from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
+from airflow.providers.odbc.hooks.odbc import OdbcHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime
 import polars as pl
@@ -10,10 +9,11 @@ import tempfile
 import pendulum
 import time
 from sqlalchemy.engine import Connection
+from contextlib import closing
 
-# v2.2
+# v2.4
 # === CONFIG ===
-MSSQL_CONN_ID = "mssql_conn"  # Airflow connection to MS SQL
+MSSQL_CONN_ID = "mssql_odbc_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
 BUCKET = "ampere-prod-raw"
 DB = "Source"
@@ -25,6 +25,22 @@ FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
 default_args = {"owner": "airflow", "retries": 0}
+
+
+def get_odbc_conn():
+    # Pass driver explicitly to avoid relying on providers.odbc.allow_driver_in_extra
+    hook = OdbcHook(
+        odbc_conn_id=MSSQL_CONN_ID,
+        driver="ODBC Driver 18 for SQL Server",
+        connect_kwargs={
+            "Encrypt": "yes",
+            "TrustServerCertificate": "yes",  # ok for internal cluster; tighten if needed
+            # "ApplicationIntent": "ReadOnly",  # optional
+            # "Autocommit": True,               # uncomment if you prefer autocommit
+        },
+    )
+    return hook.get_conn()
+
 
 with DAG(
     dag_id="export_order_product_full_parallel",
@@ -62,7 +78,7 @@ with DAG(
           - "EMPTY" if no usable rows
           - "min,max" otherwise
         """
-        mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
+
         sql = (
             f"SELECT "
             f"MIN(CAST([{ID_COLUMN}] AS BIGINT)) AS min_id, "
@@ -70,8 +86,8 @@ with DAG(
             f"FROM [{DB}].[{SCHEMA}].[{TABLE}] "
             f"WHERE [{ID_COLUMN}] IS NOT NULL;"
         )
-        df = mssql.get_pandas_df(sql)
-        df = pl.from_pandas(df)
+        with closing(get_odbc_conn()) as conn:
+            df = pl.read_database(query=sql, connection=conn)
 
         if (
             df.is_empty()
@@ -125,8 +141,6 @@ with DAG(
         Returns a compact result string "rows=<n>;key=<s3_key>" or None when the slice is empty.
         """
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
-        mssql = MsSqlHook(mssql_conn_id=MSSQL_CONN_ID)
-        engine = mssql.get_sqlalchemy_engine()
 
         point = time.perf_counter() - start  # check
         print(f"Connection in {point:.3f}")
@@ -148,7 +162,8 @@ with DAG(
             start = time.perf_counter()  # check
 
             local_path = os.path.join(tmpdir, filename)
-            with engine.connect() as conn:
+
+            with closing(get_odbc_conn()) as conn:
                 df = pl.read_database(query=sql, connection=conn)
 
             point = time.perf_counter() - start  # check
