@@ -10,7 +10,7 @@ import tempfile
 import pendulum
 import time
 
-# v2
+# v2.1
 # === CONFIG ===
 MSSQL_CONN_ID = "mssql_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
@@ -150,12 +150,6 @@ with DAG(
 
             point = time.perf_counter() - start  # check
             print(f"Extracted from SQL Server in {point:.3f}")
-
-            start = time.perf_counter()  # check
-            df = pl.from_pandas(df)
-
-            point = time.perf_counter() - start  # check
-            print(f"Converted from pandas to polars in {point:.3f}")
 
             if df.is_empty():
                 return None
