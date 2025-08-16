@@ -90,7 +90,8 @@ with DAG(
             f"FROM [{DB}].[{SCHEMA}].[{TABLE}] "
             f"WHERE [{ID_COLUMN}] IS NOT NULL;"
         )
-        with closing(get_odbc_conn()) as conn:
+        engine = get_sa_engine_from_conn(MSSQL_CONN_ID)
+        with engine.connect().execution_options() as conn:
             df = pl.read_database(query=sql, connection=conn)
 
         if (
