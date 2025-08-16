@@ -10,6 +10,8 @@ import pendulum
 import time
 from sqlalchemy.engine import Connection
 from contextlib import closing
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # v2.6
 # === CONFIG ===
@@ -35,6 +37,42 @@ def get_odbc_conn():
         connect_kwargs={"Encrypt": "no", "TrustServerCertificate": "yes"},
     )
     return hook.get_conn()
+
+
+def write_query_to_parquet_streaming(
+    sql: str, local_path: str, fetch_size: int = 50_000
+) -> int:
+    # Returns total rows written
+    total = 0
+    with closing(get_odbc_conn()) as conn:
+        cur = conn.cursor()
+        cur.execute(sql)
+
+        # Extract column names from cursor description
+        cols = [d[0] for d in cur.description]
+
+        writer = None
+        try:
+            while True:
+                rows = cur.fetchmany(fetch_size)
+                if not rows:
+                    break
+                # Build Arrow table for this batch
+                # Note: build Polars then Arrow if you prefer Polars dtypes control:
+                # batch_df = pl.DataFrame(rows, schema=cols)
+                # table = batch_df.to_arrow()
+                table = pa.Table.from_pylist([dict(zip(cols, r)) for r in rows])
+
+                if writer is None:
+                    writer = pq.ParquetWriter(
+                        local_path, table.schema, compression="zstd"
+                    )
+                writer.write_table(table)
+                total += table.num_rows
+        finally:
+            if writer is not None:
+                writer.close()
+    return total
 
 
 with DAG(
@@ -153,36 +191,14 @@ with DAG(
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            start = time.perf_counter()  # check
-
             local_path = os.path.join(tmpdir, filename)
 
-            with closing(get_odbc_conn()) as conn:
-                df = pl.read_database(query=sql, connection=conn)
-
-            point = time.perf_counter() - start  # check
-            print(f"Extracted from SQL Server in {point:.3f}")
-
-            if df.is_empty():
+            rows = write_query_to_parquet_streaming(sql, local_path, fetch_size=50_000)
+            if rows == 0:
                 return None
-
-            start = time.perf_counter()  # check
-            if FILE_FORMAT == "parquet":
-                df.write_parquet(local_path)
-            else:
-                df.write_csv(local_path)
-
-            point = time.perf_counter() - start  # check
-            print(f"Local write in {point:.3f}")
-
-            start = time.perf_counter()  # check
             key = prefix + filename
             s3.load_file(filename=local_path, key=key, bucket_name=BUCKET, replace=True)
-
-            point = time.perf_counter() - start  # check
-            print(f"Loaded to MinIO in {point:.3f}")
-
-        return f"rows={len(df)};key={key}"
+        return f"rows={rows};key={key}"
 
     @task
     def summarize(results: list[str] | None, prefix: str) -> None:
