@@ -10,8 +10,9 @@ import pendulum
 import time
 from sqlalchemy.engine import Connection
 from contextlib import closing
+from db.db_io import exec_sql
 
-# v2.6
+# v3
 # === CONFIG ===
 MSSQL_CONN_ID = "mssql_odbc_conn"  # Airflow connection to MS SQL
 MINIO_CONN_ID = "minio_conn"  # Airflow connection of type S3 (MinIO endpoint)
@@ -158,8 +159,8 @@ with DAG(
 
             local_path = os.path.join(tmpdir, filename)
 
-            with closing(get_odbc_conn()) as conn:
-                df = pl.read_database(query=sql, connection=conn)
+            df = exec_sql(sql)
+            df = pl.from_pandas(df)
 
             point = time.perf_counter() - start  # check
             print(f"Extracted from SQL Server in {point:.3f}")
