@@ -20,7 +20,7 @@ DB = "Source"
 SCHEMA = "test"
 TABLE = "order_product_small"
 ID_COLUMN = "order_id"  # Integer PK/identity column for deterministic chunking
-CHUNK_SIZE = 10000  # ~10k orders per chunk
+CHUNK_SIZE = 15000  # ~15k orders per chunk
 FILE_FORMAT = "parquet"  # 'parquet' or 'csv'
 TIMEZONE = "Europe/Belgrade"
 
@@ -150,7 +150,6 @@ with DAG(
         sql = (
             f"SELECT * FROM [{DB}].[{SCHEMA}].[{TABLE}] "
             f"WHERE [{ID_COLUMN}] IS NOT NULL AND [{ID_COLUMN}] BETWEEN {start_id} AND {end_id} "
-            f"ORDER BY [{ID_COLUMN}] ASC"
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
