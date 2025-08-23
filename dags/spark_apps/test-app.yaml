@@ -9,7 +9,7 @@ spec:
   pythonVersion: "3"
   mode: cluster
   image: an7on/ampere-spark-job-test
-  imagePullPolicy: IfNotPresent
+  imagePullPolicy: Always
   mainApplicationFile: local:///apps/test_spark_app.py
   sparkVersion: "4.0.0"
 
