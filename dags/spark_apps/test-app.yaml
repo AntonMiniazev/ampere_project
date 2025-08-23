@@ -13,20 +13,6 @@ spec:
   mainApplicationFile: local:///apps/test_spark_app.py
   sparkVersion: "4.0.0"
 
-  # Prefer numeric overrides via Hadoop conf (applies before spark.*)
-  hadoopConf:
-    fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
-    fs.s3a.endpoint: "http://minio:9000"
-    fs.s3a.path.style.access: "true"
-    fs.s3a.connection.ssl.enabled: "false"
-    fs.s3a.connection.timeout: "60000"
-    fs.s3a.connection.establish.timeout: "5000"
-    fs.s3a.socket.timeout: "60000"
-    fs.s3a.retry.interval: "5000"
-    fs.s3a.attempts.maximum: "5"
-    fs.s3a.threads.keepalivetime: "60000"
-    fs.s3a.aws.credentials.provider: "com.amazonaws.auth.EnvironmentVariableCredentialsProvider"
-
   sparkConf:
     spark.driver.extraClassPath: "/opt/spark/extra-jars/*"
     spark.executor.extraClassPath: "/opt/spark/extra-jars/*"
