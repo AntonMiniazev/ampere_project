@@ -13,7 +13,7 @@ from airflow.providers.cncf.kubernetes.sensors.spark_kubernetes import (
 # Points to /opt/airflow/dags/repo/dags
 BASE = Path(__file__).resolve().parents[1]
 # New location without the "k8s" level
-APP_FILE = BASE / "spark-apps" / "test-app.yaml"
+APP_FILE = BASE / "spark_apps" / "test-app.yaml"
 
 with DAG(
     dag_id="spark_operator_test_app",
