@@ -8,7 +8,7 @@ spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  image: an7on/ampere-spark-job-test
+  image: an7on/ampere-spark-base
   imagePullPolicy: Always
   mainApplicationFile: local:///apps/test_spark_app.py
   sparkVersion: "4.0.0"
