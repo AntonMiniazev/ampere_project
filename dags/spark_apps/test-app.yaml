@@ -24,6 +24,7 @@ spec:
     fs.s3a.socket.timeout: "60000"
     fs.s3a.retry.interval: "5000"
     fs.s3a.attempts.maximum: "5"
+    fs.s3a.threads.keepalivetime: "60000"
 
   sparkConf:
     spark.driver.extraClassPath: "/opt/spark/extra-jars/*"
