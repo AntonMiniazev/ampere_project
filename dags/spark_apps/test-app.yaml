@@ -2,60 +2,64 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: test-app
+  name: test-app-{{ ds_nodash | lower | replace('-', '')[:8] }}
   namespace: ampere
 spec:
-  sparkVersion: "4.0.0"          # <- required by Spark Operator
   type: Python
   pythonVersion: "3"
   mode: cluster
-
-  image: "an7on/ampere-spark-job-test"
+  image: an7on/ampere-spark-job-test
   imagePullPolicy: IfNotPresent
-  mainApplicationFile: "local:///apps/test_spark_app.py"
+  mainApplicationFile: local:///apps/test_spark_app.py
+  sparkVersion: "4.0.0"
+
+  # Prefer numeric overrides via Hadoop conf (applies before spark.*)
+  hadoopConf:
+    fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    fs.s3a.endpoint: "http://minio:9000"
+    fs.s3a.path.style.access: "true"
+    fs.s3a.connection.ssl.enabled: "false"
+
+    # --- Force all timeout/retry durations to be numeric (milliseconds) ---
+    fs.s3a.connection.timeout: "60000"            # 60s
+    fs.s3a.connection.establish.timeout: "5000"   # 5s
+    fs.s3a.socket.timeout: "60000"                # 60s
+    fs.s3a.retry.interval: "5000"                 # 5s
+    fs.s3a.attempts.maximum: "5"
 
   sparkConf:
-    spark.hadoop.fs.s3a.endpoint: "http://minio:9000"
-    spark.hadoop.fs.s3a.path.style.access: "true"
-    spark.hadoop.fs.s3a.connection.ssl.enabled: "false"
-    spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
-    # --- Force numeric values to avoid "60s" parsing issues ---
-    spark.hadoop.fs.s3a.connection.timeout: "60000"            # 60s in ms
-    spark.hadoop.fs.s3a.connection.establish.timeout: "5000"   # 5s in ms
-    spark.hadoop.fs.s3a.attempts.maximum: "5"
-    # (optional but helpful)
-    spark.hadoop.fs.s3a.fast.upload: "true"
     spark.driver.extraClassPath: "/opt/spark/extra-jars/*"
     spark.executor.extraClassPath: "/opt/spark/extra-jars/*"
 
-  nodeSelector:
-    kubernetes.io/hostname: ampere-k8s-node3
-
   driver:
     cores: 1
-    memory: "1g"
-    serviceAccount: "spark"
-    envVars:
-      MINIO_TEST_BUCKET: "ampere-prod-raw"
-      MINIO_ENDPOINT: "http://minio:9000"
-      MINIO_USE_SSL: "false"
+    memory: 1g
+    serviceAccount: spark
+    securityContext:
+      runAsUser: 185
+      runAsNonRoot: true
+    env:
+      - name: MINIO_ENDPOINT
+        value: "http://minio:9000"
+      - name: MINIO_TEST_BUCKET
+        value: "ampere-prod-raw"
+      - name: MINIO_USE_SSL
+        value: "false"
     envSecretKeyRefs:
-      AWS_ACCESS_KEY_ID:     { name: minio-creds, key: accesskey }
-      AWS_SECRET_ACCESS_KEY: { name: minio-creds, key: secretkey }
-    securityContext: { runAsUser: 185, runAsNonRoot: true }
-
+      AWS_ACCESS_KEY_ID:
+        name: minio-creds
+        key: accesskey
+      AWS_SECRET_ACCESS_KEY:
+        name: minio-creds
+        key: secretkey
   executor:
     instances: 2
     cores: 1
-    memory: "1g"
-    serviceAccount: "spark"
-    envVars:
-      MINIO_TEST_BUCKET: "ampere-prod-raw"
-      MINIO_ENDPOINT: "http://minio:9000"
-      MINIO_USE_SSL: "false"
-    envSecretKeyRefs:
-      AWS_ACCESS_KEY_ID:     { name: minio-creds, key: accesskey }
-      AWS_SECRET_ACCESS_KEY: { name: minio-creds, key: secretkey }
-    securityContext: { runAsUser: 185, runAsNonRoot: true }
+    memory: 1g
+    serviceAccount: spark
+    securityContext:
+      runAsUser: 185
+      runAsNonRoot: true
 
-  restartPolicy: { type: Never }
+  nodeSelector:
+    kubernetes.io/hostname: ampere-k8s-node3
