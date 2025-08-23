@@ -2,13 +2,13 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: test-app-{{ ds_nodash | lower | replace('-', '')[:8] }}
+  name: test-app-{{ ts_nodash | lower }}
   namespace: ampere
 spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  image: an7on/ampere-spark-job-test
+  image: an7on/ampere-spark-job-test:0.1.0
   imagePullPolicy: IfNotPresent
   mainApplicationFile: local:///apps/test_spark_app.py
   sparkVersion: "4.0.0"
@@ -19,12 +19,10 @@ spec:
     fs.s3a.endpoint: "http://minio:9000"
     fs.s3a.path.style.access: "true"
     fs.s3a.connection.ssl.enabled: "false"
-
-    # --- Force all timeout/retry durations to be numeric (milliseconds) ---
-    fs.s3a.connection.timeout: "60000"            # 60s
-    fs.s3a.connection.establish.timeout: "5000"   # 5s
-    fs.s3a.socket.timeout: "60000"                # 60s
-    fs.s3a.retry.interval: "5000"                 # 5s
+    fs.s3a.connection.timeout: "60000"
+    fs.s3a.connection.establish.timeout: "5000"
+    fs.s3a.socket.timeout: "60000"
+    fs.s3a.retry.interval: "5000"
     fs.s3a.attempts.maximum: "5"
 
   sparkConf:
@@ -52,6 +50,7 @@ spec:
       AWS_SECRET_ACCESS_KEY:
         name: minio-creds
         key: secretkey
+
   executor:
     instances: 2
     cores: 1
