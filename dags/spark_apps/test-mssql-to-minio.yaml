@@ -15,6 +15,8 @@ spec:
         value: "http://minio:9000"
       - name: MINIO_TEST_BUCKET
         value: "ampere-prod-raw"
+      - name: NUM_PARTITIONS
+        value: "10"        
     envSecretKeyRefs:
       AWS_ACCESS_KEY_ID:
         name: minio-creds
@@ -29,7 +31,7 @@ spec:
     instances: 2
     cores: 4
     coreRequest: "400m"
-    coreLimit: "800m"
+    coreLimit: "1000m"
     memory: 1g
     serviceAccount: spark
     env:
@@ -52,7 +54,7 @@ spec:
   type: Python
   mode: cluster
   image: an7on/ampere-mssql-minio
-  imagePullPolicy: Always
+  imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark/work-dir/test_mssql_to_minio.py"
   sparkVersion: "4.0.0"
 
@@ -62,6 +64,5 @@ spec:
       - local:///opt/spark/work-dir/dependency/hadoop-aws-3.4.1.jar
       - local:///opt/spark/work-dir/dependency/wildfly-openssl-2.2.5.Final.jar
       - local:///opt/spark/work-dir/dependency/mssql-jdbc-13.2.0.jre11.jar
-      - local:///opt/spark/work-dir/dependency/slf4j-simple-2.0.17.jar
   nodeSelector:
     kubernetes.io/hostname: ampere-k8s-node3
