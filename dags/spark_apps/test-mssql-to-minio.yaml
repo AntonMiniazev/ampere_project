@@ -9,7 +9,7 @@ spec:
   driver:
     cores: 4
     coreRequest: "400m"
-    coreLimit: "800m"
+    coreLimit: "1000m"
     memory: 1g
     serviceAccount: spark
     env:
@@ -33,7 +33,7 @@ spec:
     instances: 2
     cores: 4
     coreRequest: "400m"
-    coreLimit: "1000m"
+    coreLimit: "1100m"
     memory: 1g
     serviceAccount: spark
     env:
