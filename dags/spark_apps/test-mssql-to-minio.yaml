@@ -8,8 +8,8 @@ spec:
     "spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version": "2"
   driver:
     cores: 4
-    coreRequest: "400m"
-    coreLimit: "1000m"
+    coreRequest: "600m"
+    coreLimit: "1400m"
     memory: 1g
     serviceAccount: spark
     env:
@@ -30,10 +30,10 @@ spec:
         name: mssql-sa-secret
         key: SA_PASSWORD        
   executor:
-    instances: 1
+    instances: 2
     cores: 4
     coreRequest: "400m"
-    coreLimit: "1500m"
+    coreLimit: "1100m"
     memory: 1g
     serviceAccount: spark
     env:
