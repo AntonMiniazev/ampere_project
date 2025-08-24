@@ -28,7 +28,7 @@ with DAG(
         application_file="spark_apps/test-app-python.yaml",
         delete_on_termination=True,
         do_xcom_push=False,
-        get_logs=False,
+        get_logs=True,
     )
 
     submit
