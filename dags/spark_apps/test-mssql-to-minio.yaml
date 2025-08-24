@@ -21,6 +21,9 @@ spec:
       AWS_SECRET_ACCESS_KEY:
         name: minio-creds
         key: secretkey
+      MSSQL_PASS:
+        name: mssql-sa-secret
+        key: SA_PASSWORD        
   executor:
     instances: 2
     cores: 1
