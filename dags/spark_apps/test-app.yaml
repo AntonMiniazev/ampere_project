@@ -43,15 +43,15 @@ spec:
   image: an7on/ampere-spark-scala
   imagePullPolicy: Always
   mainClass: Assortment
-  mainApplicationFile: local:///apps/test-scala.scala
+  mainApplicationFile: local:///apps/test-scala.jar
   sparkVersion: "4.0.0"
 
   sparkConf:
 
   deps:
     jars:
-      - local:///opt/spark/work-dir/target/dependency/bundle-2.32.29.jar
-      - local:///opt/spark/work-dir/target/dependency/hadoop-aws-3.4.1.jar
-      - local:///opt/spark/work-dir/target/dependency/wildfly-openssl-2.2.5.Final.jar
+      - local:///opt/spark/work-dir/dependency/bundle-2.32.29.jar
+      - local:///opt/spark/work-dir/dependency/hadoop-aws-3.4.1.jar
+      - local:///opt/spark/work-dir/dependency/wildfly-openssl-2.2.5.Final.jar
   nodeSelector:
     kubernetes.io/hostname: ampere-k8s-node3
