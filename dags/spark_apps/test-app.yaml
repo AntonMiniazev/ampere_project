@@ -5,7 +5,7 @@ metadata:
   namespace: ampere
 spec:
   driver:
-    cores: 500m
+    cores: 0.4
     memory: 768m
     serviceAccount: spark
     env:
@@ -22,7 +22,7 @@ spec:
         key: secretkey
   executor:
     instances: 1
-    cores: 500m
+    cores: 0.4
     memory: 768m
     serviceAccount: spark
     env:
