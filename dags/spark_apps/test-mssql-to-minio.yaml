@@ -30,10 +30,10 @@ spec:
         name: mssql-sa-secret
         key: SA_PASSWORD        
   executor:
-    instances: 2
+    instances: 1
     cores: 4
     coreRequest: "400m"
-    coreLimit: "1100m"
+    coreLimit: "1500m"
     memory: 1g
     serviceAccount: spark
     env:
