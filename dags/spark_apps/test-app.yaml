@@ -5,32 +5,15 @@ metadata:
   name: test-app-{{ ts_nodash | lower }}
   namespace: ampere
 spec:
-  type: Python
-  pythonVersion: "3"
-  mode: cluster
-  image: an7on/ampere-spark-base
-  imagePullPolicy: Always
-  mainApplicationFile: local:///apps/test_spark_app.py
-  sparkVersion: "4.0.0"
-
-  sparkConf:
-    spark.driver.extraClassPath: "/opt/spark/extra-jars/*"
-    spark.executor.extraClassPath: "/opt/spark/extra-jars/*"
-
   driver:
     cores: 1
     memory: 1g
     serviceAccount: spark
-    securityContext:
-      runAsUser: 185
-      runAsNonRoot: true
     env:
       - name: MINIO_ENDPOINT
         value: "http://minio:9000"
       - name: MINIO_TEST_BUCKET
         value: "ampere-prod-raw"
-      - name: MINIO_USE_SSL
-        value: "false"
     envSecretKeyRefs:
       AWS_ACCESS_KEY_ID:
         name: minio-creds
@@ -38,15 +21,37 @@ spec:
       AWS_SECRET_ACCESS_KEY:
         name: minio-creds
         key: secretkey
-
   executor:
     instances: 2
     cores: 1
     memory: 1g
     serviceAccount: spark
-    securityContext:
-      runAsUser: 185
-      runAsNonRoot: true
+    env:
+      - name: MINIO_ENDPOINT
+        value: "http://minio:9000"
+      - name: MINIO_TEST_BUCKET
+        value: "ampere-prod-raw"
+    envSecretKeyRefs:
+      AWS_ACCESS_KEY_ID:
+        name: minio-creds
+        key: accesskey
+      AWS_SECRET_ACCESS_KEY:
+        name: minio-creds
+        key: secretkey
+  type: Scala
+  mode: cluster
+  image: an7on/ampere-spark-scala
+  imagePullPolicy: Always
+  mainClass: Assortment
+  mainApplicationFile: local:///apps/test-scala.scala
+  sparkVersion: "4.0.0"
 
+  sparkConf:
+
+  deps:
+    jars:
+      - local:///opt/spark/work-dir/target/dependency/bundle-2.24.6.jar
+      - local:///opt/spark/work-dir/target/dependency/hadoop-aws-3.4.1.jar
+      - local:///opt/spark/work-dir/target/dependency/wildfly-openssl-1.1.3.Final.jar
   nodeSelector:
     kubernetes.io/hostname: ampere-k8s-node3
