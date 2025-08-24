@@ -4,6 +4,12 @@ metadata:
   name: test-app-{{ ts_nodash | lower }}
   namespace: ampere
 spec:
+  sparkConf:
+    "spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version": "2"
+    "spark.sql.parquet.output.committer.class": "org.apache.hadoop.fs.s3a.commit.S3ACommitter"
+    "spark.hadoop.fs.s3a.committer.name": "directory"
+    "spark.hadoop.fs.s3a.committer.staging.unique-filenames": "true"
+    "spark.hadoop.fs.s3a.committer.staging.tmp.path": "/tmp/s3a-committer"
   driver:
     cores: 4
     coreRequest: "400m"
@@ -16,7 +22,7 @@ spec:
       - name: MINIO_TEST_BUCKET
         value: "ampere-prod-raw"
       - name: NUM_PARTITIONS
-        value: "14"        
+        value: "6"        
     envSecretKeyRefs:
       AWS_ACCESS_KEY_ID:
         name: minio-creds
