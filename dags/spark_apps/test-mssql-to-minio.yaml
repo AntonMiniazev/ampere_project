@@ -58,6 +58,6 @@ spec:
       - local:///opt/spark/work-dir/dependency/hadoop-aws-3.4.1.jar
       - local:///opt/spark/work-dir/dependency/wildfly-openssl-2.2.5.Final.jar
       - local:///opt/spark/work-dir/dependency/mssql-jdbc-13.2.0.jre11.jar
-      - local:///opt/spark/work-dir/dependency/slf4j-simple-2.0.17
+      - local:///opt/spark/work-dir/dependency/slf4j-simple-2.0.17.jar
   nodeSelector:
     kubernetes.io/hostname: ampere-k8s-node3
