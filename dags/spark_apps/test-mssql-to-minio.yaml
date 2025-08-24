@@ -54,7 +54,7 @@ spec:
   type: Python
   mode: cluster
   image: an7on/ampere-mssql-minio
-  imagePullPolicy: Always
+  imagePullPolicy: IfNotPresent
   mainApplicationFile: "local:///opt/spark/work-dir/test_mssql_to_minio.py"
   sparkVersion: "4.0.0"
 
