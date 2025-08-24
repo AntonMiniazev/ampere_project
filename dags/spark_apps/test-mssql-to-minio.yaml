@@ -36,7 +36,7 @@ spec:
       - name: MINIO_TEST_BUCKET
         value: "ampere-prod-raw"
       - name: NUM_PARTITIONS
-        value: 10
+        value: "10"
     envSecretKeyRefs:
       AWS_ACCESS_KEY_ID:
         name: minio-creds
