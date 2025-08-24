@@ -6,10 +6,6 @@ metadata:
 spec:
   sparkConf:
     "spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version": "2"
-    "spark.sql.parquet.output.committer.class": "org.apache.hadoop.fs.s3a.commit.S3ACommitter"
-    "spark.hadoop.fs.s3a.committer.name": "directory"
-    "spark.hadoop.fs.s3a.committer.staging.unique-filenames": "true"
-    "spark.hadoop.fs.s3a.committer.staging.tmp.path": "/tmp/s3a-committer"
   driver:
     cores: 4
     coreRequest: "400m"
