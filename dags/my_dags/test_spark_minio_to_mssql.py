@@ -5,14 +5,11 @@ from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
-from airflow.providers.cncf.kubernetes.sensors.spark_kubernetes import (
-    SparkKubernetesSensor,
-)
 
 BASE = Path(__file__).resolve().parents[1]
 
 with DAG(
-    dag_id="spark_operator_test_app",
+    dag_id="test_spark_minio_to_mssql",
     description="Submit SparkApplication via Spark Operator and wait for completion.",
     start_date=datetime(2025, 8, 1),
     schedule=None,
@@ -25,7 +22,7 @@ with DAG(
     submit = SparkKubernetesOperator(
         task_id="submit_spark_app",
         namespace="ampere",
-        application_file="spark_apps/test-app-python.yaml",
+        application_file="spark_apps/test-mssql-to-minio.yaml",
         delete_on_termination=True,
         do_xcom_push=False,
         get_logs=True,

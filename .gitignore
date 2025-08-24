@@ -22,7 +22,6 @@ secret_enc/
 .secret_enc/
 deployment/sql_scripts/
 kube-cluster copy/
-deployment_old/
 Docker_image/
 other/
 spark/

@@ -52,5 +52,6 @@ spec:
       - local:///opt/spark/work-dir/target/dependency/bundle-2.32.29.jar
       - local:///opt/spark/work-dir/target/dependency/hadoop-aws-3.4.1.jar
       - local:///opt/spark/work-dir/target/dependency/wildfly-openssl-2.2.5.Final.jar
+      - local:///opt/spark/work-dir/target/dependency/mssql-jdbc-13.2.0.jre11.jar
   nodeSelector:
     kubernetes.io/hostname: ampere-k8s-node3
