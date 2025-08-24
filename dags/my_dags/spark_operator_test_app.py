@@ -27,14 +27,14 @@ with DAG(
         namespace="ampere",
         application_file="spark_apps/test-app-python.yaml",
         delete_on_termination=False,
-        do_xcom_push=False,
-        get_logs=True,
+        do_xcom_push=True,
+        get_logs=False,
     )
 
     wait_done = SparkKubernetesSensor(
         task_id="wait_spark_app_succeeded",
         namespace="ampere",
-        application_name="{{ 'test-app-' ~ ts_nodash | lower }}",
+        application_name="{{ ti.xcom_pull(task_ids='submit_spark_app')['metadata']['name'] }}",
         attach_log=True,
         poke_interval=15,
         timeout=60 * 60,
