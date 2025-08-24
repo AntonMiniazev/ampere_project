@@ -9,7 +9,7 @@ from airflow.providers.cncf.kubernetes.sensors.spark_kubernetes import (
     SparkKubernetesSensor,
 )
 
-BASE = Path(__file__).resolve().parents[1]  # /opt/airflow/dags/repo/dags
+BASE = Path(__file__).resolve().parents[1]
 
 with DAG(
     dag_id="spark_operator_test_app",
@@ -20,17 +20,24 @@ with DAG(
     default_args={"owner": "ampere", "retries": 0},
     dagrun_timeout=timedelta(hours=2),
     tags=["spark", "operator", "minio"],
-    # Important: let Jinja look both in /dags and in /dags/spark_apps
     template_searchpath=[str(BASE), str(BASE / "spark_apps")],
 ) as dag:
     submit = SparkKubernetesOperator(
         task_id="submit_spark_app",
         namespace="ampere",
-        # Relative to template_searchpath
         application_file="spark_apps/test-app-python.yaml",
         delete_on_termination=False,
-        do_xcom_push=True,
+        do_xcom_push=False,
         get_logs=True,
     )
 
-    submit
+    wait_done = SparkKubernetesSensor(
+        task_id="wait_spark_app_succeeded",
+        namespace="ampere",
+        application_name="{{ 'test-app-' ~ ts_nodash | lower }}",
+        attach_log=True,
+        poke_interval=15,
+        timeout=60 * 60,
+    )
+
+    submit >> wait_done
