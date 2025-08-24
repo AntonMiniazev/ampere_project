@@ -44,7 +44,7 @@ spec:
   image: an7on/ampere-spark-scala
   imagePullPolicy: Always
   mainClass: Assortment
-  mainApplicationFile: local:///opt/spark/work-dir/target/test_spark_app.py
+  mainApplicationFile: "local:///opt/spark/work-dir/test_spark_app.py"
   sparkVersion: "4.0.0"
 
   deps:
