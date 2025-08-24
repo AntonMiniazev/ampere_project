@@ -1,0 +1,56 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: test-app-{{ ts_nodash | lower }}
+  namespace: ampere
+spec:
+  driver:
+    cores: 1
+    coreRequest: "400m"
+    memory: 768m
+    serviceAccount: spark
+    env:
+      - name: MINIO_ENDPOINT
+        value: "http://minio:9000"
+      - name: MINIO_TEST_BUCKET
+        value: "ampere-prod-raw"
+    envSecretKeyRefs:
+      AWS_ACCESS_KEY_ID:
+        name: minio-creds
+        key: accesskey
+      AWS_SECRET_ACCESS_KEY:
+        name: minio-creds
+        key: secretkey
+  executor:
+    instances: 1
+    cores: 1
+    coreRequest: "400m"
+    memory: 768m
+    serviceAccount: spark
+    env:
+      - name: MINIO_ENDPOINT
+        value: "http://minio:9000"
+      - name: MINIO_TEST_BUCKET
+        value: "ampere-prod-raw"
+    envSecretKeyRefs:
+      AWS_ACCESS_KEY_ID:
+        name: minio-creds
+        key: accesskey
+      AWS_SECRET_ACCESS_KEY:
+        name: minio-creds
+        key: secretkey
+  type: Python
+  mode: cluster
+  image: an7on/ampere-spark-scala
+  imagePullPolicy: Always
+  mainClass: Assortment
+  mainApplicationFile: local:///opt/spark/work-dir/target/test_spark_app.py
+  sparkVersion: "4.0.0"
+
+  deps:
+    jars:
+      - local:///opt/spark/work-dir/target/dependency/bundle-2.32.29.jar
+      - local:///opt/spark/work-dir/target/dependency/hadoop-aws-3.4.1.jar
+      - local:///opt/spark/work-dir/target/dependency/wildfly-openssl-2.2.5.Final.jar
+  nodeSelector:
+    kubernetes.io/hostname: ampere-k8s-node3
