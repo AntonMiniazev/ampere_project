@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dbt-run-hello
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: ampere-k8s-node2
+      restartPolicy: Never
+      containers:
+      - name: dbt
+        image: python:3.11-slim
+        command: ["bash","-lc"]
+        args:
+          - |
+            set -eux
+            apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+            pip install --no-cache-dir "dbt-duckdb==1.9.4" "duckdb==1.3.2"
+            dbt run --project-dir /workspace/dbt_project/dbt --profiles-dir /workspace/dbt_work/profiles
+            python - <<'PY'
+            import duckdb
+            con = duckdb.connect('/workspace/dbt_data/warehouse.duckdb')
+            print("[TABLES]", con.sql("show tables").fetchall())
+            print("[SELECT hello]", con.sql("select * from main.hello").fetchall())
+            PY
+        env:
+          - name: DBT_TARGET_PATH
+            value: /workspace/dbt_work/target
+          - name: DBT_LOG_PATH
+            value: /workspace/dbt_work/logs
+          - name: DBT_PACKAGES_INSTALL_PATH
+            value: /workspace/dbt_work/dbt_packages
+        volumeMounts:
+          - name: dbt-code
+            mountPath: /workspace/dbt_project
+            readOnly: true
+          - name: dbt-data
+            mountPath: /workspace/dbt_work
+            subPath: work
+          - name: dbt-data
+            mountPath: /workspace/dbt_data
+            subPath: data
+      volumes:
+        - name: dbt-code
+          persistentVolumeClaim:
+            claimName: dbt-code-pvc
+        - name: dbt-data
+          persistentVolumeClaim:
+            claimName: dbt-data-pvc
