@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dbt-code-tools
+  namespace: ampere
+  labels: { app: dbt-code-tools }
+spec:
+  nodeSelector: { kubernetes.io/hostname: ampere-k8s-node2 }
+  containers:
+  - name: git-shell
+    image: alpine/git:latest
+    command: ["sh","-lc","sleep 365d"]
+    volumeMounts:
+      - name: dbt-code
+        mountPath: /workspace/dbt_project
+      - name: ssh
+        mountPath: /root/.ssh/id_ed25519
+        subPath: ssh-privatekey
+        readOnly: true
+      - name: ssh
+        mountPath: /root/.ssh/known_hosts
+        subPath: known_hosts
+        readOnly: true
+  volumes:
+    - name: dbt-code
+      persistentVolumeClaim: { claimName: dbt-code-pvc }
+    - name: ssh
+      secret:
+        secretName: dbt-git-ssh
+        defaultMode: 0400

@@ -60,7 +60,7 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
 
   echo "$WEB_KEY" > /home/vagrant/my-airflow-secret.txt
 
-  kubectl -n ampere create secret generic my-airflow-secret \
+  kubectl -n $PROJECT_NAME create secret generic my-airflow-secret \
   --from-literal=webserver-secret-key="$WEB_KEY" \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -121,5 +121,98 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
     -f credentials.yaml \
     --timeout 10m0s \
     --debug
+
+  # dbt+DuckDB on node2
+  cd /home/vagrant/dbt-chart
+
+  kubectl apply -f dbt-code-pvc.yaml
+  kubectl apply -f dbt-data-pvc.yaml  
+
+  kubectl apply -f dbt-code-tools.yaml
+  kubectl apply -f dbt-data-tools.yaml
+
+  kubectl -n $PROJECT_NAME get pod dbt-code-tools dbt-data-tools
+
+  wait_pod_ready () {
+    local pod="$1"
+    echo "Waiting Pod ${pod} to be Ready..."
+    if ! kubectl -n "$PROJECT_NAME" wait --for=condition=Ready "pod/${pod}" --timeout=180s; then
+      echo "Pod ${pod} is not Ready. Diagnostics:"
+      kubectl -n "$PROJECT_NAME" get pod "${pod}" -o wide || true
+      kubectl -n "$PROJECT_NAME" describe pod "${pod}" || true
+      # Частые причины: nodeSelector не совпал, нет imagePull/нет сети, или Claim не смонтировался.
+      exit 1
+    fi
+  }
+  wait_pod_ready dbt-code-tools
+  wait_pod_ready dbt-data-tools
+
+  kubectl -n $PROJECT_NAME exec -it dbt-code-tools -- sh -lc '
+  set -euo pipefail
+  ssh -o StrictHostKeyChecking=yes -T git@github.com || true
+
+  rm -rf /workspace/dbt_project/* /workspace/dbt_project/.git || true
+  GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519 -o IdentitiesOnly=yes" \
+    git clone --filter=blob:none --sparse '"$REPO_SSH"' /workspace/dbt_project
+
+  cd /workspace/dbt_project
+  git sparse-checkout set dbt/
+  git checkout master
+
+  # Local excludes to avoid dbt artifacts interfering with git
+  mkdir -p .git/info
+  cat > .git/info/exclude << "EOF"
+  /dbt/target/
+  /dbt/logs/
+  /dbt/dbt_packages/
+  EOF
+
+  echo "[HEAD] $(git rev-parse --short HEAD)"
+  ls -la
+  ls -la dbt || true
+  '
+
+  kubectl -n $PROJECT_NAME exec -it dbt-code-tools -- sh -lc '
+  set -euo pipefail
+  cd /workspace/dbt_project
+  mkdir -p .ops
+  cat > .ops/git_update.sh << "SH"
+  #!/bin/sh
+  # Fast-forward working tree to origin/<ref> or checkout a detached commit.
+  set -euo pipefail
+  cd /workspace/dbt_project
+  REF="${1:-master}"
+  git sparse-checkout set dbt/
+  git fetch --all --prune
+  if git show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+    if git show-ref --verify --quiet "refs/heads/$REF"; then
+      git checkout "$REF"
+    else
+      git checkout -b "$REF" "origin/$REF"
+    fi
+    git reset --hard "origin/$REF"
+  else
+    git checkout --detach "$REF"
+  fi
+  echo "Updated to: $(git rev-parse --short HEAD)"
+  SH
+  chmod +x .ops/git_update.sh
+  '
+
+  kubectl -n $PROJECT_NAME exec -it dbt-data-tools -- sh -lc '
+  set -eu
+  mkdir -p /workspace/dbt_work/profiles
+  cat > /workspace/dbt_work/profiles/profiles.yml << "YAML"
+  ampere_project:
+    target: k8s
+    outputs:
+      k8s:
+        type: duckdb
+        path: /workspace/dbt_data/warehouse.duckdb
+        threads: 4
+        extensions: ["httpfs","parquet","json"]
+  YAML
+  echo "profiles.yml written:"; cat /workspace/dbt_work/profiles/profiles.yml
+  '
 
 fi

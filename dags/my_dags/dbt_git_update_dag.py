@@ -60,7 +60,7 @@ with (
         # Use dag_run.conf.ref if present, default to "master"
         arguments=[
             "GIT_SSH_COMMAND='ssh -i /root/.ssh/id_ed25519 -o IdentitiesOnly=yes' "
-            "/workspace/dbt_project/.ops/git_update.sh {{ dag_run.conf.get('ref', 'master') }}"
+            "sh /workspace/dbt_project/.ops/git_update.sh {{ dag_run.conf.get('ref', 'master') }}"
         ],
         volumes=[vol_dbt_code, vol_ssh],
         volume_mounts=[mount_dbt_code, mount_ssh_key, mount_ssh_known],
