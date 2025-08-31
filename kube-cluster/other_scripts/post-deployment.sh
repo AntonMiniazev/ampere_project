@@ -172,32 +172,47 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   ls -la dbt || true
   '
 
-  kubectl -n $PROJECT_NAME exec -it dbt-code-tools -- sh -lc '
+  kubectl -n "$PROJECT_NAME" exec -i dbt-code-tools -- sh -lc '
   set -euo pipefail
   cd /workspace/dbt_project
   mkdir -p .ops
-  cat > .ops/git_update.sh << "SH"
+  cat > .ops/git_update.sh << '"'"'SH'"'"'
   #!/bin/sh
-  # Fast-forward working tree to origin/<ref> or checkout a detached commit.
+  # Fast-forward local branch to origin/<ref> or checkout a detached commit
   set -euo pipefail
   cd /workspace/dbt_project
   REF="${1:-master}"
+
+  # Ensure sparse-checkout covers the dbt subdir (cone mode includes entire subtree)
   git sparse-checkout set dbt/
+
+  # Fetch latest refs
   git fetch --all --prune
+
+  # If remote branch exists -> fast-forward to origin/REF; else treat REF as commit SHA
   if git show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+    # Ensure local branch exists and is checked out
     if git show-ref --verify --quiet "refs/heads/$REF"; then
       git checkout "$REF"
     else
       git checkout -b "$REF" "origin/$REF"
     fi
+    # Hard reset to the remote tip (fast-forward without merge commits)
     git reset --hard "origin/$REF"
   else
+    # Detached checkout for specific commit/tag
     git checkout --detach "$REF"
   fi
+
   echo "Updated to: $(git rev-parse --short HEAD)"
   SH
-  chmod +x .ops/git_update.sh
+
+  # make it executable and strip CRLF just in case
+  chmod 0755 .ops/git_update.sh
+  sed -i "s/\r$//" .ops/git_update.sh || true
+  head -n 3 .ops/git_update.sh; tail -n 3 .ops/git_update.sh
   '
+
 
   kubectl -n $PROJECT_NAME exec -it dbt-data-tools -- sh -lc '
   set -eu
