@@ -1,7 +1,7 @@
 # This DAG updates the dbt project working tree inside the PVC by running .ops/git_update.sh
 from datetime import datetime
 from airflow import DAG
-from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
+from airflow.providers.cncf.kubernetes.operators.pod import (
     KubernetesPodOperator,
 )
 from kubernetes.client import models as k8s
