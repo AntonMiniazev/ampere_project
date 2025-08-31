@@ -19,7 +19,11 @@ vol_dbt_code = k8s.V1Volume(
     ),
 )
 vol_ssh = k8s.V1Volume(
-    name="ssh", secret=k8s.V1SecretVolumeSource(secret_name=SSH_SECRET)
+    name="ssh",
+    secret=k8s.V1SecretVolumeSource(
+        secret_name=SSH_SECRET,
+        default_mode=0o400,  # ensure id_ed25519 has 0400
+    ),
 )
 
 mount_dbt_code = k8s.V1VolumeMount(name="dbt-code", mount_path="/workspace/dbt_project")
