@@ -172,10 +172,11 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   ls -la dbt || true
   '
 
-  kubectl -n "$PROJECT_NAME" exec -i dbt-code-tools -- sh -lc '
+  kubectl -n ampere exec -i dbt-code-tools -- sh -lc '
   set -euo pipefail
   cd /workspace/dbt_project
   mkdir -p .ops
+  # write file via heredoc; terminator must be at column 0 and single-quoted
   cat > .ops/git_update.sh << '"'"'SH'"'"'
   #!/bin/sh
   # Fast-forward local branch to origin/<ref> or checkout a detached commit
@@ -207,10 +208,9 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   echo "Updated to: $(git rev-parse --short HEAD)"
   SH
 
-  # make it executable and strip CRLF just in case
+  # ensure executable and strip possible CRLF
   chmod 0755 .ops/git_update.sh
   sed -i "s/\r$//" .ops/git_update.sh || true
-  head -n 3 .ops/git_update.sh; tail -n 3 .ops/git_update.sh
   '
 
 
