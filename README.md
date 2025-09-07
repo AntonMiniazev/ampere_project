@@ -2,7 +2,7 @@
 
 <b> [WIP:] </b> Establishing Generation + ETL + Reporting on homelab (Ubuntu server).
 
-<b> [Current stage:] </b> Deployment.
+<b> [Current stage:] </b> ETL development and dbt model preparation.
 
 - [ ] Complete [master diagram](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/ampere_project_structure.svg)
   - [x] Initialized
