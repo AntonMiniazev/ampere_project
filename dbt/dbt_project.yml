@@ -1,9 +1,6 @@
-# Test project
-name: ampere_project
-version: "1.0"
-config-version: 2
-
-profile: ampere_project
+name: "ampere_duckdb_project"
+version: "1.0.0"
+profile: "ampere_duckdb"
 
 model-paths: ["models"]
 analysis-paths: ["analysis"]
@@ -13,5 +10,8 @@ macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
 models:
-  ampere_project:
-    +materialized: table
+  ampere_duckdb_project:
+    +materialized: external         
+    +format: parquet                
+    +partition_by: ["load_date"]    
+    +file_size: "128MB"

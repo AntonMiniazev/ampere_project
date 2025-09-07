@@ -230,4 +230,7 @@ if [ "$(hostname)" = "$MASTER_NAME" ]; then
   echo "profiles.yml written:"; cat /workspace/dbt_work/profiles/profiles.yml
   '
 
+  kubectl -n ampere create configmap minio-config \
+  --from-literal=MINIO_S3_ENDPOINT=$MINIO_S3_ENDPOINT
+
 fi

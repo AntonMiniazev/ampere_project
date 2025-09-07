@@ -28,12 +28,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: minio-creds
-                  key: accesskey   # must match Secret .data key
+                  key: MINIO_ACCESS_KEY   # must match Secret .data key
             - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: minio-creds
-                  key: secretkey   # must match Secret .data key
+                  key: MINIO_SECRET_KEY   # must match Secret .data key
           ports:
             - containerPort: 9000  # S3 API
             - containerPort: 9001  # Console UI

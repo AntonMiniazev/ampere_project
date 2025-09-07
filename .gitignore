@@ -25,3 +25,9 @@ kube-cluster copy/
 Docker_image/
 other/
 spark/
+data_source/
+
+# dbt ignore
+/dbt/target/
+/dbt/logs/
+/dbt/dbt_packages/
