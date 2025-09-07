@@ -8,7 +8,9 @@
   - [x] Initialized
   - [x] Update tables
   - [ ] Complete Web part
-- [x] Prepare Python generators (`dags/generators`)
+- [x] Prepare Python generators
+  - [x] Prepare python scripts to generate raw data (`dags/generators`)
+  - [ ] Complete diagram with [generator's logic](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/python_generator_script.svg)
 - [x] Deployment
   - [x] Prepare Helm charts
     - [x] Airflow (`kube-cluster/airflow-chart`)
