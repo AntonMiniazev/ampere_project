@@ -4,7 +4,7 @@
 
 <b> [Current stage:] </b> Deployment.
 
-- [ ] Complete [master diagram](https://github.com/AntonMiniazev/ampere_project/blob/master/project_images/ampere_project_structure.svg)
+- [ ] Complete [master diagram](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/ampere_project_structure.svg)
   - [x] Initialized
   - [x] Update tables
   - [ ] Complete Web part
