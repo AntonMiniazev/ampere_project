@@ -4,24 +4,24 @@
 
 <b> [Current stage:] </b> Deployment.
 
-- [ ] Create master diagram
+- [ ] Complete [master diagram](https://github.com/AntonMiniazev/ampere_project/blob/master/project_images/ampere_project_structure.svg)
   - [x] Initialized
-  - [ ] Update tables
+  - [x] Update tables
   - [ ] Complete Web part
-- [x] Prepare Python generators
+- [x] Prepare Python generators (`dags/generators`)
 - [x] Deployment
   - [x] Prepare Helm charts
-    - [x] Airflow
-    - [x] MinIO
-    - [x] MSSQL
-    - [ ] DuckDB + dbt
-  - [x] Prepare one script
-    - [x] Prepare sub-script (`bootstrap.sh`) for VM deployment
-    - [x] Organize `Vagrantfile` for separate deployment
+    - [x] Airflow (`kube-cluster/airflow-chart`)
+    - [x] MinIO (`kube-cluster/minio-chart`)
+    - [x] MSSQL (`kube-cluster/ms-chart`)
+    - [x] DuckDB + dbt (`kube-cluster/dbt-chart`)
+  - [x] Prepare one script for deployment
+    - [x] Prepare sub-script (`kube-cluster/deploy.sh`) for VM deployment
+    - [x] Organize `Vagrantfile` for separate deployment (`kube-cluster/other_scripts/post-deployment.sh`)
     - [x] Prepare sub-script for Helm charts on master
 - [ ] ETL
   - [ ] Establish DS → Stage layer
-	  - [x] Launch generators in Airflow (deployed through orders_clients_generation dag)
+	  - [x] Launch generators in Airflow (deployed through `dags/my_dags/orders_clients_gen_dag.py` dag)
 	  - [ ] Create sensor to push to dbt model
 	  - [ ] Downstream DAGs to push data to golden layer
   - [ ] Upload to MSSQL
@@ -29,6 +29,7 @@
     - [ ] Backups
   - [ ] Testing
 - [ ] Data Marts preparation
+  - [x] Initial schemas
 - [ ] BI layer
 ---
 
