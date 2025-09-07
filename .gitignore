@@ -33,4 +33,4 @@ data_source/
 /dbt/dbt_packages/
 
 #Tech files
-project_images/*.svg.bkp
+*.bkp
