@@ -10,7 +10,7 @@
   - [ ] Complete Web part
 - [x] Prepare Python generators
   - [x] Prepare python scripts to generate raw data (`dags/generators`)
-  - [ ] Complete diagram with [generator's logic](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/python_generator_script.svg)
+  - [ ] Complete diagram with [generator's logic](https://github.com/AntonMiniazev/ampere_project/blob/master/project_images/python_generator_script.svg)
 - [x] Deployment
   - [x] Prepare Helm charts
     - [x] Airflow (`kube-cluster/airflow-chart`)
@@ -23,10 +23,12 @@
     - [x] Prepare sub-script for Helm charts on master
 - [ ] ETL
   - [ ] Establish DS → Stage layer
-	  - [x] Launch generators in Airflow (deployed through `dags/my_dags/orders_clients_gen_dag.py` dag)
-	  - [ ] Create sensor to push to dbt model
+	  - [x] Launch generator DAG (deployed through `dags/my_dags/orders_clients_gen_dag.py`)
+    - [x] Launch transfer ingestion DAG (deployed through `dags/my_dags/source_to_minio.py`)
+    - [ ] Launch MinIO cleaning DAG to remove unnecessary artefacts
+	  - [ ] Create sensor to push dbt model
 	  - [ ] Downstream DAGs to push data to golden layer
-  - [ ] Upload to MSSQL
+  - [ ] Upload to MSSQL (business logic layer)
     - [ ] DDL / DML
     - [ ] Backups
   - [ ] Testing
