@@ -165,6 +165,15 @@ with DAG(
 
     @task
     def finalize_run_log(per_table_results: List[Dict[str, Any]], ds: str | None = None) -> str:
+
+        if not isinstance(per_table_results, list):
+            try:
+                # forces XCom pull for mapped results
+                per_table_results = list(per_table_results)
+            except TypeError:
+                # Fallback: wrap single value
+                per_table_results = [per_table_results]
+
         ctx = get_current_context()
         if ds is None:
             ds = ctx["ds"]
@@ -178,6 +187,19 @@ with DAG(
             "try_number": ctx["ti"].try_number,
             "utc_written_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         }
+
+        # Ensure all items are JSON-serializable (dicts with only primitives)
+        safe_results: List[Dict[str, Any]] = []
+        for item in per_table_results:
+            # item is expected to be a dict from apply_deletions(); keep only safe fields
+            safe_item = {
+                "table": item.get("table"),
+                "deleted_dates": item.get("deleted_dates", []),
+                "deleted_keys_count": int(item.get("deleted_keys_count", 0)),
+            }
+            if item.get("dry_run"):
+                safe_item["dry_run"] = True
+            safe_results.append(safe_item)
 
         payload = {
             "meta": meta,
