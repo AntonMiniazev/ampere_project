@@ -10,7 +10,7 @@ sys.path.append("/opt/airflow/dags/repo")
 
 # Import the external helper function
 
-DAG_ID = "example_mssql"
+DAG_ID = "test_mssql_connection"
 
 
 def print_sql_result(**context):

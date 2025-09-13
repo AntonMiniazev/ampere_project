@@ -26,6 +26,7 @@ Docker_image/
 other/
 spark/
 data_source/
+.ruff_cache/
 
 # dbt ignore
 /dbt/target/
