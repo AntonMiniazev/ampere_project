@@ -109,7 +109,13 @@ with DAG(
 ) as dag:
 
     @task
-    def compute_deletions(table_name: str, ds: str = "{{ ds }}", dry_run: bool = DEFAULT_DRY_RUN) -> dict:
+    def compute_deletions(table_name: str, ds: str | None = None, dry_run: bool | None = None) -> dict:
+        # Resolve context-derived params
+        ctx = get_current_context()
+        if ds is None:
+            ds = ctx["ds"]
+        if dry_run is None:
+            dry_run = DEFAULT_DRY_RUN
 
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
 
@@ -122,6 +128,7 @@ with DAG(
         today = datetime.strptime(ds, "%Y-%m-%d").date()
         keep_dates = _keep_dates_by_rules(all_dates, today)
         delete_dates = sorted(list(all_dates - keep_dates))
+
         keys_to_delete: List[str] = []
         for d in delete_dates:
             keys_to_delete.extend(_list_keys_for_load_date(s3, table_name, d))
@@ -157,9 +164,11 @@ with DAG(
         return {"table": table_name, "deleted_dates": plan["delete_dates"], "deleted_keys_count": len(keys)}
 
     @task
-    def finalize_run_log(per_table_results: List[Dict[str, Any]], ds: str = "{{ ds }}") -> str:
-        # Single JSON log per DAG run
+    def finalize_run_log(per_table_results: List[Dict[str, Any]], ds: str | None = None) -> str:
         ctx = get_current_context()
+        if ds is None:
+            ds = ctx["ds"]
+
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
 
         meta = {
