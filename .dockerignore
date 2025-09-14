@@ -1,0 +1,10 @@
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.venv/
+dbt/*/target/
+dbt/*/logs/
+dbt/*/dbt_packages/
+project_images/
+kube-cluster/.terraform/

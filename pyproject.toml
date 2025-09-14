@@ -18,7 +18,6 @@ dependencies = [
     "polars>=1.32.3",
     "pyarrow>=21.0.0",
     "pyodbc>=5.2.0",
-    "pyspark>=4.0.0",
     "ruff>=0.11.13",
     "sqlalchemy>=2.0.42",
 ]

@@ -25,7 +25,7 @@
   - [ ] Establish DS → Stage layer
 	  - [x] Launch generator DAG (deployed through `dags/my_dags/orders_clients_gen_dag.py`)
     - [x] Launch transfer ingestion DAG (deployed through `dags/my_dags/source_to_minio.py`)
-    - [ ] Launch MinIO cleaning DAG to remove unnecessary artefacts
+    - [x] Launch MinIO cleaning DAG to remove unnecessary artefacts (deployed through `dags/my_dags/cleanup_raw_shapshots.py`)
     - [ ] Create dbt model for processing layer
     - [ ] Create dbt model for business logic layer
 	  - [ ] Create sensor to push dbt model

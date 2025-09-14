@@ -42,7 +42,6 @@ dependencies = [
     { name = "polars" },
     { name = "pyarrow" },
     { name = "pyodbc" },
-    { name = "pyspark" },
     { name = "ruff" },
     { name = "sqlalchemy" },
 ]
@@ -62,7 +61,6 @@ requires-dist = [
     { name = "polars", specifier = ">=1.32.3" },
     { name = "pyarrow", specifier = ">=21.0.0" },
     { name = "pyodbc", specifier = ">=5.2.0" },
-    { name = "pyspark", specifier = ">=4.0.0" },
     { name = "ruff", specifier = ">=0.11.13" },
     { name = "sqlalchemy", specifier = ">=2.0.42" },
 ]
@@ -1043,15 +1041,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/bb/22/f1129e69d94ffff62
 wheels = [
     { url = "https://files.pythonhosted.org/packages/05/e7/df2285f3d08fee213f2d041540fa4fc9ca6c2d44cf36d3a035bf2a8d2bcc/pyparsing-3.2.3-py3-none-any.whl", hash = "sha256:a749938e02d6fd0b59b356ca504a24982314bb090c383e3cf201c95ef7e2bfcf", size = 111120, upload-time = "2025-03-25T05:01:24.908Z" },
 ]
-
-[[package]]
-name = "pyspark"
-version = "4.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "py4j" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/0e/5b38d51f1b1c2618cccfbf35093268665af9a3bdb493e5a3ecd991def633/pyspark-4.0.0.tar.gz", hash = "sha256:38db1b4f6095a080d7605e578d775528990e66dc326311d93e94a71cfc24e5a5", size = 434132212, upload-time = "2025-05-23T03:29:33.916Z" }
 
 [[package]]
 name = "python-dateutil"
