@@ -57,7 +57,7 @@ with DAG(
     start_date=datetime(2025, 8, 1),
     catchup=True,
     max_active_runs=1,
-    tags=["source_layer", "s3", "transfer", "prod"],
+    tags=["prod", "s3", "transfer", "source_layer", "raw_layer"],
 ) as dag:
     prev_task = None
     for tname in TABLE_NAMES:
