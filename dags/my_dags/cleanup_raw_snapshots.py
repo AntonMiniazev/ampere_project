@@ -96,7 +96,7 @@ def _summary_log_key() -> str:
     ti: TaskInstance = ctx["ti"]
     try_number = ti.try_number if isinstance(ti, TaskInstance) else 1
     safe_run_id = run_id.replace(":", "_").replace("+", "_").replace("/", "_")
-    return f"{LOG_BASE_PREFIX}/dag={dag_id}/run={safe_run_id}/ds={ds}/try={try_number:02d}.json"
+    return f"{LOG_BASE_PREFIX}/dag={dag_id}/run={safe_run_id}/ds={ds}_try={try_number:02d}.json"
 
 
 # --- DAG ---
@@ -120,16 +120,13 @@ with DAG(
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
 
         all_keys = _list_all_keys_for_table(s3, table_name)
-        print(">>>>>>>All keys:" + str(all_keys))
         all_dates = _parse_dates_from_keys(all_keys)
-        print(">>>>>>>All dates:" + str(all_dates))
         if not all_dates:
             logger.info("[%s] no dates found", table_name)
             return {"table": table_name, "delete_dates": [], "keys": [], "dry_run": dry_run}
 
         today = datetime.strptime(ds, "%Y-%m-%d").date()
         keep_dates = _keep_dates_by_rules(all_dates, today)
-        print(">>>>>>>Keep dates:" + str(keep_dates))
         delete_dates = sorted(list(all_dates - keep_dates))
 
         keys_to_delete: List[str] = []
@@ -194,7 +191,7 @@ with DAG(
         # Ensure all items are JSON-serializable (dicts with only primitives)
         safe_results: List[Dict[str, Any]] = []
         for item in per_table_results:
-            # item is expected to be a dict from apply_deletions(); keep only safe fields
+            # item is expected to be a dict from apply_deletions()
             safe_item = {
                 "table": item.get("table"),
                 "deleted_dates": item.get("deleted_dates", []),
@@ -206,8 +203,7 @@ with DAG(
 
         payload = {
             "meta": meta,
-            # list of {"table","deleted_dates","deleted_keys_count",...}
-            "results": per_table_results,
+            "results": safe_results,
         }
 
         key = _summary_log_key()
