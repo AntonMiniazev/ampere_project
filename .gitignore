@@ -1,37 +1,51 @@
-# Python-generated files
+# =========================
+# Python
+# =========================
 __pycache__/
 *.py[oc]
+*.egg-info
 build/
 dist/
 wheels/
-*.egg-info
-*.yaml.dec
-*.dec.yaml
-ruff.toml
-data_source/.env
+*.bkp
 
-# Virtual environments
-.venv
-.vscode
+# =========================
+# Virtual environments / IDE
+# =========================
+.venv/
+.vscode/
+.ruff_cache/
+ruff.toml
+
+# =========================
+# Devcontainer / Docker
+# =========================
 .devcontainer/
 Dockerfile
+Docker_image/
 
-# Temp folders
-_old
+# =========================
+# Secrets / Config
+# =========================
+data_source/.env
+*.yaml.dec
+*.dec.yaml
 secret_enc/
 .secret_enc/
-deployment/sql_scripts/
-kube-cluster copy/
-Docker_image/
+
+# =========================
+# Project temp / old
+# =========================
+_old/
 other/
 spark/
 data_source/
-.ruff_cache/
+deployment/sql_scripts/
+kube-cluster copy/
 
-# dbt ignore
+# =========================
+# dbt
+# =========================
 /dbt/target/
 /dbt/logs/
 /dbt/dbt_packages/
-
-#Tech files
-*.bkp
