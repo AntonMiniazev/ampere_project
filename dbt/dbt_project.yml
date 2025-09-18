@@ -1,13 +1,11 @@
-name: "ampere_duckdb_project"
-version: "1.0.0"
-profile: "ampere_duckdb"
+name: ampere_duckdb_project
+version: 1.0
+config-version: 2
+profile: ampere_duckdb_project
 
 model-paths: ["models"]
-analysis-paths: ["analysis"]
-test-paths: ["tests"]
-seed-paths: ["seeds"]
 macro-paths: ["macros"]
-snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
 
 models:
   ampere_duckdb_project:
@@ -15,3 +13,11 @@ models:
     +format: parquet                
     +partition_by: ["load_date"]    
     +file_size: "128MB"
+
+    processing:
+      +schema: "silver"
+      +tags: ["layer:processing"]
+
+    business_logic:
+      +schema: "gold"
+      +tags: ["layer:business_logic"]
