@@ -3,7 +3,7 @@ from datetime import datetime
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
-from kubernetes.client import V1LocalObjectReference
+from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 DAG_ID = "dbt_processing"
 NAMESPACE = "ampere"
