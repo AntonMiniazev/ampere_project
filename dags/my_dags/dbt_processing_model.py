@@ -3,11 +3,10 @@ from datetime import datetime
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
+from kubernetes.client import V1LocalObjectReference
 
 DAG_ID = "dbt_processing"
 NAMESPACE = "ampere"
-
-# Image tag is templated from Airflow Variable 'git_sha'
 IMAGE = "ghcr.io/antonminiazev/ampere_project:297d427"
 
 
@@ -44,8 +43,7 @@ with DAG(
         name="dbt-build-processing",
         namespace=NAMESPACE,
         image=IMAGE,
-        # If your GHCR package is private, uncomment and ensure the pull secret exists:
-        image_pull_secrets=["ghcr-pull"],
+        image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
 
         # Inject MINIO_* from 'minio-creds' and runtime env for the runner
         secrets=[minio_access_key, minio_secret_key],
