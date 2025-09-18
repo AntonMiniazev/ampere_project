@@ -58,13 +58,19 @@ with DAG(
             "DUCKDB_PATH": "/app/artifacts/ampere.duckdb",
         },
 
+        startup_timeout_seconds=600,
+        container_resources=V1ResourceRequirements(
+            requests={"cpu": "100m", "memory": "256Mi"},
+            limits={"cpu": "1", "memory": "1Gi"},
+        ),
+
         # Other defaults
         get_logs=True,
         is_delete_operator_pod=True,
         # resources={"request_cpu": "500m", "request_memory": "512Mi",
         #            "limit_cpu": "2", "limit_memory": "2Gi"},
 
-        node_selector={"kubernetes.io/hostname": "ampere-k8s-node2"},
+        #node_selector={"kubernetes.io/hostname": "ampere-k8s-node2"},
     )
 
     dbt_processing
