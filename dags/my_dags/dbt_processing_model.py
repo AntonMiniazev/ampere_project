@@ -7,7 +7,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 DAG_ID = "dbt_processing"
 NAMESPACE = "ampere"
-IMAGE = "ghcr.io/antonminiazev/ampere_project:d1aeaf9"
+IMAGE = "ghcr.io/antonminiazev/ampere_project:9c8d20d"
 
 
 # Map existing K8s Secret 'minio-creds' to env vars inside the container

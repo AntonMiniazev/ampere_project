@@ -3,7 +3,7 @@
 {{ config(
     materialized='external',
     format='parquet',
-    location='s3://ampere-prod-silver/{{ this.name }}/stg_orders',
+    location='s3://ampere-prod-silver/{{ this.name }}/stg_order',
     partition_by=['load_date'],
     tags=['layer:processing','test-silver']
 ) }}
