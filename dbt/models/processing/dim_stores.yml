@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: dim_stores
+    description: "dimension for stores"
+    columns:
+      - name: id
+        tests: [not_null]
+      - name: city
+        tests: [not_null]
+      - name: store_name
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

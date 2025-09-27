@@ -1,0 +1,17 @@
+version: 2
+models:
+  - name: dim_delivery_resource
+    description: "dimension for delivery_resource"
+    columns:
+      - name: id
+        tests: [not_null]
+      - name: fullname
+        tests: [not_null]
+      - name: delivery_type_id
+        tests: [not_null]
+      - name: store_id
+        tests: [not_null]
+      - name: active_flag
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

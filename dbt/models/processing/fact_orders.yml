@@ -1,0 +1,20 @@
+version: 2
+models:
+  - name: fact_orders
+    description: "fact for orders"
+    columns:
+      - name: id
+        tests: 
+        - not_null
+        - unique
+        - relationships: {to: ref('dim_order_status_history'), field: order_id}
+      - name: client_id
+        tests: 
+        - not_null
+        - relationships: {to: ref('stg_clients'), field: id}
+      - name: order_date
+        tests: [not_null]
+      - name: total_amount
+        tests:
+          - not_null
+          - positive_number: {}

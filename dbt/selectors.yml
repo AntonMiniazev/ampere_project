@@ -1,0 +1,36 @@
+selectors:
+  - name: processing_flow
+    definition:
+      union:
+        - method: fqn
+          value: dim_payments
+        - method: fqn
+          value: dim_order_product
+        - method: fqn
+          value: dim_order_status_history
+        - method: fqn
+          value: dim_order_statuses
+        - method: fqn
+          value: dim_clients
+        - method: fqn
+          value: dim_products
+        - method: fqn
+          value: dim_product_categories
+        - method: fqn
+          value: dim_stores
+        - method: fqn
+          value: dim_zones
+        - method: fqn
+          value: dim_assortment
+        - method: fqn
+          value: dim_costing
+        - method: fqn
+          value: dim_delivery_resource
+        - method: fqn
+          value: dim_delivery_type
+        - method: fqn
+          value: dim_delivery_costing   
+        - method: fqn
+          value: fact_orders
+        - method: fqn
+          value: fact_delivery_tracking

@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: dim_delivery_costing
+    description: "dimension for delivery_costing"
+    columns:
+      - name: zone_id
+        tests: [not_null]
+      - name: delivery_type_id
+        tests: [not_null]
+      - name: tariff
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

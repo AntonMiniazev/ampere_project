@@ -1,0 +1,15 @@
+version: 2
+models:
+  - name: dim_costing
+    description: "dimension for costing"
+    columns:
+      - name: product_id
+        tests: [not_null]
+      - name: store_id
+        tests: [not_null]
+      - name: avg_cost
+        tests: [not_null]
+      - name: cost_active_period
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

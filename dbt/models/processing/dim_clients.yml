@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: dim_clients
+    description: "dimension for clients"
+    columns:
+      - name: id
+        tests: [not_null, unique]
+      - name: fullname
+        tests: [not_null]
+      - name: preferred_store_id
+        tests: [not_null]
+      - name: registration_date 
+        tests: [not_null]

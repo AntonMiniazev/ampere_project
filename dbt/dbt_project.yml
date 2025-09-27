@@ -9,15 +9,9 @@ test-paths: ["tests"]
 
 models:
   ampere_duckdb_project:
-    +materialized: external         
-    +format: parquet                
-    +partition_by: ["load_date"]    
-    +file_size: "128MB"
-
+    +materialized: view    
     processing:
-      +schema: "silver"
-      +tags: ["layer:processing"]
-
+      +schema: silver
+      +materialized: external
     business_logic:
-      +schema: "gold"
-      +tags: ["layer:business_logic"]
+      +schema: gold

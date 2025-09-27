@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: dim_order_product
+    description: "dimension for order_product"
+    columns:
+      - name: order_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+      - name: quantity
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

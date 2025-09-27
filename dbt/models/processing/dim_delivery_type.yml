@@ -1,0 +1,11 @@
+version: 2
+models:
+  - name: dim_delivery_type
+    description: "dimension for delivery_type"
+    columns:
+      - name: id
+        tests: [not_null]
+      - name: courier_type
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

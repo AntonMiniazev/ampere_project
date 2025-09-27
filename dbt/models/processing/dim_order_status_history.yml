@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: dim_order_status_history
+    description: "dimension for order_status_history"
+    columns:
+      - name: order_id
+        tests: [not_null]
+      - name: order_status_id
+        tests: [not_null]
+      - name: status_datetime
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

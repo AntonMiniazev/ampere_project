@@ -1,0 +1,11 @@
+version: 2
+models:
+  - name: dim_product_categories
+    description: "dimension for product_categories"
+    columns:
+      - name: id
+        tests: [not_null]
+      - name: category_name
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

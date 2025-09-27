@@ -1,0 +1,15 @@
+version: 2
+models:
+  - name: dim_payments
+    description: "dimension for payments"
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: amount
+        tests: [not_null]
+      - name: method
+        tests: [not_null]
+      - name: payment_status
+        tests: [not_null]
+      - name: payment_date
+        tests: [not_null]

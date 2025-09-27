@@ -1,0 +1,11 @@
+version: 2
+models:
+  - name: dim_assortment
+    description: "dimension for assortment"
+    columns:
+      - name: product_id
+        tests: [not_null]
+      - name: store_id
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

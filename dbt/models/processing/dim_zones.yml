@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: dim_zones
+    description: "dimension for zones"
+    columns:
+      - name: id
+        tests: [not_null]
+      - name: store_id
+        tests: [not_null]
+      - name: zone_name
+        tests: [not_null]
+      - name: _load_date
+      - name: _ingested_at

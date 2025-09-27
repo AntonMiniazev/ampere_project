@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: fact_delivery_tracking
+    description: "fact for delivery tracking"
+    columns:
+      - name: order_id
+        tests: 
+        - not_null
+        - relationships: {to: ref('fact_orders'), field: id}
+      - name: courier_id
+        tests: 
+        - not_null
+        - relationships: {to: ref('dim_delivery_resource'), field: id}
