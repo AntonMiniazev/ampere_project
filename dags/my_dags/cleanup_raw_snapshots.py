@@ -164,10 +164,7 @@ with DAG(
 
     @task
     def compute_deletions(item: Dict[str, Any], ds: str | None = None) -> dict:
-        """
-        Compute delete candidates for a single item (raw or silver).
-        Returns dict with 'bucket','kind','layer','table','delete_dates','keys','dry_run'.
-        """
+        # Compute delete candidates for a single item (raw or silver).
         ctx = get_current_context()
         if ds is None:
             ds = ctx["ds"]
@@ -187,66 +184,87 @@ with DAG(
 
         if not all_dates:
             logger.info("[%s/%s] no dates found", kind, table)
-            return {"bucket": item["bucket"], "kind": kind, "layer": layer, "table": table,
-                    "delete_dates": [], "keys": [], "dry_run": dry_run}
+            return {
+                "bucket": item["bucket"],
+                "kind": kind,
+                "layer": layer,
+                "table": table,
+                "delete_dates": [],
+                "dry_run": dry_run,
+            }
 
         today = datetime.strptime(ds, "%Y-%m-%d").date()
         keep_dates = _keep_dates_by_rules(all_dates, today)
         delete_dates = sorted(list(all_dates - keep_dates))
-
-        # Expand to concrete object keys for each delete date
-        keys_to_delete: List[str] = []
-        for d in delete_dates:
-            if kind == "raw":
-                keys_to_delete.extend(_list_keys_for_raw_load_date(s3, table, d))
-            else:
-                keys_to_delete.extend(_list_keys_for_silver_load_date(s3, layer, table, d))
-
-        logger.info("[%s/%s%s] keep=%d delete=%d (keys=%d)",
+        logger.info("[%s/%s%s] keep=%d delete=%d",
                     kind, table, f' ({layer})' if layer else "",
-                    len(keep_dates), len(delete_dates), len(keys_to_delete))
+                    len(keep_dates), len(delete_dates))
 
+        # Return only dates (small XCom)
         return {
             "bucket": item["bucket"],
             "kind": kind,
             "layer": layer,
             "table": table,
             "delete_dates": [d.isoformat() for d in delete_dates],
-            "keys": keys_to_delete,
             "dry_run": dry_run,
         }
 
     @task
     def apply_deletions(plan: dict) -> dict:
-        """
-        Delete objects for a single plan (without chunking).
-        Returns compact summary for final log.
-        """
+        # Delete objects for a single plan (without chunking).
         s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
         bucket: str = plan["bucket"]
         table: str = plan["table"]
         kind: str = plan["kind"]
         layer: str | None = plan.get("layer")
-        keys: List[str] = plan["keys"]
         dry_run: bool = plan["dry_run"]
+
+        # Rebuild concrete object list here to keep XCom small
+        delete_dates = [datetime.strptime(d, "%Y-%m-%d").date() for d in plan.get("delete_dates", [])]
+        keys: List[str] = []
+        for d in delete_dates:
+            if kind == "raw":
+                keys.extend(_list_keys_for_raw_load_date(s3, table, d))
+            else:
+                keys.extend(_list_keys_for_silver_load_date(s3, layer, table, d))
 
         if not keys:
             logger.info("[%s/%s%s] nothing to delete", kind, table, f' ({layer})' if layer else "")
-            return {"bucket": bucket, "kind": kind, "layer": layer, "table": table,
-                    "deleted_dates": plan["delete_dates"], "deleted_keys_count": 0}
+            return {
+                "bucket": bucket,
+                "kind": kind,
+                "layer": layer,
+                "table": table,
+                "deleted_dates": plan["delete_dates"],
+                "deleted_keys_count": 0
+            }
 
         if dry_run:
             logger.warning("[%s/%s%s] DRY-RUN: would delete %d objects",
-                           kind, table, f' ({layer})' if layer else "", len(keys))
-            return {"bucket": bucket, "kind": kind, "layer": layer, "table": table,
-                    "deleted_dates": plan["delete_dates"], "deleted_keys_count": 0, "dry_run": True}
+                        kind, table, f' ({layer})' if layer else "", len(keys))
+            return {
+                "bucket": bucket,
+                "kind": kind,
+                "layer": layer,
+                "table": table,
+                "deleted_dates": plan["delete_dates"],
+                "deleted_keys_count": 0,
+                "dry_run": True
+            }
 
-        # Single call deletion
         s3.delete_objects(bucket=bucket, keys=keys)
         logger.info("[%s/%s%s] deleted %d objects",
                     kind, table, f' ({layer})' if layer else "", len(keys))
-        return {"bucket": bucket, "kind": kind, "layer": layer, "table": table,
-                "deleted_dates": plan["delete_dates"], "deleted_keys_count": len(keys)}
+        return {
+            "bucket": bucket,
+            "kind": kind,
+            "layer": layer,
+            "table": table,
+            "deleted_dates": plan["delete_dates"],
+            "deleted_keys_count": len(keys)
+        }
+
 
     @task
     def finalize_run_log(per_item_results: List[Dict[str, Any]] | Any, ds: str | None = None) -> str:
