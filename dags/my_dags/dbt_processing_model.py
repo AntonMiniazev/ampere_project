@@ -52,7 +52,7 @@ with DAG(
             # in-cluster MinIO Service DNS (host:port, no scheme)
             "MINIO_S3_ENDPOINT": "minio.ampere.svc.cluster.local:9000",
             # dbt command (select only processing layer)
-            "DBT_CMD": "dbt build -s +tag:layer:processing --fail-fast",
+            "DBT_CMD": "dbt build --project-dir /app/project --profiles-dir /app/profiles --selector processing_flow",
             "DBT_TARGET": "prod",
             "THREADS": "4",
             # optional local path for DuckDB file inside the container
