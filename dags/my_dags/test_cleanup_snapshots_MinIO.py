@@ -132,7 +132,7 @@ with DAG(
                     seen.add(parts[2])
             tables = sorted(seen)
         elif bucket == SILVER_BUCKET:
-            layer = _norm_layer(dim_or_fact)
+            layer = dim_or_fact
             keys = s3.list_keys(bucket_name=bucket, prefix=f"{layer}/") or []
             # keys like: <layer>/<table>/load_date=YYYY-MM-DD/...
             seen = set()
