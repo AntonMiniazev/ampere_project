@@ -44,6 +44,7 @@ with DAG(
         namespace=NAMESPACE,
         image=IMAGE,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
+        startup_timeout_seconds=240,
 
         # Inject MINIO_* from 'minio-creds' and runtime env for the runner
         secrets=[minio_access_key, minio_secret_key],
