@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# comments in English only
 
 # Prefer in-cluster Service DNS; allow override via env
 RAW_ENDPOINT="${MINIO_S3_ENDPOINT:-minio.ampere.svc.cluster.local:9000}"

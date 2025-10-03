@@ -8,3 +8,8 @@ dbt/*/logs/
 dbt/*/dbt_packages/
 project_images/
 kube-cluster/.terraform/
+**/dags/
+**/kube-cluster/
+**/project_images/
+**/secret_enc/
+**/other/

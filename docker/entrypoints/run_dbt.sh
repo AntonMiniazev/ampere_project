@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# comments in English only
 
 : "${DBT_CMD:=dbt build}"
 : "${DBT_STATE_DIR:=}"
@@ -16,7 +15,7 @@ mkdir -p "$(dirname "${DUCKDB_PATH}")"
 . /app/.venv/bin/activate
 
 if [ -n "${DBT_STATE_DIR}" ]; then
-  exec ${DBT_CMD} --project-dir /app/project --profiles-dir /app/profiles --state "${DBT_STATE_DIR}"
+  exec ${DBT_CMD} --project-dir /app/project --profiles-dir /app/profiles --selector processing_flow
 else
   exec ${DBT_CMD} --project-dir /app/project --profiles-dir /app/profiles
 fi
