@@ -12,7 +12,6 @@ clean as (
   select
     cast(id as TINYINT)                as id,
     cast(order_status as VARCHAR(50))  as order_status,
-    cast('{{ _load_date }}' as DATE)   as _load_date,
     now() as _ingested_at
   from latest
   qualify row_number() over (partition by id order by _ingested_at desc) = 1

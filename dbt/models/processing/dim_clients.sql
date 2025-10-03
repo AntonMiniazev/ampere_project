@@ -16,7 +16,6 @@ clean as (
     cast(fullname as VARCHAR(255))          as fullname,
     cast(preferred_store_id  as TINYINT)    as preferred_store_id,    
     cast(registration_date  as DATE)        as registration_date,
-    cast('{{ _load_date }}' as DATE)        as _load_date,
     now()                                   as _ingested_at,
   from latest
   qualify row_number() over (partition by id order by _ingested_at desc) = 1

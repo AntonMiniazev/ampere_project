@@ -1,0 +1,133 @@
+version: 1
+
+defaults:
+  batch_size: 200000
+
+dimensions:
+  dim_clients:
+    enabled: true
+    load_date: latest
+    columns:   
+      - registration_date: DATE
+      - _load_date: DATE
+      - _ingested_at: DATETIME2
+        precision: 0   
+  dim_assortment:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0               
+  dim_costing:
+    enabled: true
+    load_date: latest
+    columns:  
+      - avg_cost: DECIMAL
+        precision: 10
+        scale: 2
+      - cost_active_period: DATE     
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_delivery_costing:
+    enabled: true
+    load_date: latest
+    columns:   
+      - tariff: DECIMAL
+        precision: 4
+        scale: 2
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_delivery_resource:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_delivery_type:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_order_product:
+    enabled: true
+    load_date: latest
+    columns:   
+      - quantity: DECIMAL
+        precision: 6
+        scale: 2    
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_order_status_history:
+    enabled: true
+    load_date: latest
+    columns:   
+      - status_datetime: DATETIME2
+        precision: 2    
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_order_statuses:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_payments:
+    enabled: true
+    load_date: latest
+    columns:   
+      - amount: DECIMAL
+        precision: 12
+        scale: 4         
+      - payment_date: DATE
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_product_categories:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_products:
+    enabled: true
+    load_date: latest
+    columns:   
+      - price: DECIMAL
+        precision: 10
+        scale: 2     
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_stores:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0 
+  dim_zones:
+    enabled: true
+    load_date: latest
+    columns:   
+      - _ingested_at: DATETIME2
+        precision: 0 
+
+facts:
+  fact_orders:
+    enabled: true
+    load_date: latest
+    columns:
+      - order_date: DATE
+      - order_source_id: TINYINT
+      - _ingested_at: DATETIME2
+        precision: 0
+      - total_amount: DECIMAL
+        precision: 12
+        scale: 4
+  fact_delivery_tracking:
+    enabled: true
+    load_date: latest
+    columns:
+      - status_datetime: DATETIME2
+        precision: 0
+      - delivery_status_id: TINYINT
+      - _ingested_at: DATETIME2
+        precision: 0

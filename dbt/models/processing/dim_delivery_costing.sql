@@ -13,7 +13,6 @@ clean as (
     cast(zone_id as TINYINT)            as zone_id,
     cast(delivery_type_id as TINYINT)   as delivery_type_id,
     cast(tariff as DECIMAL(4,2))        as tariff,
-    cast('{{ _load_date }}' as DATE)    as _load_date,
     now() as _ingested_at
   from latest
   qualify row_number() over (partition by zone_id, delivery_type_id order by _ingested_at desc) = 1

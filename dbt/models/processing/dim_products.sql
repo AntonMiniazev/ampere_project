@@ -15,7 +15,6 @@ clean as (
     cast(price as DECIMAL(10,2))     as price,
     cast(unit_type as VARCHAR(50))   as unit_type,
     cast(category_id as SMALLINT)    as category_id,
-    cast('{{ _load_date }}' as DATE) as _load_date,
     now() as _ingested_at
   from latest
   qualify row_number() over (partition by id order by _ingested_at desc) = 1

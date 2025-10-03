@@ -11,5 +11,4 @@ models:
         tests: [not_null]
       - name: cost_active_period
         tests: [not_null]
-      - name: _load_date
       - name: _ingested_at

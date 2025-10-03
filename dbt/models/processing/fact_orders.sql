@@ -17,7 +17,6 @@ clean as (
     cast(order_date as DATE)               as order_date,    
     cast(order_source_id as TINYINT)       as order_source_id,
     cast(total_amount as DECIMAL(12,4))    as total_amount,
-    cast('{{ _load_date }}' as DATE)       as _load_date,
     now()                                  as _ingested_at,
   from latest
   qualify row_number() over (partition by id order by _ingested_at desc) = 1

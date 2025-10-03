@@ -10,5 +10,4 @@ models:
       - name: price
       - name: unit_type
       - name: category_id
-      - name: _load_date
       - name: _ingested_at

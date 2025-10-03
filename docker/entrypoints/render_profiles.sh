@@ -21,7 +21,7 @@ ampere_duckdb_project:
       type: duckdb
       threads: ${THREADS}
       path: ${DUCKDB_PATH}
-      extensions: ["httpfs"]
+      extensions: ["httpfs", "parquet", "aws"]
       settings:
         s3_region: "us-east-1"
         s3_url_style: "path"

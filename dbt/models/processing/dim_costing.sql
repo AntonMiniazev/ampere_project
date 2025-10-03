@@ -14,7 +14,6 @@ clean as (
     cast(store_id as TINYINT)         as store_id,
     cast(avg_cost as DECIMAL(10,2))   as avg_cost,
     cast(cost_active_period as DATE)  as cost_active_period,
-    cast('{{ _load_date }}' as DATE)  as _load_date,
     now() as _ingested_at
   from latest
   qualify row_number() over (partition by product_id, store_id, cost_active_period order by _ingested_at desc) = 1

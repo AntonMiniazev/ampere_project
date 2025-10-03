@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
+    "adbc-driver-manager>=1.8.0",
     "boto3>=1.40.18",
     "connectorx>=0.4.3",
     "dbt-duckdb>=1.9.4",
@@ -19,5 +20,7 @@ dependencies = [
     "pyarrow>=21.0.0",
     "pyodbc>=5.2.0",
     "ruff>=0.11.13",
-    "sqlalchemy>=2.0.42",
+    "s3fs>=2025.9.0",
+    "sqlalchemy>=2.0.43",
+    "tqdm>=4.67.1",
 ]

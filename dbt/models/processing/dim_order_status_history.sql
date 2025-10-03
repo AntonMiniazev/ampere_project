@@ -13,7 +13,6 @@ clean as (
     cast(order_id as INT)           as order_id,
     cast(order_status_id as TINYINT) as order_status_id,
     cast(status_datetime as TIMESTAMP) as status_datetime,
-    cast('{{ _load_date }}' as DATE) as _load_date,
     now() as _ingested_at
   from latest
   qualify row_number() over (partition by order_id, order_status_id, status_datetime order by _ingested_at desc) = 1

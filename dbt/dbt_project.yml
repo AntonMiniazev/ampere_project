@@ -13,5 +13,10 @@ models:
     processing:
       +schema: silver
       +materialized: external
+      +tags: ["processing"]
     business_logic:
-      +schema: gold
+      export_processing_to_mssql:
+        +enabled: "{{ var('enable_mssql_export', false) }}"
+        +tags: ["bl_export"]
+        +materialized: table
+        +alias: mssql_export_log

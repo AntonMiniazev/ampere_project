@@ -17,7 +17,6 @@ clean as (
     cast(coalesce(delivery_status_id, 9) as TINYINT)     as delivery_status_id,    
     cast(coalesce(status, 'Unassigned') as VARCHAR(50))  as status,
     cast(status_datetime as datetime)                    as status_datetime,
-    cast('{{ _load_date }}' as DATE)                     as _load_date,
     now()                                                as _ingested_at,
   from latest
 )

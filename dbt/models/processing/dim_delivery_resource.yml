@@ -13,5 +13,4 @@ models:
         tests: [not_null]
       - name: active_flag
         tests: [not_null]
-      - name: _load_date
       - name: _ingested_at

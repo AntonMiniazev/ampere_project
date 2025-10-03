@@ -13,7 +13,6 @@ clean as (
     cast(order_id as INT)          as order_id,
     cast(product_id as INT)        as product_id,
     cast(quantity as DECIMAL(6,2)) as quantity,
-    cast('{{ _load_date }}' as DATE) as _load_date,
     now() as _ingested_at
   from latest
   qualify row_number() over (partition by order_id, product_id order by _ingested_at desc) = 1
