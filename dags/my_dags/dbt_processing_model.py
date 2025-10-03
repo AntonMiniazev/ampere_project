@@ -32,7 +32,7 @@ default_args = {
 with DAG(
     dag_id=DAG_ID,
     start_date=datetime(2025, 1, 1),
-    schedule=None,  # run manually for now
+    schedule="15 4 * * *",
     catchup=False,
     default_args=default_args,
     tags=["dbt", "processing"],
