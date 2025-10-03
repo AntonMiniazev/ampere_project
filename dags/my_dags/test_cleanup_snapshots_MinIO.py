@@ -208,15 +208,23 @@ with DAG(
         return {"bucket": bucket, "table": table_name, "deleted_dates": plan["delete_dates"], "deleted_keys_count": len(keys)}
 
     @task
-    def finalize_run_log(per_table_results: List[Dict[str, Any]], ds: str | None = None) -> str:
-
-        if not isinstance(per_table_results, list):
+    def finalize_run_log(per_table_results: Any, ds: str | None = None) -> str:
+        # Recursively materialize/flatten nested LazyXComSequence/list -> list[dict]
+        def _flatten_to_dicts(x: Any) -> List[Dict[str, Any]]:
+            # If it's already the expected dict leaf
+            if isinstance(x, dict):
+                return [x]
+            # Try to treat as a (possibly lazy) sequence and iterate
             try:
-                # forces XCom pull for mapped results
-                per_table_results = list(per_table_results)
+                seq = list(x)  # forces LazyXComSequence to pull XComs
             except TypeError:
-                # Fallback: wrap single value
-                per_table_results = [per_table_results]
+                return []  # non-iterable unexpected leaf
+            out: List[Dict[str, Any]] = []
+            for el in seq:
+                out.extend(_flatten_to_dicts(el))
+            return out
+
+        results: List[Dict[str, Any]] = _flatten_to_dicts(per_table_results)
 
         ctx = get_current_context()
         if ds is None:
@@ -232,10 +240,9 @@ with DAG(
             "utc_written_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         }
 
-        # Ensure all items are JSON-serializable (dicts with only primitives)
+        # Keep JSON-safe primitives only
         safe_results: List[Dict[str, Any]] = []
-        for item in per_table_results:
-            # item is expected to be a dict from apply_deletions()
+        for item in results:
             safe_item = {
                 "bucket": item.get("bucket"),
                 "table": item.get("table"),
@@ -246,14 +253,9 @@ with DAG(
                 safe_item["dry_run"] = True
             safe_results.append(safe_item)
 
-        payload = {
-            "meta": meta,
-            "results": safe_results,
-        }
-
         key = _summary_log_key()
         s3.load_string(
-            string_data=json.dumps(payload, ensure_ascii=False, indent=2),
+            string_data=json.dumps({"meta": meta, "results": safe_results}, ensure_ascii=False, indent=2),
             key=key,
             bucket_name=LOG_BUCKET,
             replace=True,
@@ -272,17 +274,17 @@ with DAG(
         bucket=SILVER_BUCKET, dim_or_fact="fact")
 
     # 2) For each list compute deletion
-    raw_plans = compute_deletions.partial(
+    raw_plans = compute_deletions.override(task_id="compute_deletions_raw").partial(
         bucket=RAW_BUCKET,    dim_or_fact=None).expand(table_name=raw_tables)
-    dims_plans = compute_deletions.partial(
+    dims_plans = compute_deletions.override(task_id="compute_deletions_silver_dims").partial(
         bucket=SILVER_BUCKET, dim_or_fact="dimension").expand(table_name=silver_tables_dim)
-    facts_plans = compute_deletions.partial(
+    facts_plans = compute_deletions.override(task_id="compute_deletions_silver_facts").partial(
         bucket=SILVER_BUCKET, dim_or_fact="fact").expand(table_name=silver_tables_fact)
 
     # 3) Apply deletions for each stream
-    raw_results = apply_deletions.expand(plan=raw_plans)
-    facts_results = apply_deletions.expand(plan=facts_plans)
-    dims_results = apply_deletions.expand(plan=dims_plans)
+    raw_results = apply_deletions.override(task_id="apply_deletions_raw").expand(plan=raw_plans)
+    facts_results = apply_deletions.override(task_id="apply_deletions_silver_dims").expand(plan=facts_plans)
+    dims_results = apply_deletions.override(task_id="apply_deletions_silver_facts").expand(plan=dims_plans)
 
     # 4) Summary log
     summary_uri = finalize_run_log([raw_results, facts_results, dims_results])
