@@ -110,7 +110,7 @@ def _summary_log_key() -> str:
 
 # --- DAG ---
 with DAG(
-    dag_id="cleanup_raw_minio_snapshots",
+    dag_id="test_cleanup_minio_snapshots",
     schedule="0 3 * * *",
     start_date=datetime(2025, 9, 13, tzinfo=timezone.utc),
     catchup=False,
