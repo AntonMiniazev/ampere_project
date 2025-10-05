@@ -1,6 +1,6 @@
 # Project Overview:
 
-<b> [WIP:] </b> Establishing Generation + ETL + Reporting on homelab (Ubuntu server).
+<b> [WIP:] </b> Establishing Generation + ETL + Reporting on my homelab (Ubuntu server).
 
 <b> [Current stage:] </b> ETL development and dbt model preparation.
 
@@ -15,27 +15,29 @@
   - [x] Prepare Helm charts
     - [x] Airflow (`kube-cluster/airflow-chart`)
     - [x] MinIO (`kube-cluster/minio-chart`)
-    - [x] MSSQL (`kube-cluster/ms-chart`)
+    - [x] SQL Server (`kube-cluster/ms-chart`)
     - [x] DuckDB + dbt (`kube-cluster/dbt-chart`)
   - [x] Prepare one script for deployment
     - [x] Prepare sub-script (`kube-cluster/deploy.sh`) for VM deployment
     - [x] Organize `Vagrantfile` for separate deployment (`kube-cluster/other_scripts/post-deployment.sh`)
     - [x] Prepare sub-script for Helm charts on master
 - [ ] ETL
-  - [ ] Establish DS → Stage layer
+  - [x] Establish DS → Stage layer
 	  - [x] Launch generator DAG (deployed through `dags/my_dags/orders_clients_gen_dag.py`)
     - [x] Launch transfer ingestion DAG (deployed through `dags/my_dags/source_to_minio.py`)
-    - [x] Launch MinIO cleaning DAG to remove unnecessary artefacts (deployed through `dags/my_dags/cleanup_raw_shapshots.py`)
-    - [ ] Create dbt model for processing layer
-    - [ ] Create dbt model for business logic layer
-	  - [ ] Create sensor to push dbt model
-	  - [ ] Downstream DAGs to push data to golden layer
-  - [ ] Upload to MSSQL (business logic layer)
-    - [ ] DDL / DML
+    - [x] Launch MinIO cleaning DAG to remove unnecessary artefacts in RAW and Processing buckets (deployed through `dags/my_dags/cleanup_minio_shapshots.py`)
+    - [x] Prepare multi-stage docker image for dbt development (local dev container + dev image for pod to process dbt models) 
+    - [x] Create dbt model for processing layer
+      - [x] Processing dbt model with tests (deployed through `/workspaces/ampere_project/dbt/models/processing/`)
+      - [x] DAG to manage processing dbt model (deployed through `dags/my_dags/dbt_processing_model.py`)
+    - [x] Create dbt model for stage pre-business logic layer
+      - [x] Pre-BL dbt model (deployed through `dbt/models/business_logic/export_processing_to_mssql.py`)
+      - [ ] DAG to manage BL dbt model
+  - [ ] Stage to Business logic process
+    - [x] Initial schemas
+    - [ ] DDL / DML scripts with associated DAGs
     - [ ] Backups
-  - [ ] Testing
-- [ ] Data Marts preparation
-  - [x] Initial schemas
+- [ ] Enchance all layers with incremental updates/SCD adoption
 - [ ] BI layer
 ---
 

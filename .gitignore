@@ -21,8 +21,6 @@ ruff.toml
 # Devcontainer / Docker
 # =========================
 .devcontainer/
-Dockerfile
-Docker_image/
 
 # =========================
 # Secrets / Config

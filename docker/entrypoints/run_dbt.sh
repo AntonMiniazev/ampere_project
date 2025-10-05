@@ -13,11 +13,3 @@ mkdir -p "$(dirname "${DUCKDB_PATH}")"
 
 # activate venv and run
 . /app/.venv/bin/activate
-
-#DELETE THIS
-#if [ -n "${DBT_STATE_DIR}" ]; then
-#  exec ${DBT_CMD} --project-dir /app/project --profiles-dir /app/profiles --selector processing_flow --no-partial-parse
-#  echo "HEY THERE"
-#else
-#  exec ${DBT_CMD} --project-dir /app/project --profiles-dir /app/profiles
-#fi
