@@ -23,6 +23,13 @@ minio_secret_key = Secret(
     key="MINIO_SECRET_KEY",
 )
 
+mssql_pass = Secret(
+    deploy_type="env", 
+    deploy_target="MSSQL_PASSWORD",
+    secret="mssql-sa-secret", 
+    key="SA_PASSWORD"
+)
+
 default_args = {
     "owner": "ampere",
     "depends_on_past": False,
@@ -78,7 +85,9 @@ with DAG(
         image=IMAGE,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         startup_timeout_seconds=240,
-        secrets=[minio_access_key, minio_secret_key],
+        secrets=[
+            minio_access_key, minio_secret_key, mssql_pass
+        ],
         env_vars={
             "MINIO_S3_ENDPOINT": "minio.ampere.svc.cluster.local:9000",
             "DBT_CMD": "dbt run --selector bl_export --vars '{\"enable_mssql_export\": true}'",
@@ -86,6 +95,9 @@ with DAG(
             "THREADS": "4",
             "DUCKDB_PATH": "/app/artifacts/ampere.duckdb",
             "EXPORT_CONFIG_PATH": "/app/project/models/business_logic/config/export_map.yaml",
+            "MSSQL_HOST": "mssql-service.ampere.svc.cluster.local",
+            "MSSQL_PORT": "1433",
+            "MSSQL_DB":   "Ampere",            
         },
         container_resources=V1ResourceRequirements(
             requests={"cpu": "100m", "memory": "256Mi"},
