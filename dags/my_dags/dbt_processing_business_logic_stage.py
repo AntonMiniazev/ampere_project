@@ -4,7 +4,7 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
-DAG_ID = "dbt_processing"
+DAG_ID = "dbt_processing_business_logic_stage"
 NAMESPACE = "ampere"
 IMAGE = "ghcr.io/antonminiazev/ampere_project:latest"
 
@@ -34,7 +34,7 @@ with DAG(
     schedule="15 4 * * *",
     catchup=False,
     default_args=default_args,
-    tags=["dbt", "processing"],
+    tags=["dbt", "processing", "business_logic"],
 ) as dag:
 
     dbt_processing = KubernetesPodOperator(
@@ -72,8 +72,8 @@ with DAG(
     )
 
     dbt_business_logic_stage = KubernetesPodOperator(
-        task_id="dbt_build_processing",
-        name="dbt-build-processing",
+        task_id="dbt_build_business_logic_stage",
+        name="dbt-build-business-logic-stage",
         namespace=NAMESPACE,
         image=IMAGE,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
