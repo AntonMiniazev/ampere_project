@@ -85,6 +85,7 @@ with DAG(
             "DBT_TARGET": "prod",
             "THREADS": "4",
             "DUCKDB_PATH": "/app/artifacts/ampere.duckdb",
+            "EXPORT_CONFIG_PATH": "/app/project/models/business_logic/config/export_map.yaml",
         },
         container_resources=V1ResourceRequirements(
             requests={"cpu": "100m", "memory": "256Mi"},
