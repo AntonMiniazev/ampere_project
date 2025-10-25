@@ -55,9 +55,9 @@ COPY dbt/ /app/project/
 # Resolve dbt packages at build time
 RUN . /app/.venv/bin/activate && dbt --version && dbt deps --project-dir /app/project
 
-# Entrypoints (как уже сделали)
-COPY docker/entrypoints/render_profiles.sh /usr/local/bin/render_profiles.sh
-COPY docker/entrypoints/run_dbt.sh       /usr/local/bin/run_dbt.sh
+# Entrypoints
+ENV PATH="/app/.venv/bin:${PATH}" DBT_PROFILES_DIR="/app/profiles"
+COPY docker/entrypoints/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
 ENTRYPOINT ["/usr/bin/tini","--"]
