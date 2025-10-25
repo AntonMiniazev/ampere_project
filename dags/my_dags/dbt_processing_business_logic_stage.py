@@ -78,29 +78,21 @@ with DAG(
         image=IMAGE,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         startup_timeout_seconds=240,
-
-        # Inject MINIO_* from 'minio-creds' and runtime env for the runner
         secrets=[minio_access_key, minio_secret_key],
         env_vars={
-            # in-cluster MinIO Service DNS (host:port, no scheme)
             "MINIO_S3_ENDPOINT": "minio.ampere.svc.cluster.local:9000",
-            # dbt command (select only processing layer)
-            "DBT_CMD": "dbt run --project-dir /workspaces/ampere_project/dbt --selector bl_export --vars 'enable_mssql_export: true'",
+            "DBT_CMD": "dbt run --selector bl_export --vars '{\"enable_mssql_export\": true}'",
             "DBT_TARGET": "prod",
             "THREADS": "4",
+            "DUCKDB_PATH": "/app/artifacts/ampere.duckdb",
         },
-
-        #startup_timeout_seconds=600,
         container_resources=V1ResourceRequirements(
             requests={"cpu": "100m", "memory": "256Mi"},
             limits={"cpu": "1", "memory": "1Gi"},
         ),
-
-        # Other defaults
         get_logs=True,
         is_delete_operator_pod=True,
-
         node_selector={"kubernetes.io/hostname": "ampere-k8s-node2"},
-    )    
+    )  
 
     dbt_processing >> dbt_business_logic_stage
