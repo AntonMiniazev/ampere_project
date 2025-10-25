@@ -56,7 +56,7 @@ with DAG(
         secrets=[minio_access_key, minio_secret_key],
         env_vars={
             # in-cluster MinIO Service DNS (host:port, no scheme)
-            "MINIO_S3_ENDPOINT": "minio.ampere.svc.cluster.local:9000",
+            "MINIO_S3_ENDPOINT": "http://minio.ampere.svc.cluster.local:9000",
             # dbt command (select only processing layer)
             "DBT_CMD": "dbt build --project-dir /app/project --profiles-dir /app/profiles --selector processing_flow --no-partial-parse",
             "DBT_TARGET": "prod",
