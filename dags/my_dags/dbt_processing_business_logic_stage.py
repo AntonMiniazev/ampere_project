@@ -89,7 +89,7 @@ with DAG(
             minio_access_key, minio_secret_key, mssql_pass
         ],
         env_vars={
-            "MINIO_S3_ENDPOINT": "minio.ampere.svc.cluster.local:9000",
+            "MINIO_S3_ENDPOINT": "http://minio.ampere.svc.cluster.local:9000",
             "DBT_CMD": "dbt run --selector bl_export --vars '{\"enable_mssql_export\": true}'",
             "DBT_TARGET": "prod",
             "THREADS": "4",
