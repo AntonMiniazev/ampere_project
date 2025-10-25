@@ -67,9 +67,7 @@ with DAG(
 
         # Other defaults
         get_logs=True,
-        is_delete_operator_pod=True,
-        # resources={"request_cpu": "500m", "request_memory": "512Mi",
-        #            "limit_cpu": "2", "limit_memory": "2Gi"},
+        is_delete_operator_pod=False,
 
         node_selector={"kubernetes.io/hostname": "ampere-k8s-node2"},
     )
