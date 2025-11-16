@@ -75,7 +75,6 @@ with DAG(
         # Other defaults
         get_logs=True,
         is_delete_operator_pod=False,
-        delete_policy="Never",
 
         node_selector={"kubernetes.io/hostname": "ampere-k8s-node2"},
     )
