@@ -15,5 +15,5 @@ with DAG(
     SQLExecuteQueryOperator(
         task_id="run_procedures_to_update_reporting_layer",
         conn_id="mssql_odbc_conn",
-        sql="EXEC [reporting].[populate_bussiness_logic_tables]"
+        sql="EXEC [ampere].[reporting].[populate_bussiness_logic_tables]"
     )
