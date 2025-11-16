@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from airflow import DAG  # type: ignore
 from airflow.sdk import task  # type: ignore
 from generators.orders_gen import prepare_orders_statuses
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 import pandas as pd
 from db.db_io import upload_new_data
@@ -27,7 +28,6 @@ def gen_orders(**context):
     print("Generation for " + str(today) + " and " + str(yesterday))
     prepare_orders_statuses(today, yesterday)
 
-
 with DAG(
     dag_id="orders_clients_generation",
     schedule="0 3 * * *",
@@ -36,7 +36,13 @@ with DAG(
     catchup=True,
     max_active_runs=1,
 ) as dag:
-    run_this = gen_clients()
-    and_this = gen_orders()
+    clients_generation = gen_clients()
+    orders_generation = gen_orders()
 
-    run_this >> and_this
+
+    trigger_source_to_minio = TriggerDagRunOperator(
+        task_id="trigger_source_to_minio",
+        trigger_dag_id="source_to_minio",
+    )
+
+    clients_generation >> orders_generation >> trigger_source_to_minio

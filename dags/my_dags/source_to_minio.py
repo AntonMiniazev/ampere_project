@@ -3,6 +3,7 @@ from airflow import DAG
 from airflow.decorators import task
 from db.ddl_init import table_queries
 from generators.config import database_init, schema_init
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 import io
 import uuid
 
@@ -12,7 +13,7 @@ mssql_conn = "mssql_conn"
 TABLE_NAMES = list(table_queries.keys())
 
 
-@task(task_id="get_source_table")
+@task
 def export_table(database_init: str, schema_init: str, table_name: str, **context):
     # Import inside the task to speed up DAG parsing
     from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
@@ -26,7 +27,7 @@ def export_table(database_init: str, schema_init: str, table_name: str, **contex
 
     # Convert DataFrame to parquet in-memory
     buf = io.BytesIO()
-    df.to_parquet(buf, index=False)  # Requires pyarrow
+    df.to_parquet(buf, index=False)
     buf.seek(0)
 
     snapshot_type = "full"
@@ -53,15 +54,33 @@ def export_table(database_init: str, schema_init: str, table_name: str, **contex
 
 with DAG(
     dag_id="source_to_minio",
-    schedule="0 4 * * *",
+     schedule=None,
     start_date=datetime(2025, 8, 1),
-    catchup=True,
+    catchup=False,
     max_active_runs=1,
     tags=["prod", "s3", "transfer", "source_layer", "raw_layer"],
 ) as dag:
-    prev_task = None
+    prev_export_task = None
+
+    # The loop creates one export task per table.
+    # All tasks form a strict linear chain so that tables are exported sequentially.
     for tname in TABLE_NAMES:
-        t = export_table(database_init, schema_init, tname)
-        if prev_task:
-            prev_task >> t
-        prev_task = t
+        current_export_task = export_table.override(task_id=f"export_{tname}")(
+            database_init,
+            schema_init,
+            tname
+        )
+
+        # Chain current task after the previous one to enforce sequential export
+        if prev_export_task:
+            prev_export_task >> current_export_task
+
+        prev_export_task = current_export_task
+
+    # After the last table is exported, trigger the next DAG in the pipeline
+    trigger_processing = TriggerDagRunOperator(
+        task_id="trigger_dbt_processing",
+        trigger_dag_id="dbt_processing",
+    )
+
+    prev_export_task >> trigger_processing

@@ -1,12 +1,12 @@
 ALTER PROCEDURE [reporting].[Populate_bussiness_logic_tables]
 AS
   BEGIN
-    SET nocount ON;
-    SET xact_abort ON;
+  SET nocount ON;
+  SET xact_abort ON;
 
-    BEGIN TRANSACTION;
+  BEGIN TRANSACTION;
 
-    BEGIN try
+  BEGIN try
           -- Step 1: popilating dimension tables
           -- Step 1.1; populating dim_clients for Marketing and Financial Performance reporting
           EXEC [reporting].[Populate_and_index_table]
@@ -37,6 +37,18 @@ AS
           EXEC [reporting].[Populate_and_index_table]
             @target = 'dim_resource',
             @source = 'vw_dim_resource';
+
+
+          -- Step 1.7; populating fct_orders_sales for Marketing and Financial Performance reporting
+          EXEC [reporting].[Populate_and_index_table]
+            @target = 'fct_orders_sales',
+            @source = 'vw_fct_orders';
+
+
+          -- Step 1.8; populating fct_deliveries for Delivery reporting
+          EXEC [reporting].[Populate_and_index_table]
+            @target = 'fct_deliveries',
+            @source = 'vw_fct_deliveries';            
 
           -- Commit if success
           COMMIT TRANSACTION
