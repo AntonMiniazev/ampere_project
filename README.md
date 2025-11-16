@@ -4,13 +4,12 @@
 
 <b> [Current stage:] </b> ETL development and dbt model preparation.
 
-- [ ] Complete [master diagram](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/ampere_project_structure.svg)
+- [x] Complete [master diagram](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/ampere_project_structure.svg)
   - [x] Initialized
   - [x] Update tables
-  - [ ] Complete Web part
 - [x] Prepare Python generators
   - [x] Prepare python scripts to generate raw data (`dags/generators`)
-  - [ ] Complete diagram with [generator's logic](https://github.com/AntonMiniazev/ampere_project/blob/master/project_images/python_generator_script.svg)
+  - [x] Complete diagram with [generator's logic](https://github.com/AntonMiniazev/ampere_project/blob/master/project_images/python_generator_script.svg)
 - [x] Deployment
   - [x] Prepare Helm charts
     - [x] Airflow (`kube-cluster/airflow-chart`)
@@ -32,10 +31,10 @@
       - [x] DAG to manage processing dbt model (deployed through `dags/my_dags/dbt_processing_model.py`)
     - [x] Create dbt model for stage pre-business logic layer
       - [x] Pre-BL dbt model (deployed through `dbt/models/business_logic/export_processing_to_mssql.py`)
-      - [ ] DAG to manage BL dbt model
-  - [ ] Stage to Business logic process
+      - [x] DAG to manage BL dbt model
+  - [x] Stage to Business logic process
     - [x] Initial schemas
-    - [ ] DDL / DML scripts with associated DAGs
+    - [x] DDL / DML scripts with associated DAGs
     - [ ] Backups
 - [ ] Enchance all layers with incremental updates/SCD adoption
 - [ ] BI layer
