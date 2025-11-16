@@ -46,6 +46,7 @@ spark/
 data_source/
 deployment/sql_scripts/
 kube-cluster copy/
+.$*
 
 # =========================
 # dbt
@@ -54,3 +55,4 @@ kube-cluster copy/
 /dbt/logs/
 /dbt/dbt_packages/
 .dbt/
+/dbt/local.duckdb
