@@ -33,7 +33,7 @@ with DAG(
     schedule="0 3 * * *",
     start_date=datetime(2025, 8, 24),
     tags=["prod", "init", "generator", "source_layer"],
-    catchup=True,
+    catchup=False,
     max_active_runs=1,
 ) as dag:
     clients_generation = gen_clients()
