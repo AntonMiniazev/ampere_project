@@ -74,6 +74,7 @@ with DAG(
     trigger_mssql_reporting_layer = TriggerDagRunOperator(
         task_id="trigger_mssql_reporting_layer",
         trigger_dag_id="mssql_reporting_layer",
+        logical_date="{{ logical_date }}",
     )
 
     dbt_business_logic_stage >> trigger_mssql_reporting_layer

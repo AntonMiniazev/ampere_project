@@ -43,6 +43,7 @@ with DAG(
     trigger_source_to_minio = TriggerDagRunOperator(
         task_id="trigger_source_to_minio",
         trigger_dag_id="source_to_minio",
+        logical_date="{{ logical_date }}",
     )
 
     clients_generation >> orders_generation >> trigger_source_to_minio
