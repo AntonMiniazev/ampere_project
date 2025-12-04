@@ -47,6 +47,7 @@ data_source/
 deployment/sql_scripts/
 kube-cluster copy/
 .$*
+AGENTS.md
 
 # =========================
 # dbt

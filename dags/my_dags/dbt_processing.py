@@ -50,7 +50,7 @@ with DAG(
             # dbt command (select only processing layer)
             "DBT_CMD": "dbt build --project-dir /app/project --profiles-dir /app/profiles --selector processing_flow --no-partial-parse",
             "DBT_TARGET": "prod",
-            "THREADS": "4",
+            "THREADS": "2",
             # optional local path for DuckDB file inside the container
             "DUCKDB_PATH": "/app/artifacts/ampere.duckdb",
         },
