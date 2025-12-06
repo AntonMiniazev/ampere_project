@@ -204,11 +204,20 @@ def model(dbt, session):
         dataset = ds.dataset(parquet_path, format="parquet", filesystem=s3)
         scanner = dataset.scanner(batch_size=batch_size)
 
+        # Use "replace" only on the first chunk (when requested) so later batches append
+        first_batch = True
         total = 0
         for batch in scanner.to_batches():
             df = pl.from_arrow(batch)
-            df.to_pandas().to_sql(name=f"{table_name}", con=conn, schema=f"{STAGE_SCHEMA}",
-                                  if_exists="replace", dtype=columns_spec)
+            mode = "replace" if (replace_mode and first_batch) else "append"
+            df.to_pandas().to_sql(
+                name=f"{table_name}",
+                con=conn,
+                schema=f"{STAGE_SCHEMA}",
+                if_exists=mode,
+                dtype=columns_spec,
+            )
+            first_batch = False
             total += len(df)
         return total
 
