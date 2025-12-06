@@ -209,12 +209,21 @@ def model(dbt, session):
         total = 0
         for batch in scanner.to_batches():
             df = pl.from_arrow(batch)
+            # Keep only configured columns; drop any accidental extras from upstream aggregation
+            if columns_spec:
+                missing = [c for c in columns_spec.keys() if c not in df.columns]
+                if missing:
+                    raise RuntimeError(
+                        f"Missing expected columns for {table_name}: {missing}"
+                    )
+                df = df.select(list(columns_spec.keys()))
             mode = "replace" if (replace_mode and first_batch) else "append"
             df.to_pandas().to_sql(
                 name=f"{table_name}",
                 con=conn,
                 schema=f"{STAGE_SCHEMA}",
                 if_exists=mode,
+                index=False,
                 dtype=columns_spec,
             )
             first_batch = False
