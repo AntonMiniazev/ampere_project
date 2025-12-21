@@ -38,7 +38,7 @@ with DAG(
     get_orders = SQLExecuteQueryOperator(
         task_id="test",
         conn_id="postgres_odbc_conn",  # type=ODBC
-        sql="SELECT * FROM apere_db.public.test_table",
+        sql="SELECT * FROM ampere_db.public.test_table",
         do_xcom_push=True,
         return_last=True,
     )
