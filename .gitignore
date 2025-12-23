@@ -48,7 +48,6 @@ deployment/sql_scripts/
 kube-cluster copy/
 .$*
 internal_docs/
-docker/init_data_generator
 
 # =========================
 # dbt

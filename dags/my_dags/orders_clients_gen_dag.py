@@ -1,44 +1,57 @@
-from datetime import datetime, timedelta
-from airflow import DAG  # type: ignore
-from airflow.sdk import task  # type: ignore
-from generators.orders_gen import prepare_orders_statuses
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from datetime import datetime
 
-import pandas as pd
-from db.db_io import upload_new_data
-from generators.clients_gen import (
-    prepare_clients_update_and_generation,
-    update_churned,
+from airflow import DAG
+from airflow.models import Variable
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.providers.cncf.kubernetes.secret import Secret
+from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
+
+DAG_ID = "orders_clients_generation"
+
+NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+IMAGE = Variable.get(
+    "order_data_generator_image",
+    default_var="ghcr.io/antonminiazev/order-data-generator:latest",
 )
 
+pg_user = Secret(
+    deploy_type="env",
+    deploy_target="PGUSER",
+    secret="pguser",
+    key="PGUSER",
+)
 
-@task(task_id="generate_and_update_clients")
-def gen_clients(**context):
-    today = context["logical_date"].date()
-    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
-        today)
-    update_churned(to_churn_ids)
-    upload_new_data(pd.DataFrame(clients_for_upload), "clients")
-
-
-@task(task_id="generate_orders")
-def gen_orders(**context):
-    today = context["logical_date"].date()
-    yesterday = today - timedelta(days=1)
-    print("Generation for " + str(today) + " and " + str(yesterday))
-    prepare_orders_statuses(today, yesterday)
+pg_pass = Secret(
+    deploy_type="env",
+    deploy_target="PGPASSWORD",
+    secret="pgpass",
+    key="PGPASSWORD",
+)
 
 with DAG(
-    dag_id="orders_clients_generation",
+    dag_id=DAG_ID,
     schedule="0 3 * * *",
     start_date=datetime(2025, 8, 24),
     tags=["prod", "init", "generator", "source_layer"],
     catchup=False,
     max_active_runs=1,
 ) as dag:
-    clients_generation = gen_clients()
-    orders_generation = gen_orders()
-
+    generate_data = KubernetesPodOperator(
+        task_id="generate_source_data",
+        name="order-data-generator",
+        namespace=NAMESPACE,
+        image=IMAGE,
+        image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
+        secrets=[pg_user, pg_pass],
+        arguments=["--run-date", "{{ ds }}"],
+        container_resources=V1ResourceRequirements(
+            requests={"cpu": "250m", "memory": "1Gi"},
+            limits={"cpu": "2", "memory": "3Gi"},
+        ),
+        get_logs=True,
+        is_delete_operator_pod=True,
+    )
 
     trigger_source_to_minio = TriggerDagRunOperator(
         task_id="trigger_source_to_minio",
@@ -46,4 +59,5 @@ with DAG(
         logical_date="{{ logical_date }}",
     )
 
-    clients_generation >> orders_generation >> trigger_source_to_minio
+    generate_data >> trigger_source_to_minio
+

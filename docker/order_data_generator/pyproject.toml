@@ -1,0 +1,26 @@
+[project]
+name = "order-data-generator"
+version = "0.1.0"
+description = "Daily data generator for Ampere source layer"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "faker>=37.3.0",
+    "numpy>=2.2.6",
+    "polars-lts-cpu>=1.0.0",
+    "psycopg[binary]>=3.2.2",
+    "sqlalchemy>=2.0.43",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "order_data_generator",
+    "order_data_generator.generators",
+]
+
+[tool.setuptools.package-dir]
+order_data_generator = "model"
+
