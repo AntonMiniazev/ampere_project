@@ -44,6 +44,7 @@ with DAG(
         image=IMAGE,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
+        cmds=["python", "-m", "order_data_generator"],
         arguments=["--run-date", "{{ ds }}"],
         container_resources=V1ResourceRequirements(
             requests={"cpu": "250m", "memory": "1Gi"},
