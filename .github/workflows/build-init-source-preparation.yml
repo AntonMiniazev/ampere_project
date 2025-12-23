@@ -34,6 +34,7 @@ jobs:
           context: docker/init_source_preparation
           file: docker/init_source_preparation/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/init-source-preparation:latest
-            ghcr.io/${{ github.repository_owner }}/init-source-preparation:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
