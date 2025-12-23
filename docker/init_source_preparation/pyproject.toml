@@ -15,7 +15,11 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["init_source_preparation"]
+packages = [
+    "init_source_preparation",
+    "init_source_preparation.generators",
+    "init_source_preparation.dictionaries",
+]
 
 [tool.setuptools.package-dir]
 init_source_preparation = "model"
