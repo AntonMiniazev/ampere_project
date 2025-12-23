@@ -1,13 +1,36 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
 from datetime import datetime
-from generators.data_source_initialization import initialize_data_sources
+
+from airflow import DAG
+from airflow.models import Variable
+from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.providers.cncf.kubernetes.secret import Secret
+from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2025, 1, 1),
     "retries": 0,
 }
+
+NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+IMAGE = Variable.get(
+    "init_source_preparation_image",
+    default_var="ghcr.io/antonminiazev/init-source-preparation:latest",
+)
+
+pg_user = Secret(
+    deploy_type="env",
+    deploy_target="PGUSER",
+    secret="pguser",
+    key="pguser",
+)
+
+pg_pass = Secret(
+    deploy_type="env",
+    deploy_target="PGPASSWORD",
+    secret="pgpass",
+    key="pgpass",
+)
 
 with DAG(
     dag_id="source_preparation_dag",
@@ -17,8 +40,20 @@ with DAG(
     description="Initial data source creation and dictionary population with data stored in excel tables. Executed one time only, after that data generated in orders_clients_generation.",
     tags=["init", "source_layer", "database", "prod"],
 ) as dag:
-    init_data_task = PythonOperator(
-        task_id="initialize_data_sources", python_callable=initialize_data_sources
+    init_data_task = KubernetesPodOperator(
+        task_id="initialize_data_sources",
+        name="init-source-preparation",
+        namespace=NAMESPACE,
+        image=IMAGE,
+        image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
+        secrets=[pg_user, pg_pass],
+        env_vars={},
+        container_resources=V1ResourceRequirements(
+            requests={"cpu": "200m", "memory": "512Mi"},
+            limits={"cpu": "1", "memory": "1Gi"},
+        ),
+        get_logs=True,
+        is_delete_operator_pod=True,
     )
 
     init_data_task

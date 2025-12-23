@@ -1,0 +1,24 @@
+[project]
+name = "init-source-preparation"
+version = "0.1.0"
+description = "Initial source data preparation for Ampere"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "faker>=37.3.0",
+    "polars-lts-cpu>=1.0.0",
+    "psycopg[binary]>=3.2.2",
+    "sqlalchemy>=2.0.43",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["init_source_preparation"]
+
+[tool.setuptools.package-dir]
+init_source_preparation = "model"
+
+[tool.setuptools.package-data]
+"init_source_preparation.dictionaries" = ["*.csv"]

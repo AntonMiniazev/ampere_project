@@ -47,7 +47,8 @@ data_source/
 deployment/sql_scripts/
 kube-cluster copy/
 .$*
-AGENTS.md
+internal_docs/AGENTS.md
+docker/init_data_generator
 
 # =========================
 # dbt

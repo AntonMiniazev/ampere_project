@@ -3,7 +3,7 @@
 ############################
 # Stage: dev (VS Code devcontainer)
 ############################
-FROM mcr.microsoft.com/devcontainers/python:3.11 AS dev
+FROM mcr.microsoft.com/devcontainers/python:3.13 AS dev
 
 # Keep dev image lean: only essential CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -11,23 +11,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Initialize Microsoft ODBC 18
-RUN curl -sSL -O https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb && \
-    dpkg -i packages-microsoft-prod.deb || true && \
-    apt-get update && \
-    apt-get install -y --fix-broken && \
-    ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev && \
-    rm -f packages-microsoft-prod.deb && \
-    rm -rf /var/lib/apt/lists/*
+#RUN curl -sSL -O https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb && \
+#    dpkg -i packages-microsoft-prod.deb || true && \
+#    apt-get update && \
+#    apt-get install -y --fix-broken && \
+#    ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev && \
+#    rm -f packages-microsoft-prod.deb && \
+#    rm -rf /var/lib/apt/lists/*
 
 # Use uv for fast, reproducible deps
 WORKDIR /workspace
 COPY pyproject.toml uv.lock ./
 RUN pipx install uv && uv sync
+RUN . /workspace/.venv/bin/activate && uv pip install --no-cache-dir "psycopg[binary]>=3.2.2"
 
 ############################
 # Stage: dbt-runner
 ############################
-FROM python:3.11-slim AS dbt-runner
+FROM python:3.13-slim AS dbt-runner
 ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tini \
@@ -35,13 +36,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && pip install --no-cache-dir uv
 
 # Initialize Microsoft ODBC 18
-RUN curl -sSL -O https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb && \
-    dpkg -i packages-microsoft-prod.deb || true && \
-    apt-get update && \
-    apt-get install -y --fix-broken && \
-    ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev && \
-    rm -f packages-microsoft-prod.deb && \
-    rm -rf /var/lib/apt/lists/*
+#RUN curl -sSL -O https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb && \
+#    dpkg -i packages-microsoft-prod.deb || true && \
+#    apt-get update && \
+#    apt-get install -y --fix-broken && \
+#    ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev && \
+#    rm -f packages-microsoft-prod.deb && \
+#    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
