@@ -22,14 +22,14 @@ pg_user = Secret(
     deploy_type="env",
     deploy_target="PGUSER",
     secret="pguser",
-    key="pguser",
+    key="PGUSER",
 )
 
 pg_pass = Secret(
     deploy_type="env",
     deploy_target="PGPASSWORD",
     secret="pgpass",
-    key="pgpass",
+    key="PGPASSWORD",
 )
 
 with DAG(
