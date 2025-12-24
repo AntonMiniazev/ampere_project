@@ -14,6 +14,10 @@ IMAGE = Variable.get(
     "order_data_generator_image",
     default_var="ghcr.io/antonminiazev/order-data-generator:latest",
 )
+IMAGE_PULL_POLICY = Variable.get(
+    "image_pull_policy",
+    default_var="IfNotPresent",
+)
 
 pg_user = Secret(
     deploy_type="env",
@@ -42,6 +46,7 @@ with DAG(
         name="order-data-generator",
         namespace=NAMESPACE,
         image=IMAGE,
+        image_pull_policy=IMAGE_PULL_POLICY,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
         cmds=["python", "-m", "order_data_generator"],

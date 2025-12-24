@@ -17,6 +17,10 @@ IMAGE = Variable.get(
     "init_source_preparation_image",
     default_var="ghcr.io/antonminiazev/init-source-preparation:latest",
 )
+IMAGE_PULL_POLICY = Variable.get(
+    "image_pull_policy",
+    default_var="IfNotPresent",
+)
 
 pg_user = Secret(
     deploy_type="env",
@@ -45,6 +49,7 @@ with DAG(
         name="init-source-preparation",
         namespace=NAMESPACE,
         image=IMAGE,
+        image_pull_policy=IMAGE_PULL_POLICY,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
         env_vars={
