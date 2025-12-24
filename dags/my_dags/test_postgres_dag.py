@@ -37,7 +37,7 @@ with DAG(
     # Execute a SQL query to get the latest order
     get_orders = SQLExecuteQueryOperator(
         task_id="test",
-        conn_id="postgres_odbc_conn",  # type=ODBC
+        conn_id="postgres_ampere_conn",
         sql="SELECT * FROM ampere_db.public.test_table",
         do_xcom_push=True,
         return_last=True,

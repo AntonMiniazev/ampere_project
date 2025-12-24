@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import polars as pl
 from faker import Faker
@@ -8,8 +8,12 @@ fake = Faker()
 
 
 def generate_clients(
-    n: int = 100, store_id_range: tuple[int, int] = (1, 5), project_start_date: str = "2025-08-01"
+    n: int = 100,
+    store_id_range: tuple[int, int] = (1, 5),
+    project_start_date: str | None = None,
 ) -> pl.DataFrame:
+    if project_start_date is None:
+        project_start_date = date.today().isoformat()
     start_date = datetime.strptime(project_start_date, "%Y-%m-%d").date()
 
     fullnames = [f"{fake.first_name()} {fake.last_name()}" for _ in range(n)]

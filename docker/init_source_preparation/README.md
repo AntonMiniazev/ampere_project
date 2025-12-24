@@ -10,7 +10,7 @@ Standalone batch application that bootstraps the Source (Pre-Raw) schema in Post
 - `SCHEMA_INIT`: target schema (default: `core`)
 - `N_OF_INIT_CLIENTS`: number of clients to generate (default: `4000`)
 - `N_DELIVERY_RESOURCE`: number of delivery resources (default: `125`)
-- `PROJECT_START_DATE`: YYYY-MM-DD base date (default: `2025-08-01`)
+- `PROJECT_START_DATE`: YYYY-MM-DD base date (default: current date)
 
 ## Local run
 

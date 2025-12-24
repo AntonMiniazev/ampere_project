@@ -22,14 +22,14 @@ pg_user = Secret(
     deploy_type="env",
     deploy_target="PGUSER",
     secret="pguser",
-    key="PGUSER",
+    key="pguser",
 )
 
 pg_pass = Secret(
     deploy_type="env",
     deploy_target="PGPASSWORD",
     secret="pgpass",
-    key="PGPASSWORD",
+    key="pgpass",
 )
 
 with DAG(
@@ -47,7 +47,9 @@ with DAG(
         image=IMAGE,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
-        env_vars={},
+        env_vars={
+            "PROJECT_START_DATE": "{{ ds }}",
+        },
         container_resources=V1ResourceRequirements(
             requests={"cpu": "200m", "memory": "512Mi"},
             limits={"cpu": "1", "memory": "1Gi"},
