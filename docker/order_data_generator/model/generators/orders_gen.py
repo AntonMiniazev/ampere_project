@@ -23,6 +23,16 @@ def _normalize_date(value) -> date:
     return value
 
 
+def _clamp_times_to_date(base_date: date, times: list[datetime]) -> list[datetime]:
+    end_of_day = datetime.combine(base_date, datetime.max.time()).replace(microsecond=0)
+    latest = max(times)
+    if latest <= end_of_day:
+        return times
+
+    overflow = latest - end_of_day
+    return [value - overflow for value in times]
+
+
 def generate_products_in_order(
     assortment: pl.DataFrame,
     store_id: int,
@@ -35,6 +45,7 @@ def generate_products_in_order(
     if store_assortment.height == 0:
         return prod_in_orders
 
+    # Build weighted product choices per store.
     product_ids = store_assortment.get_column("product_id").to_list()
     weights = store_assortment.get_column("chance").cast(pl.Float64).to_list()
     weights = np.array(weights, dtype=float)
@@ -63,6 +74,7 @@ def generate_products_in_order(
         )
         n_items = max(1, min(n_items, len(product_ids)))
 
+        # Sample products without replacement to avoid duplicates in a single order.
         chosen_products = np.random.choice(
             product_ids, size=n_items, replace=False, p=weights
         )
@@ -116,6 +128,7 @@ def clients_to_orders(
             continue
 
         n_clients = store_clients.height
+        # Scale weekly order rate down to daily volume per active client base.
         n_orders = int(
             scaled_beta(
                 mean_target=config.avg_orders,
@@ -135,6 +148,7 @@ def clients_to_orders(
             client_ids, size=n_orders, replace=False
         ).tolist()
 
+        # Choose delivery types per store based on configured ranges.
         p1 = np.random.uniform(config.dt_p1[0], config.dt_p1[1])
         p2 = np.random.uniform(config.dt_p2[0], config.dt_p2[1])
         p3 = max(0.0, 1.0 - p1 - p2)
@@ -143,7 +157,7 @@ def clients_to_orders(
             delivery_type_ids, size=n_orders, p=[p1, p2, p3]
         )
 
-        # Allow some orders to be unfinished for today; they will be completed tomorrow.
+        # Choose initial order status; unfinished orders will be completed tomorrow.
         s1 = np.random.uniform(config.os_p1[0], config.os_p1[1])
         s3 = np.random.uniform(config.os_p2[0], config.os_p2[1])
         s2 = max(0.0, 1.0 - s1 - s3)
@@ -152,6 +166,7 @@ def clients_to_orders(
         status_choices = [created_status_id, packing_status_id, delivered_status_id]
         statuses = np.random.choice(status_choices, size=n_orders, p=status_probs)
 
+        # Build courier pools by delivery type for assignment.
         couriers_by_type = {
             dtype: store_couriers.filter(pl.col("delivery_type_id") == dtype)
             .get_column("id")
@@ -180,6 +195,7 @@ def clients_to_orders(
             courier_id = int(np.random.choice(courier_pool))
 
             order_key += 1
+            # Keep order_key for local joins until IDs are inserted into DB.
             order = {
                 "order_key": order_key,
                 "client_id": int(client_id),
@@ -215,6 +231,7 @@ def generate_order_status_history(
     delivered_id = status_map["delivered"]
 
     for _, group in order_status_history_input.group_by("courier_id"):
+        # Process orders per courier to keep realistic time progression.
         sorted_orders = group.sort("order_id")
         courier_clock = datetime.combine(today, datetime.min.time()) + timedelta(
             hours=config.courier_hours,
@@ -229,9 +246,24 @@ def generate_order_status_history(
             order_date = _normalize_date(row["order_date"])
 
             # Case A+B: full chain (delivered) or yesterday's partial order.
+            # Case A+B: delivered today, or yesterday's unfinished orders to finish today.
             if status_id == delivered_id or (
                 order_date < today and status_id in (created_id, packing_id)
             ):
+                # Base date is today for normal flow, or the original order date for old delivered.
+                base_date = (
+                    order_date if order_date < today and status_id == delivered_id else today
+                )
+                order_clock = courier_clock
+                update_courier_clock = True
+                if base_date != today:
+                    order_clock = datetime.combine(base_date, datetime.min.time()) + timedelta(
+                        hours=config.courier_hours,
+                        minutes=np.random.randint(
+                            config.courier_clock_delta[0], config.courier_clock_delta[1]
+                        ),
+                    )
+                    update_courier_clock = False
                 total_duration = timedelta(
                     minutes=np.random.randint(
                         config.order_cycle_minutes[0],
@@ -242,11 +274,16 @@ def generate_order_status_history(
 
                 # Yesterday + created: include packing and delivered only.
                 if order_date < today and status_id == created_id:
-                    status2_time = courier_clock
+                    status2_time = order_clock
                     status3_time = (
                         status2_time
                         + stage_duration
                         + timedelta(minutes=np.random.randint(-1, 2))
+                    )
+
+                    # Clamp to base date to avoid spilling into the next day.
+                    status2_time, status3_time = _clamp_times_to_date(
+                        base_date, [status2_time, status3_time]
                     )
 
                     records.append(
@@ -264,16 +301,21 @@ def generate_order_status_history(
                         }
                     )
 
-                    courier_clock = status3_time + timedelta(
-                        minutes=np.random.randint(
-                            config.time_between_statuses[0],
-                            config.time_between_statuses[1],
+                    if update_courier_clock:
+                        courier_clock = status3_time + timedelta(
+                            minutes=np.random.randint(
+                                config.time_between_statuses[0],
+                                config.time_between_statuses[1],
+                            )
                         )
-                    )
 
                 # Yesterday + packing: add delivered only.
                 elif order_date < today and status_id == packing_id:
-                    status3_time = courier_clock
+                    status3_time = order_clock
+
+                    status3_time = _clamp_times_to_date(
+                        base_date, [status3_time]
+                    )[0]
 
                     records.append(
                         {
@@ -282,16 +324,17 @@ def generate_order_status_history(
                             "status_datetime": status3_time,
                         }
                     )
-                    courier_clock = status3_time + timedelta(
-                        minutes=np.random.randint(
-                            config.time_between_statuses[0],
-                            config.time_between_statuses[1],
+                    if update_courier_clock:
+                        courier_clock = status3_time + timedelta(
+                            minutes=np.random.randint(
+                                config.time_between_statuses[0],
+                                config.time_between_statuses[1],
+                            )
                         )
-                    )
 
-                # Otherwise full chain 1 → 2 → 3.
+                # Otherwise full chain 1 → 2 → 3 for same-day delivery.
                 else:
-                    status1_time = courier_clock
+                    status1_time = order_clock
                     status2_time = (
                         status1_time
                         + stage_duration
@@ -301,6 +344,11 @@ def generate_order_status_history(
                         status2_time
                         + stage_duration
                         + timedelta(minutes=np.random.randint(-1, 2))
+                    )
+
+                    # Clamp to base date to keep same-day progression.
+                    status1_time, status2_time, status3_time = _clamp_times_to_date(
+                        base_date, [status1_time, status2_time, status3_time]
                     )
 
                     records.append(
@@ -325,14 +373,15 @@ def generate_order_status_history(
                         }
                     )
 
-                    courier_clock = status3_time + timedelta(
-                        minutes=np.random.randint(
-                            config.time_between_statuses[0],
-                            config.time_between_statuses[1],
+                    if update_courier_clock:
+                        courier_clock = status3_time + timedelta(
+                            minutes=np.random.randint(
+                                config.time_between_statuses[0],
+                                config.time_between_statuses[1],
+                            )
                         )
-                    )
 
-            # Case C: today + packing → backfill created.
+            # Case C: today + packing -> backfill created.
             elif order_date == today and status_id == packing_id:
                 status2_time = datetime.combine(today, datetime.min.time()) + timedelta(
                     hours=config.eod_orders_time, minutes=np.random.randint(0, 60)
@@ -359,7 +408,7 @@ def generate_order_status_history(
                     }
                 )
 
-            # Case D: today + created → only created.
+            # Case D: today + created -> only created.
             elif order_date == today and status_id == created_id:
                 status1_time = datetime.combine(today, datetime.min.time()) + timedelta(
                     hours=config.eod_orders_time, minutes=np.random.randint(0, 60)
@@ -382,6 +431,7 @@ def generate_payments(
     delivered_status_id: int,
     config: GeneratorConfig,
 ) -> pl.DataFrame:
+    # Use latest status to decide prepayment vs after-payment behavior.
     payments_query = f'''
         WITH latest_order_status AS (
             SELECT
@@ -500,6 +550,7 @@ def generate_delivery_tracking(
 def prepare_raw_data(
     yesterday: date, config: GeneratorConfig, delivered_status_id: int
 ) -> tuple[pl.DataFrame, int, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    # Pull required source data and yesterday's unfinished orders.
     client_query = f'''
         SELECT id, fullname, preferred_store_id, registration_date, churned
         FROM "{config.schema}"."clients"
@@ -612,6 +663,7 @@ def prepare_orders_statuses(
 
     if orders_df.height and order_product.height:
         # Step 1: upload orders and order products.
+        # Join lines to orders to compute totals and persist orders first.
         order_product = order_product.join(
             orders_df.select(
                 [
@@ -642,6 +694,7 @@ def prepare_orders_statuses(
             .sort("order_key")
         )
 
+        # Insert orders to get DB ids and map them back to order_key.
         order_rows = orders_upload.drop("order_key").to_dicts()
         inserted_ids = insert_orders_returning_ids(order_rows, config.schema)
 
@@ -659,6 +712,7 @@ def prepare_orders_statuses(
         upload_new_data(orders_product_upload, "order_product", config.schema)
 
         # Step 2: add initial delivery_tracking and status history input.
+        # The tracking rows are placeholders; status history drives updates later.
         delivery_tracking_init = orders_with_ids.select(
             ["order_id", "courier_id"]
         ).unique()
@@ -679,6 +733,7 @@ def prepare_orders_statuses(
         print("No new orders generated.")
 
     if yesterday_orders_df.height:
+        # Include yesterday's unfinished orders for status completion.
         order_status_history_frames.append(yesterday_orders_df)
 
     if order_status_history_frames:
@@ -721,6 +776,7 @@ def prepare_orders_statuses(
             ]
         )
 
+        # Combine delivered + packing times; add courier id from input if available.
         delivery_tracking_input = delivered.join(packing, on="order_id", how="left")
         if order_status_history_input.height:
             courier_lookup = order_status_history_input.select(

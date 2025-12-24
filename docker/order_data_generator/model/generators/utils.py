@@ -2,6 +2,7 @@ import numpy as np
 
 
 def scaled_beta(mean_target: float, low: float, high: float, alpha: float = 2) -> float:
+    # Map beta distribution into [low, high] while targeting mean_target.
     mean_norm = (mean_target - low) / (high - low)
     beta_param = alpha * (1 - mean_norm) / mean_norm
     sample = np.random.beta(alpha, beta_param)
