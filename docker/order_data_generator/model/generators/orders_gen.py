@@ -46,12 +46,13 @@ def generate_products_in_order(
 
     product_meta = {
         int(row["product_id"]): row
-        for row in store_assortment.select(["product_id", "unit_type", "price"]).iter_rows(
-            named=True
-        )
+        for row in store_assortment.select(
+            ["product_id", "unit_type", "price"]
+        ).iter_rows(named=True)
     }
 
     for order in store_orders:
+        # Number of products in the order bounded by config.
         n_items = int(
             round(
                 scaled_beta(
@@ -70,8 +71,10 @@ def generate_products_in_order(
             meta = product_meta[int(product_id)]
             unit_type = meta["unit_type"]
             if unit_type == "units":
+                # Units-based products use integer quantity.
                 n_units = int(np.random.randint(config.min_units, config.max_units))
             else:
+                # Weight-based products use fractional quantity.
                 n_units = round(
                     float(np.random.uniform(config.min_weight, config.max_weight)), 3
                 )
@@ -97,6 +100,8 @@ def clients_to_orders(
     today: date,
     config: GeneratorConfig,
     delivery_type_ids: list[int],
+    created_status_id: int,
+    packing_status_id: int,
     delivered_status_id: int,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     orders: list[dict] = []
@@ -138,7 +143,14 @@ def clients_to_orders(
             delivery_type_ids, size=n_orders, p=[p1, p2, p3]
         )
 
-        statuses = [delivered_status_id] * n_orders
+        # Allow some orders to be unfinished for today; they will be completed tomorrow.
+        s1 = np.random.uniform(config.os_p1[0], config.os_p1[1])
+        s3 = np.random.uniform(config.os_p2[0], config.os_p2[1])
+        s2 = max(0.0, 1.0 - s1 - s3)
+        status_probs = np.array([s1, s2, s3], dtype=float)
+        status_probs = status_probs / status_probs.sum()
+        status_choices = [created_status_id, packing_status_id, delivered_status_id]
+        statuses = np.random.choice(status_choices, size=n_orders, p=status_probs)
 
         couriers_by_type = {
             dtype: store_couriers.filter(pl.col("delivery_type_id") == dtype)
@@ -148,13 +160,12 @@ def clients_to_orders(
         }
 
         store_orders: list[dict] = []
-        for client_id, dtype, status in zip(
-            sampled_clients, delivery_types, statuses
-        ):
+        for client_id, dtype, status in zip(sampled_clients, delivery_types, statuses):
             courier_pool = couriers_by_type.get(int(dtype), [])
             if not courier_pool:
                 continue
 
+            # Generate order source id via scaled beta distribution.
             order_source_id = int(
                 round(
                     scaled_beta(
@@ -183,9 +194,7 @@ def clients_to_orders(
             orders.append(order)
 
         products_in_orders.extend(
-            generate_products_in_order(
-                assortment_df, store_id, store_orders, config
-            )
+            generate_products_in_order(assortment_df, store_id, store_orders, config)
         )
 
     orders_df = pl.DataFrame(orders)
@@ -219,6 +228,7 @@ def generate_order_status_history(
             status_id = int(row["status_id"])
             order_date = _normalize_date(row["order_date"])
 
+            # Case A+B: full chain (delivered) or yesterday's partial order.
             if status_id == delivered_id or (
                 order_date < today and status_id in (created_id, packing_id)
             ):
@@ -230,6 +240,7 @@ def generate_order_status_history(
                 )
                 stage_duration = total_duration / 3
 
+                # Yesterday + created: include packing and delivered only.
                 if order_date < today and status_id == created_id:
                     status2_time = courier_clock
                     status3_time = (
@@ -260,6 +271,7 @@ def generate_order_status_history(
                         )
                     )
 
+                # Yesterday + packing: add delivered only.
                 elif order_date < today and status_id == packing_id:
                     status3_time = courier_clock
 
@@ -277,6 +289,7 @@ def generate_order_status_history(
                         )
                     )
 
+                # Otherwise full chain 1 → 2 → 3.
                 else:
                     status1_time = courier_clock
                     status2_time = (
@@ -319,6 +332,7 @@ def generate_order_status_history(
                         )
                     )
 
+            # Case C: today + packing → backfill created.
             elif order_date == today and status_id == packing_id:
                 status2_time = datetime.combine(today, datetime.min.time()) + timedelta(
                     hours=config.eod_orders_time, minutes=np.random.randint(0, 60)
@@ -345,6 +359,7 @@ def generate_order_status_history(
                     }
                 )
 
+            # Case D: today + created → only created.
             elif order_date == today and status_id == created_id:
                 status1_time = datetime.combine(today, datetime.min.time()) + timedelta(
                     hours=config.eod_orders_time, minutes=np.random.randint(0, 60)
@@ -411,6 +426,7 @@ def generate_payments(
             ["card", "cash", "cash+bonuses", "card+bonuses"], p=config.pmt_type_p
         )
 
+        # Prepayment/after-payment based on delivery status and order date.
         if order_date == today and latest_status < delivered_status_id:
             payment_date = np.random.choice(
                 [today, today + timedelta(days=1)], p=config.prepayment_p
@@ -418,9 +434,7 @@ def generate_payments(
         elif order_date == today and latest_status == delivered_status_id:
             payment_date = today
         elif order_date < today and latest_status == delivered_status_id:
-            payment_date = np.random.choice(
-                [yesterday, today], p=config.prepayment_p
-            )
+            payment_date = np.random.choice([yesterday, today], p=config.prepayment_p)
         else:
             payment_date = today
 
@@ -451,6 +465,7 @@ def generate_delivery_tracking(
         order_id = row["order_id"]
         courier_id = row["courier_id"]
         delivery_time = row["delivered_time"]
+        # If packing time is missing, derive pickup time from delivered_time.
         if row.get("packing_time") is None:
             pickup_time = delivery_time - timedelta(
                 minutes=np.random.randint(
@@ -556,7 +571,9 @@ def prepare_raw_data(
     )
 
 
-def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfig) -> None:
+def prepare_orders_statuses(
+    today: date, yesterday: date, config: GeneratorConfig
+) -> None:
     status_map = fetch_order_status_map(config.schema)
     for status_name in ("created", "packing", "delivered"):
         if status_name not in status_map:
@@ -566,6 +583,8 @@ def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfi
     if len(delivery_type_ids) < 3:
         raise ValueError("Expected at least 3 delivery types in dictionary")
 
+    created_status_id = status_map["created"]
+    packing_status_id = status_map["packing"]
     delivered_status_id = status_map["delivered"]
 
     (
@@ -584,15 +603,24 @@ def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfi
         today=today,
         config=config,
         delivery_type_ids=delivery_type_ids,
+        created_status_id=created_status_id,
+        packing_status_id=packing_status_id,
         delivered_status_id=delivered_status_id,
     )
 
     order_status_history_frames: list[pl.DataFrame] = []
 
     if orders_df.height and order_product.height:
+        # Step 1: upload orders and order products.
         order_product = order_product.join(
             orders_df.select(
-                ["order_key", "order_date", "order_source_id", "courier_id", "status_id"]
+                [
+                    "order_key",
+                    "order_date",
+                    "order_source_id",
+                    "courier_id",
+                    "status_id",
+                ]
             ),
             on="order_key",
             how="left",
@@ -630,6 +658,7 @@ def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfi
         )
         upload_new_data(orders_product_upload, "order_product", config.schema)
 
+        # Step 2: add initial delivery_tracking and status history input.
         delivery_tracking_init = orders_with_ids.select(
             ["order_id", "courier_id"]
         ).unique()
@@ -653,6 +682,7 @@ def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfi
         order_status_history_frames.append(yesterday_orders_df)
 
     if order_status_history_frames:
+        # Step 3: generate order status history for today + yesterday unfinished.
         order_status_history_input = pl.concat(
             order_status_history_frames, how="vertical"
         )
@@ -664,6 +694,7 @@ def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfi
         order_status_history = pl.DataFrame()
 
     if order_status_history.height:
+        # Step 4: generate delivery tracking from status history.
         upload_new_data(
             order_status_history,
             "order_status_history",
@@ -710,9 +741,9 @@ def prepare_orders_statuses(today: date, yesterday: date, config: GeneratorConfi
                 delivered_status_id=delivered_status_id,
             )
 
+    # Step 5: generate and upload payments.
     payments_upload = generate_payments(
         today, yesterday, config.schema, delivered_status_id, config
     )
     if payments_upload.height:
         upload_new_data(payments_upload, "payments", config.schema)
-

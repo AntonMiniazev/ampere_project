@@ -37,7 +37,7 @@ def generate_clients(n: int, store_id: int, today: date) -> list[dict]:
                 "fullname": fullname,
                 "preferred_store_id": int(store_id),
                 "registration_date": today,
-                "churned": False,
+                "churned": False,  # New clients are not churned
             }
         )
 

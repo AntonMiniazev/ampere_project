@@ -25,6 +25,7 @@ def set_seed(seed: int) -> None:
 def run_generation(run_date: date, config: GeneratorConfig) -> None:
     yesterday = run_date - timedelta(days=1)
 
+    # Step 0: churn existing clients and add new ones.
     to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
         run_date, config
     )
@@ -33,5 +34,6 @@ def run_generation(run_date: date, config: GeneratorConfig) -> None:
     if clients_for_upload:
         upload_new_data(pl.DataFrame(clients_for_upload), "clients", config.schema)
 
+    # Step 1: generate orders, statuses, delivery tracking, and payments.
     prepare_orders_statuses(run_date, yesterday, config)
 
