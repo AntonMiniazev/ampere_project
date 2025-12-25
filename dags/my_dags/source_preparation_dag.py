@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 from airflow import DAG
 from airflow.models import Variable
@@ -21,11 +22,17 @@ NODE_SELECTOR = {
     )
 }
 # Image map from Airflow variable; allows pinning tags per pipeline.
-GHCR_IMAGES = Variable.get(
-    "ghcr_images",
-    default_var='{"source_preparation":"ghcr.io/antonminiazev/init-source-preparation:latest"}',
-    deserialize_json=True,
-)
+def _load_image_map() -> dict:
+    raw_value = Variable.get("ghcr_images", default_var="{}")
+    if isinstance(raw_value, str):
+        try:
+            return json.loads(raw_value)
+        except json.JSONDecodeError:
+            return {}
+    return raw_value
+
+
+GHCR_IMAGES = _load_image_map()
 # Container image for init job; fallback to latest if key is missing.
 IMAGE = GHCR_IMAGES.get(
     "source_preparation",
