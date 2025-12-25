@@ -19,7 +19,7 @@ def _get_str(name: str, default: str) -> str:
 # Target schema for init tables; changing it isolates where data is created.
 schema_init = _get_str("SCHEMA_INIT", "source")
 # Initial client count; higher values increase rows in source.clients.
-n_of_init_clients = _get_int("N_OF_INIT_CLIENTS", 200000)
+n_of_init_clients = _get_int("N_OF_INIT_CLIENTS", 20000)
 # Initial courier pool size; drives rows in source.delivery_resource.
 n_delivery_resource = _get_int("N_DELIVERY_RESOURCE", 700)
 # Base date for generated registrations; shifts client registration_date backward.
