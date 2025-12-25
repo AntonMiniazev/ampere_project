@@ -574,7 +574,12 @@ def prepare_raw_data(
     '''
 
     yesterday_orders = f'''
-        WITH status_ranked AS (
+        WITH yesterday_orders AS (
+            SELECT id
+            FROM "{config.schema}"."orders"
+            WHERE order_date = :yesterday
+        ),
+        status_ranked AS (
             SELECT
                 osh.order_id,
                 osh.order_status_id,
@@ -583,6 +588,7 @@ def prepare_raw_data(
                     ORDER BY osh.order_status_id DESC
                 ) AS rn
             FROM "{config.schema}"."order_status_history" osh
+            JOIN yesterday_orders yo ON yo.id = osh.order_id
         ),
         latest_status AS (
             SELECT order_id, order_status_id
