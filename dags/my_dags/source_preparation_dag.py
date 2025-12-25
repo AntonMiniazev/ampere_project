@@ -13,6 +13,7 @@ default_args = {
 }
 
 NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+NODE = Variable.get("source_prep_node", default_var="ampere-k8s-node3")
 IMAGE = Variable.get(
     "init_source_preparation_image",
     default_var="ghcr.io/antonminiazev/init-source-preparation:latest",
@@ -48,6 +49,7 @@ with DAG(
         task_id="initialize_data_sources",
         name="init-source-preparation",
         namespace=NAMESPACE,
+        node_selector=NODE,
         image=IMAGE,
         image_pull_policy=IMAGE_PULL_POLICY,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
