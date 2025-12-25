@@ -1,5 +1,4 @@
 import os
-import time
 from functools import lru_cache
 
 import polars as pl
@@ -110,10 +109,6 @@ def upload_new_data(
     if target_table == "delivery_tracking":
         if yesterday is None:
             raise ValueError("yesterday is required for delivery_tracking updates")
-        print(
-            f"[DEBUG] Cleaning delivery_tracking for {schema}.{target_table} "
-            f"(yesterday={yesterday}, delivered_status_id={delivered_status_id})"
-        )
         exec_sql(
             f'''
             DELETE FROM "{schema}"."delivery_tracking"
@@ -131,10 +126,6 @@ def upload_new_data(
     column_list = ", ".join(f'"{col}"' for col in columns)
     copy_sql = f'COPY "{schema}"."{target_table}" ({column_list}) FROM STDIN'
 
-    start = time.perf_counter()
-    print(
-        f"[DEBUG] COPY start {schema}.{target_table} rows={table.height}"
-    )
     user, password, host, port, database = _get_db_params()
     with psycopg.connect(
         user=user,
@@ -148,11 +139,6 @@ def upload_new_data(
             with cur.copy(copy_sql) as copy:
                 for row in table.iter_rows():
                     copy.write_row(row)
-    duration = time.perf_counter() - start
-    print(
-        f"[DEBUG] COPY done {schema}.{target_table} rows={table.height} "
-        f"duration={duration:.2f}s"
-    )
     print(f"{table.height} records inserted into {schema}.{target_table}")
 
 
@@ -160,8 +146,6 @@ def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:
     if not orders:
         return []
 
-    start = time.perf_counter()
-    print(f"[DEBUG] INSERT start {schema}.orders rows={len(orders)}")
     metadata = MetaData(schema=schema)
     engine = get_engine()
     orders_table = Table("orders", metadata, autoload_with=engine)
@@ -171,11 +155,6 @@ def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:
         result = conn.execute(stmt, orders)
         ids = [row[0] for row in result.fetchall()]
 
-    duration = time.perf_counter() - start
-    print(
-        f"[DEBUG] INSERT done {schema}.orders rows={len(ids)} "
-        f"duration={duration:.2f}s"
-    )
     return ids
 
 
