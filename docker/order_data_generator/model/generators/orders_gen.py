@@ -252,12 +252,16 @@ def generate_order_status_history(
             ):
                 # Base date is today for normal flow, or the original order date for old delivered.
                 base_date = (
-                    order_date if order_date < today and status_id == delivered_id else today
+                    order_date
+                    if order_date < today and status_id == delivered_id
+                    else today
                 )
                 order_clock = courier_clock
                 update_courier_clock = True
                 if base_date != today:
-                    order_clock = datetime.combine(base_date, datetime.min.time()) + timedelta(
+                    order_clock = datetime.combine(
+                        base_date, datetime.min.time()
+                    ) + timedelta(
                         hours=config.courier_hours,
                         minutes=np.random.randint(
                             config.courier_clock_delta[0], config.courier_clock_delta[1]
@@ -313,9 +317,7 @@ def generate_order_status_history(
                 elif order_date < today and status_id == packing_id:
                     status3_time = order_clock
 
-                    status3_time = _clamp_times_to_date(
-                        base_date, [status3_time]
-                    )[0]
+                    status3_time = _clamp_times_to_date(base_date, [status3_time])[0]
 
                     records.append(
                         {
@@ -579,21 +581,13 @@ def prepare_raw_data(
             FROM "{config.schema}"."orders"
             WHERE order_date = :yesterday
         ),
-        status_ranked AS (
-            SELECT
-                osh.order_id,
-                osh.order_status_id,
-                ROW_NUMBER() OVER (
-                    PARTITION BY osh.order_id
-                    ORDER BY osh.order_status_id DESC
-                ) AS rn
-            FROM "{config.schema}"."order_status_history" osh
-            JOIN yesterday_orders yo ON yo.id = osh.order_id
-        ),
         latest_status AS (
-            SELECT order_id, order_status_id
-            FROM status_ranked
-            WHERE rn = 1
+        SELECT DISTINCT ON (osh.order_id)
+            osh.order_id,
+            osh.order_status_id
+        FROM source.order_status_history osh
+        JOIN yesterday_orders yo ON yo.id = osh.order_id
+        ORDER BY osh.order_id, osh.status_datetime DESC
         )
         SELECT
             o.id AS order_id,
