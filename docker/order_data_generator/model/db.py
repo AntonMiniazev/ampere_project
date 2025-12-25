@@ -9,6 +9,8 @@ from sqlalchemy.engine import make_url
 
 from order_data_generator.config import load_config
 
+APP_NAME = "order-generator"
+
 
 def _get_env_any(*names: str) -> str | None:
     for name in names:
@@ -65,7 +67,11 @@ def _build_database_url() -> str:
 
 @lru_cache
 def get_engine():
-    return create_engine(_build_database_url(), pool_pre_ping=True)
+    return create_engine(
+        _build_database_url(),
+        pool_pre_ping=True,
+        connect_args={"application_name": APP_NAME},
+    )
 
 
 def read_sql(query: str, params: dict | None = None) -> pl.DataFrame:
@@ -131,7 +137,12 @@ def upload_new_data(
     )
     user, password, host, port, database = _get_db_params()
     with psycopg.connect(
-        user=user, password=password, host=host, port=port, dbname=database
+        user=user,
+        password=password,
+        host=host,
+        port=port,
+        dbname=database,
+        application_name=APP_NAME,
     ) as conn:
         with conn.cursor() as cur:
             with cur.copy(copy_sql) as copy:
