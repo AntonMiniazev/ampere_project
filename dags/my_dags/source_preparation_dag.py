@@ -20,10 +20,16 @@ NODE_SELECTOR = {
         "source_prep_node", default_var="ampere-k8s-node3"
     )
 }
-# Container image for init job; changing it switches the code version.
-IMAGE = Variable.get(
-    "init_source_preparation_image",
-    default_var="ghcr.io/antonminiazev/init-source-preparation:latest",
+# Image map from Airflow variable; allows pinning tags per pipeline.
+GHCR_IMAGES = Variable.get(
+    "ghcr_images",
+    default_var='{"source_preparation":"ghcr.io/antonminiazev/init-source-preparation:latest"}',
+    deserialize_json=True,
+)
+# Container image for init job; fallback to latest if key is missing.
+IMAGE = GHCR_IMAGES.get(
+    "source_preparation",
+    "ghcr.io/antonminiazev/init-source-preparation:latest",
 )
 # Pull policy for image refresh behavior (e.g., Always vs IfNotPresent).
 IMAGE_PULL_POLICY = Variable.get(

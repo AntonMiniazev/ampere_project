@@ -17,10 +17,16 @@ NODE_SELECTOR = {
         "source_prep_node", default_var="ampere-k8s-node3"
     )
 }
-# Container image for daily generator; changing it switches the code version.
-IMAGE = Variable.get(
-    "order_data_generator_image",
-    default_var="ghcr.io/antonminiazev/order-data-generator:latest",
+# Image map from Airflow variable; allows pinning tags per pipeline.
+GHCR_IMAGES = Variable.get(
+    "ghcr_images",
+    default_var='{"orders_clients_generation":"ghcr.io/antonminiazev/order-data-generator:latest"}',
+    deserialize_json=True,
+)
+# Container image for daily generator; fallback to latest if key is missing.
+IMAGE = GHCR_IMAGES.get(
+    "orders_clients_generation",
+    "ghcr.io/antonminiazev/order-data-generator:latest",
 )
 # Pull policy for image refresh behavior (e.g., Always vs IfNotPresent).
 IMAGE_PULL_POLICY = Variable.get(
