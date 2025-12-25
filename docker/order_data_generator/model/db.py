@@ -2,7 +2,9 @@ import os
 from functools import lru_cache
 
 import polars as pl
+import psycopg
 from sqlalchemy import MetaData, Table, create_engine, inspect, text
+from sqlalchemy.engine import make_url
 
 from order_data_generator.config import load_config
 
@@ -15,18 +17,22 @@ def _get_env_any(*names: str) -> str | None:
     return None
 
 
-def _build_database_url() -> str:
+def _get_db_params() -> tuple[str, str, str, int, str]:
+    config = load_config()
     url = os.getenv("DATABASE_URL")
     if url:
-        return url
-
-    config = load_config()
-
-    user = _get_env_any("PGUSER", "pguser")
-    password = _get_env_any("PGPASSWORD", "pgpass")
-    host = os.getenv("PGHOST", config.source_db_host)
-    port = os.getenv("PGPORT", str(config.source_db_port))
-    database = os.getenv("PGDATABASE", config.source_db_name)
+        parsed = make_url(url)
+        user = parsed.username or _get_env_any("PGUSER", "pguser")
+        password = parsed.password or _get_env_any("PGPASSWORD", "pgpass")
+        host = parsed.host or os.getenv("PGHOST", config.source_db_host)
+        port = parsed.port or int(os.getenv("PGPORT", str(config.source_db_port)))
+        database = parsed.database or os.getenv("PGDATABASE", config.source_db_name)
+    else:
+        user = _get_env_any("PGUSER", "pguser")
+        password = _get_env_any("PGPASSWORD", "pgpass")
+        host = os.getenv("PGHOST", config.source_db_host)
+        port = int(os.getenv("PGPORT", str(config.source_db_port)))
+        database = os.getenv("PGDATABASE", config.source_db_name)
 
     missing = [
         name
@@ -44,6 +50,15 @@ def _build_database_url() -> str:
             "Set DATABASE_URL or the standard PG* environment variables."
         )
 
+    return user, password, host, port, database
+
+
+def _build_database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+
+    user, password, host, port, database = _get_db_params()
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{database}"
 
 
@@ -101,14 +116,19 @@ def upload_new_data(
             {"yesterday": yesterday, "delivered_status_id": delivered_status_id},
         )
 
-    records = table.to_dicts()
-    metadata = MetaData(schema=schema)
-    engine = get_engine()
-    db_table = Table(target_table, metadata, autoload_with=engine)
+    columns = table.columns
+    column_list = ", ".join(f'"{col}"' for col in columns)
+    copy_sql = f'COPY "{schema}"."{target_table}" ({column_list}) FROM STDIN'
 
-    with engine.begin() as conn:
-        conn.execute(db_table.insert(), records)
-        print(f"{len(records)} records inserted into {schema}.{target_table}")
+    user, password, host, port, database = _get_db_params()
+    with psycopg.connect(
+        user=user, password=password, host=host, port=port, dbname=database
+    ) as conn:
+        with conn.cursor() as cur:
+            with cur.copy(copy_sql) as copy:
+                for row in table.iter_rows():
+                    copy.write_row(row)
+    print(f"{table.height} records inserted into {schema}.{target_table}")
 
 
 def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:
