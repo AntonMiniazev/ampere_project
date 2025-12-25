@@ -20,6 +20,7 @@ Generator:
   `PMT_TYPE_P`, `PREPAYMENT_P`, `PICKUP_TIMING`.
 
 List values are comma-separated, e.g. `CHURN_RATES=0.004,0.007`.
+`AVG_ORDERS` is interpreted as a weekly per-client rate and divided by 7 for daily volume.
 
 ## CLI usage
 
@@ -49,4 +50,8 @@ docker run --rm \
   -e SCHEMA_INIT=source \
   order-data-generator:latest --run-date 2025-12-23 --seed 123
 ```
+
+## Image tagging (GitHub Actions)
+
+Image tag is read from `docker/image_tags.json` using key `orders_clients_generation`.
 

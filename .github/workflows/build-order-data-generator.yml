@@ -4,10 +4,16 @@ on:
   push:
     paths:
       - "docker/order_data_generator/**"
+      - "docker/image_tags.json"
       - ".github/workflows/build-order-data-generator.yml"
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to publish"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -30,6 +36,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read image tag
+        id: tag
+        run: |
+          tag=$(jq -r '.orders_clients_generation' docker/image_tags.json)
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "Missing orders_clients_generation tag in docker/image_tags.json" >&2
+            exit 1
+          fi
+          echo "image_tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -39,6 +55,7 @@ jobs:
             type=sha
             type=raw,value=latest
             type=ref,event=tag
+            type=raw,value=${{ steps.tag.outputs.image_tag }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

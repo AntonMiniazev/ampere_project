@@ -7,9 +7,9 @@ Standalone batch application that bootstraps the Source (Pre-Raw) schema in Post
 - `DATABASE_URL`: full SQLAlchemy/psycopg URL (recommended)
 - `PGUSER`/`pguser` and `PGPASSWORD`/`pgpass`: credentials for PostgreSQL
 - `PGHOST`, `PGPORT`, `PGDATABASE`: optional overrides (defaults live in `config.py`)
-- `SCHEMA_INIT`: target schema (default: `core`)
-- `N_OF_INIT_CLIENTS`: number of clients to generate (default: `4000`)
-- `N_DELIVERY_RESOURCE`: number of delivery resources (default: `125`)
+- `SCHEMA_INIT`: target schema (default: `source`)
+- `N_OF_INIT_CLIENTS`: number of clients to generate (default: `20000`)
+- `N_DELIVERY_RESOURCE`: number of delivery resources (default: `700`)
 - `PROJECT_START_DATE`: YYYY-MM-DD base date (default: current date)
 
 ## Local run
@@ -34,3 +34,7 @@ docker run --rm \
 ## Airflow
 
 Launch this image via your Airflow DAG, passing the same environment variables.
+
+## Image tagging (GitHub Actions)
+
+Image tag is read from `docker/image_tags.json` using key `source_preparation`.
