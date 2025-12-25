@@ -63,6 +63,7 @@ with DAG(
     generate_data = KubernetesPodOperator(
         task_id="generate_source_data",
         name="order-data-generator",
+        depends_on_past=True,
         namespace=NAMESPACE,
         node_selector=NODE_SELECTOR,
         image=IMAGE,

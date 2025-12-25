@@ -582,24 +582,26 @@ def prepare_raw_data(
             WHERE order_date = :yesterday
         ),
         latest_status AS (
-        SELECT DISTINCT ON (osh.order_id)
-            osh.order_id,
-            osh.order_status_id
-        FROM source.order_status_history osh
-        JOIN yesterday_orders yo ON yo.id = osh.order_id
-        ORDER BY osh.order_id, osh.status_datetime DESC
+            SELECT DISTINCT ON (osh.order_id)
+                osh.order_id,
+                osh.order_status_id
+            FROM "{config.schema}"."order_status_history" osh
+            JOIN yesterday_orders yo ON yo.id = osh.order_id
+            ORDER BY osh.order_id, osh.status_datetime DESC
+        ),
+        delivery_tracking_yesterday AS (
+            SELECT DISTINCT dt.order_id, dt.courier_id
+            FROM "{config.schema}"."delivery_tracking" dt
+            JOIN yesterday_orders yo ON yo.id = dt.order_id
         )
         SELECT
             o.id AS order_id,
-            dt.courier_id,
+            dty.courier_id,
             o.order_date,
             ls.order_status_id AS status_id
         FROM "{config.schema}"."orders" o
         LEFT JOIN latest_status ls ON o.id = ls.order_id
-        LEFT JOIN (
-            SELECT DISTINCT order_id, courier_id
-            FROM "{config.schema}"."delivery_tracking"
-        ) dt ON o.id = dt.order_id
+        LEFT JOIN delivery_tracking_yesterday dty ON o.id = dty.order_id
         WHERE o.order_date = :yesterday AND ls.order_status_id < :delivered_status_id
     '''
 

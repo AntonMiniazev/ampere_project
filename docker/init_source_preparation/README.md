@@ -38,3 +38,8 @@ Launch this image via your Airflow DAG, passing the same environment variables.
 ## Image tagging (GitHub Actions)
 
 Image tag is read from `docker/image_tags.json` using key `source_preparation`.
+
+## Autovacuum and indexing notes
+
+Indexes are created during init (see `ddl_init.py`). Keep autovacuum enabled
+and tune it at the Postgres level; avoid reindexing after every generator run.

@@ -38,6 +38,11 @@ def initialize_data_sources() -> None:
         query = data["query"]
         table_type = data["type"]
 
+        if table_type == "index":
+            print(f"Ensuring indexes for {schema_init}")
+            exec_sql(query)
+            continue
+
         if table_exists(schema_init, table_name):
             print(f"Truncating {table_name}")
             truncate_table(schema_init, table_name)

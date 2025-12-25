@@ -140,6 +140,15 @@ CREATE TABLE "{schema}"."order_statuses"(
 )
 """
 
+indexes_query = f"""
+CREATE INDEX IF NOT EXISTS idx_orders_order_date
+    ON "{schema}"."orders" (order_date, id);
+CREATE INDEX IF NOT EXISTS idx_osh_orderid_statusdt
+    ON "{schema}"."order_status_history" (order_id, status_datetime DESC);
+CREATE INDEX IF NOT EXISTS idx_delivery_tracking_orderid
+    ON "{schema}"."delivery_tracking" (order_id);
+"""
+
 table_queries = {
     "clients": {
         "query": clients_query,
@@ -204,5 +213,9 @@ table_queries = {
     "order_statuses": {
         "query": order_statuses_query,
         "type": "dict",
+    },
+    "indexes": {
+        "query": indexes_query,
+        "type": "index",
     },
 }

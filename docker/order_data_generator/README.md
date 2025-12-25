@@ -55,3 +55,10 @@ docker run --rm \
 
 Image tag is read from `docker/image_tags.json` using key `orders_clients_generation`.
 
+## Autovacuum and indexing notes
+
+Indexes should be created once (during init) and maintained by PostgreSQL. Reindexing
+after every generator run is not recommended. Use `pg_stat_user_tables` and
+`pg_stat_all_indexes` to check bloat signals and index usage, and consider occasional
+`REINDEX` if indexes become bloated or unused.
+
