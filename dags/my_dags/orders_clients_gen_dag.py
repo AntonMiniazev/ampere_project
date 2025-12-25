@@ -35,6 +35,8 @@ GHCR_IMAGES = _load_image_map()
 # Tag-only map; always compose full image from the tag.
 IMAGE_TAG = GHCR_IMAGES.get("orders_clients_generation", "latest")
 IMAGE = f"ghcr.io/antonminiazev/order-data-generator:{IMAGE_TAG}"
+# Per-pod Postgres settings (libpq PGOPTIONS); raises work_mem for heavy sorts.
+PGOPTIONS = Variable.get("pg_work_mem", default_var="64MB")
 
 pg_user = Secret(
     deploy_type="env",
@@ -67,6 +69,7 @@ with DAG(
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
+        env_vars={"PGOPTIONS": f"-c work_mem={PGOPTIONS}"},
         cmds=["python", "-m", "order_data_generator"],
         # Use logical date as "today" for order generation.
         arguments=["--run-date", "{{ ds }}"],

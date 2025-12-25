@@ -64,6 +64,7 @@ with DAG(
     init_data_task = KubernetesPodOperator(
         task_id="initialize_data_sources",
         name="init-source-preparation",
+        startup_timeout_seconds=240,
         namespace=NAMESPACE,
         node_selector=NODE_SELECTOR,
         image=IMAGE,
