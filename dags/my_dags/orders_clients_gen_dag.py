@@ -18,6 +18,8 @@ NODE_SELECTOR = {
         "source_prep_node", default_var="ampere-k8s-node3"
     )
 }
+
+
 # Image map from Airflow variable; allows pinning tags per pipeline.
 def _load_image_map() -> dict:
     raw_value = Variable.get("ghcr_images", default_var="{}")
@@ -30,11 +32,9 @@ def _load_image_map() -> dict:
 
 
 GHCR_IMAGES = _load_image_map()
-# Container image for daily generator; fallback to latest if key is missing.
-IMAGE = GHCR_IMAGES.get(
-    "orders_clients_generation",
-    "ghcr.io/antonminiazev/order-data-generator:latest",
-)
+# Tag-only map; always compose full image from the tag.
+IMAGE_TAG = GHCR_IMAGES.get("orders_clients_generation", "latest")
+IMAGE = f"ghcr.io/antonminiazev/order-data-generator:{IMAGE_TAG}"
 
 pg_user = Secret(
     deploy_type="env",
