@@ -13,21 +13,37 @@ def _parse_date(value: str):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run daily source data generator")
+    # Sets "today" for generation; affects order_date, statuses, and payments.
     parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
+    # Fixes RNG to make output deterministic for the same inputs.
     parser.add_argument("--seed", type=int, help="Random seed for deterministic output")
+    # Overrides average weekly orders per client (daily rate is avg/7).
     parser.add_argument("--avg-orders", type=float)
+    # Lower bound for per-client orders.
     parser.add_argument("--min-orders", type=int)
+    # Upper bound for per-client orders.
     parser.add_argument("--max-orders", type=int)
+    # Overrides average products per order.
     parser.add_argument("--avg-products", type=float)
+    # Lower bound for products per order.
     parser.add_argument("--min-products", type=int)
+    # Upper bound for products per order.
     parser.add_argument("--max-products", type=int)
+    # Lower bound for unit-quantity products.
     parser.add_argument("--min-units", type=int)
+    # Upper bound for unit-quantity products.
     parser.add_argument("--max-units", type=int)
+    # Lower bound for weight-quantity products.
     parser.add_argument("--min-weight", type=float)
+    # Upper bound for weight-quantity products.
     parser.add_argument("--max-weight", type=float)
+    # Override new-client rate lower bound.
     parser.add_argument("--new-clients-rate-min", type=float)
+    # Override new-client rate upper bound.
     parser.add_argument("--new-clients-rate-max", type=float)
+    # Override churn rate lower bound.
     parser.add_argument("--churn-rate-min", type=float)
+    # Override churn rate upper bound.
     parser.add_argument("--churn-rate-max", type=float)
 
     return parser.parse_args()

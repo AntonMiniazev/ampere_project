@@ -12,16 +12,20 @@ default_args = {
     "retries": 0,
 }
 
+# Namespace where the pod runs; affects K8s placement and secret lookup.
 NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+# Target node hostname; controls scheduling affinity.
 NODE_SELECTOR = {
     "kubernetes.io/hostname": Variable.get(
         "source_prep_node", default_var="ampere-k8s-node3"
     )
 }
+# Container image for init job; changing it switches the code version.
 IMAGE = Variable.get(
     "init_source_preparation_image",
     default_var="ghcr.io/antonminiazev/init-source-preparation:latest",
 )
+# Pull policy for image refresh behavior (e.g., Always vs IfNotPresent).
 IMAGE_PULL_POLICY = Variable.get(
     "image_pull_policy",
     default_var="IfNotPresent",
@@ -59,6 +63,7 @@ with DAG(
         image_pull_policy=IMAGE_PULL_POLICY,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
+        # Use logical date as base for generated registrations.
         env_vars={
             "PROJECT_START_DATE": "{{ ds }}",
         },

@@ -9,16 +9,20 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 DAG_ID = "orders_clients_generation"
 
+# Namespace where the pod runs; affects K8s placement and secret lookup.
 NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+# Target node hostname; controls scheduling affinity.
 NODE_SELECTOR = {
     "kubernetes.io/hostname": Variable.get(
         "source_prep_node", default_var="ampere-k8s-node3"
     )
 }
+# Container image for daily generator; changing it switches the code version.
 IMAGE = Variable.get(
     "order_data_generator_image",
     default_var="ghcr.io/antonminiazev/order-data-generator:latest",
 )
+# Pull policy for image refresh behavior (e.g., Always vs IfNotPresent).
 IMAGE_PULL_POLICY = Variable.get(
     "image_pull_policy",
     default_var="IfNotPresent",
@@ -57,6 +61,7 @@ with DAG(
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
         cmds=["python", "-m", "order_data_generator"],
+        # Use logical date as "today" for order generation.
         arguments=["--run-date", "{{ ds }}"],
         container_resources=V1ResourceRequirements(
             requests={"cpu": "250m", "memory": "1Gi"},
