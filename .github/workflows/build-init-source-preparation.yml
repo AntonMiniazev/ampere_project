@@ -2,6 +2,9 @@ name: Build init source preparation image
 
 on:
   push:
+    branches:
+      - master
+      - main
     paths:
       - "docker/init_source_preparation/**"
       - "docker/image_tags.json"
