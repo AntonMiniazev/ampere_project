@@ -80,7 +80,7 @@ def load_config() -> GeneratorConfig:
         n_orders_days=_get_int("N_ORDERS_DAYS", 10),
         churn_rates=_get_list("CHURN_RATES", (0.004, 0.007)),
         new_clients_rates=_get_list("NEW_CLIENTS_RATES", (0.006, 0.01)),
-        avg_orders=_get_float("AVG_ORDERS", 1.35),
+        avg_orders=_get_float("AVG_ORDERS", 1.4),
         min_orders=_get_int("MIN_ORDERS", 1),
         max_orders=_get_int("MAX_ORDERS", 4),
         avg_products=_get_float("AVG_PRODUCTS", 10),
@@ -107,7 +107,9 @@ def load_config() -> GeneratorConfig:
 
 
 def apply_overrides(config: GeneratorConfig, **overrides) -> GeneratorConfig:
-    clean_overrides = {key: value for key, value in overrides.items() if value is not None}
+    clean_overrides = {
+        key: value for key, value in overrides.items() if value is not None
+    }
     if not clean_overrides:
         return config
     return replace(config, **clean_overrides)

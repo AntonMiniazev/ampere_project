@@ -15,7 +15,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run daily source data generator")
     parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
     parser.add_argument("--seed", type=int, help="Random seed for deterministic output")
-
     parser.add_argument("--avg-orders", type=float)
     parser.add_argument("--min-orders", type=int)
     parser.add_argument("--max-orders", type=int)
@@ -88,4 +87,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
