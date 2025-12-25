@@ -31,12 +31,6 @@ IMAGE = GHCR_IMAGES.get(
     "source_preparation",
     "ghcr.io/antonminiazev/init-source-preparation:latest",
 )
-# Pull policy for image refresh behavior (e.g., Always vs IfNotPresent).
-IMAGE_PULL_POLICY = Variable.get(
-    "image_pull_policy",
-    default_var="IfNotPresent",
-)
-
 
 pg_user = Secret(
     deploy_type="env",
@@ -66,7 +60,7 @@ with DAG(
         namespace=NAMESPACE,
         node_selector=NODE_SELECTOR,
         image=IMAGE,
-        image_pull_policy=IMAGE_PULL_POLICY,
+        image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
         # Use logical date as base for generated registrations.
