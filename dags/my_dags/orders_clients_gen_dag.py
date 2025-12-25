@@ -10,7 +10,11 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 DAG_ID = "orders_clients_generation"
 
 NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
-NODE = Variable.get("source_prep_node", default_var="ampere-k8s-node3")
+NODE_SELECTOR = {
+    "kubernetes.io/hostname": Variable.get(
+        "source_prep_node", default_var="ampere-k8s-node3"
+    )
+}
 IMAGE = Variable.get(
     "order_data_generator_image",
     default_var="ghcr.io/antonminiazev/order-data-generator:latest",
@@ -19,6 +23,7 @@ IMAGE_PULL_POLICY = Variable.get(
     "image_pull_policy",
     default_var="IfNotPresent",
 )
+
 
 pg_user = Secret(
     deploy_type="env",
@@ -46,7 +51,7 @@ with DAG(
         task_id="generate_source_data",
         name="order-data-generator",
         namespace=NAMESPACE,
-        node_selector=NODE,
+        node_selector=NODE_SELECTOR,
         image=IMAGE,
         image_pull_policy=IMAGE_PULL_POLICY,
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
