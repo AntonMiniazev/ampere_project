@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -15,6 +16,9 @@ from order_data_generator.db import (
     upload_new_data,
 )
 from order_data_generator.generators.utils import scaled_beta
+from order_data_generator.logging_utils import APP_NAME
+
+logger = logging.getLogger(APP_NAME)
 
 
 def _normalize_date(value) -> date:
@@ -625,6 +629,7 @@ def prepare_raw_data(
 def prepare_orders_statuses(
     today: date, yesterday: date, config: GeneratorConfig
 ) -> None:
+    logger.info("Preparing order pipeline for today=%s yesterday=%s", today, yesterday)
     status_map = fetch_order_status_map(config.schema)
     for status_name in ("created", "packing", "delivered"):
         if status_name not in status_map:
@@ -645,6 +650,14 @@ def prepare_orders_statuses(
         assortment_df,
         yesterday_orders_df,
     ) = prepare_raw_data(yesterday, config, delivered_status_id)
+    logger.info(
+        "Loaded raw data: clients=%s stores=%s couriers=%s assortment=%s yesterday_open=%s",
+        clients_df.height,
+        n_stores,
+        couriers_df.height,
+        assortment_df.height,
+        yesterday_orders_df.height,
+    )
 
     orders_df, order_product = clients_to_orders(
         n_stores=n_stores,
@@ -657,6 +670,11 @@ def prepare_orders_statuses(
         created_status_id=created_status_id,
         packing_status_id=packing_status_id,
         delivered_status_id=delivered_status_id,
+    )
+    logger.info(
+        "Generated new orders: orders=%s order_products=%s",
+        orders_df.height,
+        order_product.height,
     )
 
     order_status_history_frames: list[pl.DataFrame] = []
@@ -730,7 +748,7 @@ def prepare_orders_statuses(
             )
         )
     else:
-        print("No new orders generated.")
+        logger.info("No new orders generated.")
 
     if yesterday_orders_df.height:
         # Include yesterday's unfinished orders for status completion.
@@ -747,6 +765,10 @@ def prepare_orders_statuses(
     else:
         order_status_history_input = pl.DataFrame()
         order_status_history = pl.DataFrame()
+    logger.info(
+        "Generated order status history rows=%s",
+        order_status_history.height,
+    )
 
     if order_status_history.height:
         # Step 4: generate delivery tracking from status history.
@@ -796,6 +818,10 @@ def prepare_orders_statuses(
                 yesterday=yesterday.isoformat(),
                 delivered_status_id=delivered_status_id,
             )
+        logger.info(
+            "Generated delivery tracking rows=%s",
+            delivery_tracking_upload.height,
+        )
 
     # Step 5: generate and upload payments.
     payments_upload = generate_payments(
@@ -803,3 +829,4 @@ def prepare_orders_statuses(
     )
     if payments_upload.height:
         upload_new_data(payments_upload, "payments", config.schema)
+    logger.info("Generated payments rows=%s", payments_upload.height)

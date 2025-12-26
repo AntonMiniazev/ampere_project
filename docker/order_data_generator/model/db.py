@@ -1,3 +1,4 @@
+import logging
 import os
 from functools import lru_cache
 
@@ -6,8 +7,9 @@ from sqlalchemy import MetaData, Table, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from order_data_generator.config import load_config
+from order_data_generator.logging_utils import APP_NAME
 
-APP_NAME = "order-generator"
+logger = logging.getLogger(APP_NAME)
 
 
 def _get_env_any(*names: str) -> str | None:
@@ -65,8 +67,16 @@ def _build_database_url() -> str:
 
 @lru_cache
 def get_engine():
+    url = make_url(_build_database_url())
+    logger.info(
+        "Connecting to Postgres via SQLAlchemy host=%s port=%s db=%s user=%s",
+        url.host,
+        url.port,
+        url.database,
+        url.username,
+    )
     return create_engine(
-        _build_database_url(),
+        url,
         pool_pre_ping=True,
         connect_args={"application_name": APP_NAME},
     )
@@ -102,7 +112,7 @@ def upload_new_data(
     delivered_status_id: int = 3,
 ) -> None:
     if table.height == 0:
-        print(f"No data to upload to {target_table}.")
+        logger.info("No data to upload to %s.", target_table)
         return
 
     if target_table == "delivery_tracking":
@@ -125,21 +135,29 @@ def upload_new_data(
     column_list = ", ".join(f'"{col}"' for col in columns)
     copy_sql = f'COPY "{schema}"."{target_table}" ({column_list}) FROM STDIN'
 
+    logger.info(
+        "Bulk insert starting: %s.%s (rows=%s)",
+        schema,
+        target_table,
+        table.height,
+    )
     engine = get_engine()
+    logger.info("Opening COPY connection for %s.%s", schema, target_table)
     raw_conn = engine.raw_connection()
     try:
         cur = raw_conn.cursor()
-        cur.execute("SHOW work_mem")
-        work_mem = cur.fetchone()
-        if work_mem:
-            print(f"work_mem(copy)={work_mem[0]}")
         with cur.copy(copy_sql) as copy:
             for row in table.iter_rows():
                 copy.write_row(row)
         raw_conn.commit()
     finally:
         raw_conn.close()
-    print(f"{table.height} records inserted into {schema}.{target_table}")
+    logger.info(
+        "Bulk insert completed: %s records into %s.%s",
+        table.height,
+        schema,
+        target_table,
+    )
 
 
 def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 from datetime import date, timedelta
 
@@ -8,12 +9,15 @@ import polars as pl
 from faker import Faker
 
 from order_data_generator.config import GeneratorConfig
-from order_data_generator.db import read_sql, upload_new_data
+from order_data_generator.db import upload_new_data
 from order_data_generator.generators.clients_gen import (
     prepare_clients_update_and_generation,
     update_churned,
 )
 from order_data_generator.generators.orders_gen import prepare_orders_statuses
+from order_data_generator.logging_utils import APP_NAME
+
+logger = logging.getLogger(APP_NAME)
 
 
 def set_seed(seed: int) -> None:
@@ -22,22 +26,12 @@ def set_seed(seed: int) -> None:
     Faker.seed(seed)
 
 
-def _log_work_mem() -> None:
-    try:
-        df = read_sql("SHOW work_mem")
-    except Exception as exc:
-        print(f"work_mem=unknown (error: {exc})")
-        return
-    if df.height:
-        print(f"work_mem={df[0, 0]}")
-
-
 def run_generation(run_date: date, config: GeneratorConfig) -> None:
     yesterday = run_date - timedelta(days=1)
 
-    _log_work_mem()
-
+    logger.info("Starting daily generation workflow")
     # Step 0: churn existing clients and add new ones.
+    logger.info("Preparing client churn and new client generation")
     to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
         run_date, config
     )
@@ -47,5 +41,7 @@ def run_generation(run_date: date, config: GeneratorConfig) -> None:
         upload_new_data(pl.DataFrame(clients_for_upload), "clients", config.schema)
 
     # Step 1: generate orders, statuses, delivery tracking, and payments.
+    logger.info("Preparing orders, statuses, delivery tracking, and payments")
     prepare_orders_statuses(run_date, yesterday, config)
+    logger.info("Daily generation workflow completed")
 

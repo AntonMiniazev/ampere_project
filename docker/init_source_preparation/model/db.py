@@ -1,3 +1,4 @@
+import logging
 import os
 from functools import lru_cache
 
@@ -10,6 +11,9 @@ from init_source_preparation.config import (
     source_db_name,
     source_db_port,
 )
+from init_source_preparation.logging_utils import APP_NAME
+
+logger = logging.getLogger(APP_NAME)
 
 
 def _get_env_any(*names: str) -> str | None:
@@ -66,7 +70,19 @@ def _build_database_url() -> str:
 
 @lru_cache
 def get_engine():
-    return create_engine(_build_database_url(), pool_pre_ping=True)
+    url = make_url(_build_database_url())
+    logger.info(
+        "Connecting to Postgres via SQLAlchemy host=%s port=%s db=%s user=%s",
+        url.host,
+        url.port,
+        url.database,
+        url.username,
+    )
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        connect_args={"application_name": APP_NAME},
+    )
 
 
 def _copy_dataframe(table, target_table: str, schema: str) -> None:
@@ -75,8 +91,20 @@ def _copy_dataframe(table, target_table: str, schema: str) -> None:
     copy_sql = f'COPY "{schema}"."{target_table}" ({column_list}) FROM STDIN'
 
     user, password, host, port, database = _get_db_params()
+    logger.info(
+        "Opening COPY connection host=%s port=%s db=%s user=%s",
+        host,
+        port,
+        database,
+        user,
+    )
     with psycopg.connect(
-        user=user, password=password, host=host, port=port, dbname=database
+        user=user,
+        password=password,
+        host=host,
+        port=port,
+        dbname=database,
+        application_name=APP_NAME,
     ) as conn:
         with conn.cursor() as cur:
             with cur.copy(copy_sql) as copy:
@@ -106,13 +134,23 @@ def truncate_table(schema: str, table: str) -> None:
     engine = get_engine()
     with engine.begin() as conn:
         conn.execute(text(f'TRUNCATE TABLE "{schema}"."{table}"'))
-        print(f"Truncated table: {schema}.{table}")
 
 
 def upload_new_data(table, target_table: str, schema: str) -> None:
     if table.height == 0:
-        print(f"No data to upload to {target_table}.")
+        logger.info("No data to upload to %s.", target_table)
         return
 
+    logger.info(
+        "Bulk insert starting: %s.%s (rows=%s)",
+        schema,
+        target_table,
+        table.height,
+    )
     _copy_dataframe(table, target_table, schema)
-    print(f"{table.height} records inserted into {schema}.{target_table}")
+    logger.info(
+        "Bulk insert completed: %s records into %s.%s",
+        table.height,
+        schema,
+        target_table,
+    )

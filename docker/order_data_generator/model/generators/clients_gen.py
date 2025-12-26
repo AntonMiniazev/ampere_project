@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 
 import numpy as np
@@ -8,13 +9,15 @@ from faker import Faker
 
 from order_data_generator.config import GeneratorConfig
 from order_data_generator.db import exec_sql, read_sql
+from order_data_generator.logging_utils import APP_NAME
 
 fake = Faker()
+logger = logging.getLogger(APP_NAME)
 
 
 def update_churned(ids: list[int], schema: str) -> None:
     if not ids:
-        print("No clients for update.")
+        logger.info("No clients marked for churn update.")
         return
 
     # Bulk-update churned flag in a single SQL statement.
@@ -25,7 +28,7 @@ def update_churned(ids: list[int], schema: str) -> None:
         WHERE id IN ({id_list_str})
     '''
     exec_sql(query)
-    print(f"Updated {len(ids)} clients (churned = TRUE)")
+    logger.info("Updated %s clients (churned = TRUE)", len(ids))
 
 
 def generate_clients(n: int, store_id: int, today: date) -> list[dict]:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from datetime import datetime
 
 from order_data_generator.config import apply_overrides, load_config
+from order_data_generator.logging_utils import APP_NAME, setup_logging
 from order_data_generator.main import run_generation, set_seed
 
 
@@ -50,6 +52,10 @@ def parse_args():
 
 
 def main() -> None:
+    setup_logging()
+    logger = logging.getLogger(APP_NAME)
+    logger.info("Starting order data generator")
+
     args = parse_args()
     config = load_config()
 
@@ -66,6 +72,8 @@ def main() -> None:
         "max_weight": args.max_weight,
     }
 
+    effective_overrides = {key: value for key, value in overrides.items() if value is not None}
+
     if args.new_clients_rate_min is not None or args.new_clients_rate_max is not None:
         new_min = (
             args.new_clients_rate_min
@@ -78,6 +86,7 @@ def main() -> None:
             else config.new_clients_rates[1]
         )
         overrides["new_clients_rates"] = (new_min, new_max)
+        effective_overrides["new_clients_rates"] = (new_min, new_max)
 
     if args.churn_rate_min is not None or args.churn_rate_max is not None:
         churn_min = (
@@ -91,14 +100,21 @@ def main() -> None:
             else config.churn_rates[1]
         )
         overrides["churn_rates"] = (churn_min, churn_max)
+        effective_overrides["churn_rates"] = (churn_min, churn_max)
+
+    if effective_overrides:
+        logger.info("Applying overrides: %s", effective_overrides)
 
     config = apply_overrides(config, **overrides)
 
     if args.seed is not None:
         set_seed(args.seed)
+        logger.info("Using random seed=%s", args.seed)
 
     run_date = args.run_date or datetime.utcnow().date()
+    logger.info("Running generator for date=%s", run_date)
     run_generation(run_date, config)
+    logger.info("Order data generator completed")
 
 
 if __name__ == "__main__":
