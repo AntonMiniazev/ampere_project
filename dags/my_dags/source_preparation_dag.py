@@ -39,6 +39,15 @@ GHCR_IMAGES = _load_image_map()
 IMAGE_TAG = GHCR_IMAGES.get("source_preparation", "latest")
 IMAGE = f"ghcr.io/antonminiazev/init-source-preparation:{IMAGE_TAG}"
 
+
+def _get_optional_var(name: str) -> str | None:
+    value = Variable.get(name, default_var=None)
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
 pg_user = Secret(
     deploy_type="env",
     deploy_target="PGUSER",
@@ -61,6 +70,17 @@ with DAG(
     description="Initial data source creation and dictionary population with data stored in excel tables. Executed one time only, after that data generated in orders_clients_generation.",
     tags=["init", "source_layer", "database", "prod"],
 ) as dag:
+    env_vars = {
+        # Use logical date as base for generated registrations.
+        "PROJECT_START_DATE": "{{ ds }}",
+    }
+    init_client_num = _get_optional_var("init_client_num")
+    if init_client_num is not None:
+        env_vars["N_OF_INIT_CLIENTS"] = init_client_num
+    init_delivery_resource = _get_optional_var("init_delivery_resource")
+    if init_delivery_resource is not None:
+        env_vars["N_DELIVERY_RESOURCE"] = init_delivery_resource
+
     init_data_task = KubernetesPodOperator(
         task_id="initialize_data_sources",
         name="init-source-preparation",
@@ -71,10 +91,7 @@ with DAG(
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
-        # Use logical date as base for generated registrations.
-        env_vars={
-            "PROJECT_START_DATE": "{{ ds }}",
-        },
+        env_vars=env_vars,
         container_resources=V1ResourceRequirements(
             requests={"cpu": "200m", "memory": "512Mi"},
             limits={"cpu": "1", "memory": "1Gi"},

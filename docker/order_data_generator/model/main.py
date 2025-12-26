@@ -8,7 +8,7 @@ import polars as pl
 from faker import Faker
 
 from order_data_generator.config import GeneratorConfig
-from order_data_generator.db import upload_new_data
+from order_data_generator.db import read_sql, upload_new_data
 from order_data_generator.generators.clients_gen import (
     prepare_clients_update_and_generation,
     update_churned,
@@ -22,8 +22,20 @@ def set_seed(seed: int) -> None:
     Faker.seed(seed)
 
 
+def _log_work_mem() -> None:
+    try:
+        df = read_sql("SHOW work_mem")
+    except Exception as exc:
+        print(f"work_mem=unknown (error: {exc})")
+        return
+    if df.height:
+        print(f"work_mem={df[0, 0]}")
+
+
 def run_generation(run_date: date, config: GeneratorConfig) -> None:
     yesterday = run_date - timedelta(days=1)
+
+    _log_work_mem()
 
     # Step 0: churn existing clients and add new ones.
     to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(

@@ -2,7 +2,6 @@ import os
 from functools import lru_cache
 
 import polars as pl
-import psycopg
 from sqlalchemy import MetaData, Table, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
@@ -126,19 +125,20 @@ def upload_new_data(
     column_list = ", ".join(f'"{col}"' for col in columns)
     copy_sql = f'COPY "{schema}"."{target_table}" ({column_list}) FROM STDIN'
 
-    user, password, host, port, database = _get_db_params()
-    with psycopg.connect(
-        user=user,
-        password=password,
-        host=host,
-        port=port,
-        dbname=database,
-        application_name=APP_NAME,
-    ) as conn:
-        with conn.cursor() as cur:
-            with cur.copy(copy_sql) as copy:
-                for row in table.iter_rows():
-                    copy.write_row(row)
+    engine = get_engine()
+    raw_conn = engine.raw_connection()
+    try:
+        cur = raw_conn.cursor()
+        cur.execute("SHOW work_mem")
+        work_mem = cur.fetchone()
+        if work_mem:
+            print(f"work_mem(copy)={work_mem[0]}")
+        with cur.copy(copy_sql) as copy:
+            for row in table.iter_rows():
+                copy.write_row(row)
+        raw_conn.commit()
+    finally:
+        raw_conn.close()
     print(f"{table.height} records inserted into {schema}.{target_table}")
 
 
