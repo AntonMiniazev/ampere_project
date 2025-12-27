@@ -1,4 +1,4 @@
-FROM ghcr.io/spark-operator/spark-py:v3.5.1
+FROM apache/spark:3.5.1
 
 ENV PYTHONUNBUFFERED=1
 ENV PYSPARK_PYTHON=python3
