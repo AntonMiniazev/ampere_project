@@ -9,7 +9,8 @@ spec:
   sparkVersion: "3.5.1"
   image: {{ params.image }}
   imagePullPolicy: {{ params.image_pull_policy }}
-  imagePullSecrets: ghcr-pull
+  imagePullSecrets:
+    - ghcr-pull
   mainApplicationFile: local:///opt/spark/app/source_to_raw_etl.py
   arguments:
     - --table
