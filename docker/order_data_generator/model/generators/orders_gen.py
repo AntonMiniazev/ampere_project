@@ -587,7 +587,7 @@ def prepare_raw_data(
     assortment_query = f'''
         SELECT a.product_id, a.store_id, p.unit_type, p.chance, p.price
         FROM "{config.schema}"."assortment" a
-        LEFT JOIN "{config.schema}"."products" p ON a.product_id = p.id`
+        LEFT JOIN "{config.schema}"."products" p ON a.product_id = p.id
         WHERE p.valid_to IS NULL
     '''
 
