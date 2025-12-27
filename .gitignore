@@ -42,7 +42,6 @@ kube-cluster/
 # =========================
 _old/
 other/
-spark/
 data_source/
 deployment/sql_scripts/
 kube-cluster copy/
