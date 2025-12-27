@@ -1,0 +1,104 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: {{ params.app_name }}
+  namespace: {{ params.namespace }}
+  labels:
+    app: source-to-raw
+    table: {{ params.table }}
+spec:
+  type: Python
+  mode: cluster
+  sparkVersion: "3.5.1"
+  image: {{ params.image }}
+  imagePullPolicy: {{ params.image_pull_policy }}
+  imagePullSecrets:
+    - name: ghcr-pull
+  mainApplicationFile: local:///opt/spark/app/source_to_raw_etl.py
+  arguments:
+    - --table
+    - {{ params.table }}
+    - --schema
+    - {{ params.schema }}
+    - --run-date
+    - "{{ ds }}"
+    - --bucket
+    - {{ params.bucket }}
+    - --output-prefix
+    - {{ params.output_prefix }}
+  deps:
+    jars:
+      - local:///opt/spark/jars/postgresql-42.7.3.jar
+  sparkConf:
+    spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
+    spark.hadoop.fs.s3a.path.style.access: "true"
+    spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
+    spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+  restartPolicy:
+    type: Never
+  driver:
+    cores: {{ params.driver_cores }}
+    memory: "{{ params.driver_memory }}"
+    serviceAccount: {{ params.service_account }}
+    env:
+      - name: PGHOST
+        value: "{{ params.pg_host }}"
+      - name: PGPORT
+        value: "{{ params.pg_port }}"
+      - name: PGDATABASE
+        value: "{{ params.pg_database }}"
+      - name: PGUSER
+        valueFrom:
+          secretKeyRef:
+            name: pguser
+            key: pguser
+      - name: PGPASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: pgpass
+            key: pgpass
+      - name: MINIO_S3_ENDPOINT
+        value: "{{ params.minio_endpoint }}"
+      - name: MINIO_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: minio-creds
+            key: MINIO_ACCESS_KEY
+      - name: MINIO_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: minio-creds
+            key: MINIO_SECRET_KEY
+  executor:
+    instances: {{ params.executor_instances }}
+    cores: {{ params.executor_cores }}
+    memory: "{{ params.executor_memory }}"
+    env:
+      - name: PGHOST
+        value: "{{ params.pg_host }}"
+      - name: PGPORT
+        value: "{{ params.pg_port }}"
+      - name: PGDATABASE
+        value: "{{ params.pg_database }}"
+      - name: PGUSER
+        valueFrom:
+          secretKeyRef:
+            name: pguser
+            key: pguser
+      - name: PGPASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: pgpass
+            key: pgpass
+      - name: MINIO_S3_ENDPOINT
+        value: "{{ params.minio_endpoint }}"
+      - name: MINIO_ACCESS_KEY
+        valueFrom:
+          secretKeyRef:
+            name: minio-creds
+            key: MINIO_ACCESS_KEY
+      - name: MINIO_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: minio-creds
+            key: MINIO_SECRET_KEY
