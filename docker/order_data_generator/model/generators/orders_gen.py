@@ -28,8 +28,7 @@ def _normalize_date(value) -> date:
 
 
 def _clamp_times_to_date(base_date: date, times: list[datetime]) -> list[datetime]:
-    end_of_day = datetime.combine(
-        base_date, datetime.max.time()).replace(microsecond=0)
+    end_of_day = datetime.combine(base_date, datetime.max.time()).replace(microsecond=0)
     latest = max(times)
     if latest <= end_of_day:
         return times
@@ -89,13 +88,11 @@ def generate_products_in_order(
             unit_type = meta["unit_type"]
             if unit_type == "units":
                 # Units-based products use integer quantity.
-                n_units = int(np.random.randint(
-                    config.min_units, config.max_units))
+                n_units = int(np.random.randint(config.min_units, config.max_units))
             else:
                 # Weight-based products use fractional quantity.
                 n_units = round(
-                    float(np.random.uniform(
-                        config.min_weight, config.max_weight)), 3
+                    float(np.random.uniform(config.min_weight, config.max_weight)), 3
                 )
 
             prod_in_orders.append(
@@ -128,8 +125,7 @@ def clients_to_orders(
     order_key = 0
 
     for store_id in range(1, n_stores + 1):
-        store_clients = client_base.filter(
-            pl.col("preferred_store_id") == store_id)
+        store_clients = client_base.filter(pl.col("preferred_store_id") == store_id)
         store_couriers = couriers_df.filter(pl.col("store_id") == store_id)
 
         if store_clients.height == 0 or store_couriers.height == 0:
@@ -171,10 +167,8 @@ def clients_to_orders(
         s2 = max(0.0, 1.0 - s1 - s3)
         status_probs = np.array([s1, s2, s3], dtype=float)
         status_probs = status_probs / status_probs.sum()
-        status_choices = [created_status_id,
-                          packing_status_id, delivered_status_id]
-        statuses = np.random.choice(
-            status_choices, size=n_orders, p=status_probs)
+        status_choices = [created_status_id, packing_status_id, delivered_status_id]
+        statuses = np.random.choice(status_choices, size=n_orders, p=status_probs)
 
         # Build courier pools by delivery type for assignment.
         couriers_by_type = {
@@ -220,8 +214,7 @@ def clients_to_orders(
             orders.append(order)
 
         products_in_orders.extend(
-            generate_products_in_order(
-                assortment_df, store_id, store_orders, config)
+            generate_products_in_order(assortment_df, store_id, store_orders, config)
         )
 
     orders_df = pl.DataFrame(orders)
@@ -328,8 +321,7 @@ def generate_order_status_history(
                 elif order_date < today and status_id == packing_id:
                     status3_time = order_clock
 
-                    status3_time = _clamp_times_to_date(
-                        base_date, [status3_time])[0]
+                    status3_time = _clamp_times_to_date(base_date, [status3_time])[0]
 
                     records.append(
                         {
@@ -398,8 +390,7 @@ def generate_order_status_history(
             # Case C: today + packing -> backfill created.
             elif order_date == today and status_id == packing_id:
                 status2_time = datetime.combine(today, datetime.min.time()) + timedelta(
-                    hours=config.eod_orders_time, minutes=np.random.randint(
-                        0, 60)
+                    hours=config.eod_orders_time, minutes=np.random.randint(0, 60)
                 )
                 status1_time = status2_time - timedelta(
                     minutes=np.random.randint(
@@ -426,8 +417,7 @@ def generate_order_status_history(
             # Case D: today + created -> only created.
             elif order_date == today and status_id == created_id:
                 status1_time = datetime.combine(today, datetime.min.time()) + timedelta(
-                    hours=config.eod_orders_time, minutes=np.random.randint(
-                        0, 60)
+                    hours=config.eod_orders_time, minutes=np.random.randint(0, 60)
                 )
                 records.append(
                     {
@@ -500,8 +490,7 @@ def generate_payments(
         elif order_date == today and latest_status == delivered_status_id:
             payment_date = today
         elif order_date < today and latest_status == delivered_status_id:
-            payment_date = np.random.choice(
-                [yesterday, today], p=config.prepayment_p)
+            payment_date = np.random.choice([yesterday, today], p=config.prepayment_p)
         else:
             payment_date = today
 
@@ -567,7 +556,7 @@ def generate_delivery_tracking(
 def prepare_raw_data(
     yesterday: date, config: GeneratorConfig, delivered_status_id: int
 ) -> tuple[pl.DataFrame, int, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    # Pull required source data and yesterday's unfinished orders.
+    # Pull required source data and yesterday's unfinished orders for further processing.
     client_query = f'''
         SELECT id, fullname, preferred_store_id, registration_date, churned
         FROM "{config.schema}"."clients"
@@ -641,13 +630,11 @@ def prepare_raw_data(
 def prepare_orders_statuses(
     today: date, yesterday: date, config: GeneratorConfig
 ) -> None:
-    logger.info(
-        "Preparing order pipeline for today=%s yesterday=%s", today, yesterday)
+    logger.info("Preparing order pipeline for today=%s yesterday=%s", today, yesterday)
     status_map = fetch_order_status_map(config.schema)
     for status_name in ("created", "packing", "delivered"):
         if status_name not in status_map:
-            raise ValueError(
-                f"Missing {status_name} in order_statuses dictionary")
+            raise ValueError(f"Missing {status_name} in order_statuses dictionary")
 
     delivery_type_ids = fetch_delivery_type_ids(config.schema)
     if len(delivery_type_ids) < 3:
@@ -814,8 +801,7 @@ def prepare_orders_statuses(
         )
 
         # Combine delivered + packing times; add courier id from input if available.
-        delivery_tracking_input = delivered.join(
-            packing, on="order_id", how="left")
+        delivery_tracking_input = delivered.join(packing, on="order_id", how="left")
         if order_status_history_input.height:
             courier_lookup = order_status_history_input.select(
                 ["order_id", "courier_id"]
