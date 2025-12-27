@@ -88,4 +88,5 @@ with DAG(
         logical_date="{{ logical_date }}",
     )
 
-    generate_data >> trigger_source_to_minio
+    generate_data
+    # generate_data >> trigger_source_to_minio
