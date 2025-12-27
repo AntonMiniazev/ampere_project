@@ -40,11 +40,11 @@ EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="1g")
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="2"))
 
-SPARK_APP_TEMPLATE = str(
-    Path(__file__).resolve().parents[1]
-    / "sparkapplications"
-    / "source_to_raw_template.yaml"
-)
+SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
+SPARK_TEMPLATE_PATHS = [
+    str(Path(__file__).resolve().parent),
+    str(Path(__file__).resolve().parents[1] / "sparkapplications"),
+]
 
 TABLES = [
     "clients",
@@ -82,6 +82,7 @@ with DAG(
     schedule=None,
     catchup=False,
     max_active_runs=1,
+    template_searchpath=SPARK_TEMPLATE_PATHS,
     tags=["spark", "raw_layer", "source_layer", "prod"],
 ) as dag:
     for table in TABLES:
