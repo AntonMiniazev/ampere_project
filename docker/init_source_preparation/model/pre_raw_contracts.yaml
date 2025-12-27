@@ -1,0 +1,420 @@
+models:
+  - name: clients
+    description: >
+      Pre-raw clients master data generated during source preparation.
+
+    columns:
+      - name: id
+        description: Client identifier (identity).
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: fullname
+        description: Client full name.
+        data_type: varchar(255)
+        constraints:
+          - not_null
+
+      - name: preferred_store_id
+        description: Preferred store for the client.
+        data_type: smallint
+
+      - name: registration_date
+        description: Client registration date.
+        data_type: date
+
+      - name: churned
+        description: Indicates whether the client is churned.
+        data_type: boolean
+
+  - name: stores
+    description: >
+      Store reference data used by the generator.
+
+    columns:
+      - name: id
+        description: Store identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: city
+        description: City where the store operates.
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+      - name: store_name
+        description: Store name.
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+  - name: zones
+    description: >
+      Delivery zones mapped to stores.
+
+    columns:
+      - name: id
+        description: Zone identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: store_id
+        description: Store identifier for the zone.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: zone_name
+        description: Zone name.
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+  - name: assortment
+    description: >
+      Product assortment by store.
+
+    columns:
+      - name: product_id
+        description: Product identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: store_id
+        description: Store identifier carrying the product.
+        data_type: smallint
+        constraints:
+          - not_null
+
+  - name: costing
+    description: >
+      Product cost history by store.
+
+    columns:
+      - name: product_id
+        description: Product identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: store_id
+        description: Store identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: avg_cost
+        description: Average product cost.
+        data_type: numeric(10,2)
+        constraints:
+          - not_null
+
+      - name: valid_from
+        description: Date when the cost became active.
+        data_type: date
+        constraints:
+          - not_null
+
+      - name: valid_to
+        description: Date when the cost became non-active.
+        data_type: date        
+
+  - name: products
+    description: >
+      Product catalog with pricing and sampling weights.
+
+    columns:
+      - name: id
+        description: Product identifier.
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: product_name
+        description: Product name.
+        data_type: varchar(255)
+        constraints:
+          - not_null
+
+      - name: price
+        description: Product price.
+        data_type: numeric(10,2)
+        constraints:
+          - not_null
+
+      - name: unit_type
+        description: Unit type (units or weight).
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+      - name: category_id
+        description: Product category identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: chance
+        description: Selection weight for random sampling.
+        data_type: numeric(4,2)
+        constraints:
+          - not_null
+
+      - name: valid_from
+        description: Date when the price became active.
+        data_type: date
+        constraints:
+          - not_null
+
+      - name: valid_to
+        description: Date when the price became non-active.
+        data_type: date               
+
+  - name: product_categories
+    description: >
+      Product category reference list.
+
+    columns:
+      - name: id
+        description: Category identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: category_name
+        description: Category name.
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+  - name: payments
+    description: >
+      Payment records linked to orders.
+
+    columns:
+      - name: order_id
+        description: Order identifier.
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: amount
+        description: Payment amount.
+        data_type: numeric(12,4)
+
+      - name: method
+        description: Payment method.
+        data_type: varchar(50)
+
+      - name: payment_status
+        description: Payment status.
+        data_type: varchar(50)
+
+      - name: payment_date
+        description: Payment date.
+        data_type: date
+
+  - name: delivery_tracking
+    description: >
+      Delivery status tracking for orders.
+
+    columns:
+      - name: order_id
+        description: Order identifier.
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: courier_id
+        description: Courier identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: delivery_status_id
+        description: Delivery status identifier.
+        data_type: smallint
+
+      - name: status
+        description: Delivery status text.
+        data_type: varchar(50)
+
+      - name: status_datetime
+        description: Status timestamp.
+        data_type: timestamp(2)
+
+  - name: delivery_resource
+    description: >
+      Courier roster with delivery type assignment.
+
+    columns:
+      - name: id
+        description: Courier identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: fullname
+        description: Courier full name.
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+      - name: delivery_type_id
+        description: Delivery type identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: store_id
+        description: Store identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: active_flag
+        description: Indicates whether the courier is active.
+        data_type: boolean
+        constraints:
+          - not_null
+
+  - name: delivery_type
+    description: >
+      Delivery type dictionary.
+
+    columns:
+      - name: id
+        description: Delivery type identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: courier_type
+        description: Delivery type name.
+        data_type: varchar(50)
+        constraints:
+          - not_null
+
+  - name: delivery_costing
+    description: >
+      Delivery tariffs per zone and delivery type.
+
+    columns:
+      - name: zone_id
+        description: Zone identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: delivery_type_id
+        description: Delivery type identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: tariff
+        description: Tariff for the delivery type and zone.
+        data_type: numeric(4,2)
+        constraints:
+          - not_null
+
+  - name: orders
+    description: >
+      Synthetic orders generated by the data generator.
+
+    columns:
+      - name: id
+        description: Order identifier (identity).
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: client_id
+        description: Client identifier.
+        data_type: integer
+
+      - name: order_date
+        description: Order date.
+        data_type: date
+
+      - name: order_source_id
+        description: Order source identifier.
+        data_type: smallint
+
+      - name: store_id
+        description: Selling store identifier.
+        data_type: smallint        
+
+      - name: total_amount
+        description: Total order amount.
+        data_type: numeric(12,4)
+
+  - name: order_product
+    description: >
+      Line items for orders and products.
+
+    columns:
+      - name: order_id
+        description: Order identifier.
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: product_id
+        description: Product identifier.
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: quantity
+        description: Ordered quantity.
+        data_type: numeric(6,2)
+
+      - name: sales_price
+        description: Product sales price at the moment.
+        data_type: numeric(10,2)        
+
+  - name: order_status_history
+    description: >
+      Historical order status events.
+
+    columns:
+      - name: order_id
+        description: Order identifier.
+        data_type: integer
+        constraints:
+          - not_null
+
+      - name: order_status_id
+        description: Order status identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: status_datetime
+        description: Status timestamp.
+        data_type: timestamp(2)
+        constraints:
+          - not_null
+
+  - name: order_statuses
+    description: >
+      Order status dictionary.
+
+    columns:
+      - name: id
+        description: Order status identifier.
+        data_type: smallint
+        constraints:
+          - not_null
+
+      - name: order_status
+        description: Order status name.
+        data_type: varchar(50)
+        constraints:
+          - not_null
