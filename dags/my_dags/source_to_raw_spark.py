@@ -15,7 +15,10 @@ from airflow.providers.cncf.kubernetes.sensors.spark_kubernetes import (
 DAG_ID = "source_to_raw_spark"
 
 SPARK_NAMESPACE = Variable.get("spark_namespace", default_var="ampere")
-SERVICE_ACCOUNT = Variable.get("spark_service_account", default_var="default")
+SERVICE_ACCOUNT = Variable.get(
+    "spark_service_account",
+    default_var="spark-operator-spark",
+)
 IMAGE = Variable.get(
     "source_to_raw_spark_image",
     default_var="ghcr.io/antonminiazev/source-to-raw-spark:latest",
