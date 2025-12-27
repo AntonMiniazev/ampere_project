@@ -40,7 +40,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--table", required=True, help="Source table name")
     parser.add_argument("--schema", default="source", help="Source schema name")
     parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
-    parser.add_argument("--bucket", default="ampere_raw", help="MinIO bucket name")
+    parser.add_argument("--bucket", default="ampere-raw", help="MinIO bucket name")
     parser.add_argument(
         "--output-prefix", default="source", help="Output prefix in the bucket"
     )
