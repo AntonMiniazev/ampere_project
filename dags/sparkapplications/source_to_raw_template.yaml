@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: {{ params.app_name }}
+  name: source-to-raw-{{ params.table }}-{{ ts_nodash }}
   namespace: {{ params.namespace }}
   labels:
     app: source-to-raw

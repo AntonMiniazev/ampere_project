@@ -86,9 +86,7 @@ with DAG(
     tags=["spark", "raw_layer", "source_layer", "prod"],
 ) as dag:
     for table in TABLES:
-        app_name = f"source-to-raw-{table}-{{{{ ts_nodash }}}}"
         params = {
-            "app_name": app_name,
             "namespace": SPARK_NAMESPACE,
             "image": IMAGE,
             "image_pull_policy": IMAGE_PULL_POLICY,
@@ -114,13 +112,18 @@ with DAG(
             namespace=SPARK_NAMESPACE,
             application_file=SPARK_APP_TEMPLATE,
             params=params,
-            do_xcom_push=False,
+            do_xcom_push=True,
         )
 
+        application_name = (
+            "{{ ti.xcom_pull(task_ids='submit_"
+            + table
+            + "')['metadata']['name'] }}"
+        )
         monitor = SparkKubernetesSensor(
             task_id=f"monitor_{table}",
             namespace=SPARK_NAMESPACE,
-            application_name=app_name,
+            application_name=application_name,
             poke_interval=30,
             timeout=60 * 60,
             attach_log=True,
