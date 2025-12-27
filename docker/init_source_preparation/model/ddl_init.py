@@ -40,7 +40,8 @@ CREATE TABLE "{schema}"."costing"(
     product_id smallint NOT NULL,
     store_id smallint NOT NULL,
     avg_cost numeric(10,2) NOT NULL,
-    cost_active_period date NOT NULL
+    valid_from date NOT NULL,
+    valid_to date
 )
 """
 
@@ -51,7 +52,9 @@ CREATE TABLE "{schema}"."products"(
     price numeric(10,2) NOT NULL,
     unit_type varchar(50) NOT NULL,
     category_id smallint NOT NULL,
-    chance numeric(4,2) NOT NULL
+    chance numeric(4,2) NOT NULL,
+    valid_from date NOT NULL,
+    valid_to date
 )
 """
 
@@ -113,6 +116,7 @@ CREATE TABLE "{schema}"."orders"(
     client_id integer,
     order_date date,
     order_source_id smallint,
+    store_id smallint,
     total_amount numeric(12,4)
 )
 """
@@ -121,7 +125,8 @@ order_product_query = f"""
 CREATE TABLE "{schema}"."order_product"(
     order_id integer NOT NULL,
     product_id integer NOT NULL,
-    quantity numeric(6,2)
+    quantity numeric(6,2),
+    sales_price numeric(10,2)
 )
 """
 
