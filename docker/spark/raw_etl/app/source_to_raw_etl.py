@@ -130,10 +130,17 @@ def main() -> None:
         .load()
     )
 
+    prefix = args.output_prefix.strip("/")
+    if prefix:
+        if prefix == args.schema:
+            output_parts = [prefix, args.table]
+        else:
+            output_parts = [prefix, args.schema, args.table]
+    else:
+        output_parts = [args.schema, args.table]
+    output_key = "/".join(output_parts)
     output_path = (
-        f"s3a://{args.bucket}/"
-        f"{args.output_prefix}/{args.schema}/{args.table}/"
-        f"load_date={run_date}/"
+        f"s3a://{args.bucket}/{output_key}/load_date={run_date}/"
     )
     logger.info("Writing parquet to %s", output_path)
     df.write.mode("overwrite").parquet(output_path)

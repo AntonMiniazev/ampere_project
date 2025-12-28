@@ -135,14 +135,10 @@ with DAG(
             namespace=SPARK_NAMESPACE,
             application_file=SPARK_APP_TEMPLATE,
             params=params,
-            do_xcom_push=True,
+            do_xcom_push=False,
         )
 
-        application_name = (
-            "{{ ti.xcom_pull(task_ids='submit_"
-            + table
-            + "')['metadata']['name'] }}"
-        )
+        application_name = f"source-to-raw-{table}-{{{{ ts_nodash }}}}"
         monitor = SparkKubernetesSensor(
             task_id=f"monitor_{table}",
             namespace=SPARK_NAMESPACE,
