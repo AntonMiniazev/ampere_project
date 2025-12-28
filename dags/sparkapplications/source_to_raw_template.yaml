@@ -26,6 +26,8 @@ spec:
   deps:
     jars:
       - local:///opt/spark/jars/postgresql-42.7.3.jar
+      - local:///opt/spark/jars/hadoop-aws-3.3.4.jar
+      - local:///opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar
   sparkConf:
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"
