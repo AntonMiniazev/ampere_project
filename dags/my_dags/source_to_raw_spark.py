@@ -46,10 +46,19 @@ MINIO_BUCKET = Variable.get("minio_raw_bucket", default_var="ampere-raw")
 OUTPUT_PREFIX = Variable.get("raw_output_prefix", default_var="source")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
+DRIVER_CORE_REQUEST = Variable.get(
+    "spark_driver_core_request", default_var="500m"
+)
 DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="1g")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
+EXECUTOR_CORE_REQUEST = Variable.get(
+    "spark_executor_core_request", default_var="500m"
+)
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="1g")
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="2"))
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="1"))
+MAX_ACTIVE_TASKS = int(
+    Variable.get("spark_source_to_raw_max_active_tasks", default_var="3")
+)
 
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
 SPARK_TEMPLATE_PATHS = [
@@ -93,6 +102,7 @@ with DAG(
     schedule=None,
     catchup=False,
     max_active_runs=1,
+    max_active_tasks=MAX_ACTIVE_TASKS,
     template_searchpath=SPARK_TEMPLATE_PATHS,
     tags=["spark", "raw_layer", "source_layer", "prod"],
 ) as dag:
@@ -112,8 +122,10 @@ with DAG(
             "minio_endpoint": MINIO_ENDPOINT,
             "minio_ssl_enabled": _minio_ssl_enabled(MINIO_ENDPOINT),
             "driver_cores": DRIVER_CORES,
+            "driver_core_request": DRIVER_CORE_REQUEST,
             "driver_memory": DRIVER_MEMORY,
             "executor_cores": EXECUTOR_CORES,
+            "executor_core_request": EXECUTOR_CORE_REQUEST,
             "executor_memory": EXECUTOR_MEMORY,
             "executor_instances": EXECUTOR_INSTANCES,
         }

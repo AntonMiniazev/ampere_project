@@ -37,6 +37,7 @@ spec:
     type: Never
   driver:
     cores: {{ params.driver_cores }}
+    coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
     serviceAccount: {{ params.service_account }}
     env:
@@ -71,6 +72,7 @@ spec:
   executor:
     instances: {{ params.executor_instances }}
     cores: {{ params.executor_cores }}
+    coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
     env:
       - name: PGHOST
