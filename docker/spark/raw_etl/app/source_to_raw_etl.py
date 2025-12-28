@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from datetime import date, datetime
+from typing import Optional
 
 from pyspark.sql import SparkSession
 
@@ -21,7 +22,7 @@ def setup_logging(level: str = "INFO") -> None:
     )
 
 
-def _get_env(name: str, default: str | None = None) -> str | None:
+def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
     value = os.getenv(name)
     if value is None or value == "":
         return default

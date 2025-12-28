@@ -19,10 +19,18 @@ SERVICE_ACCOUNT = Variable.get(
     "spark_service_account",
     default_var="spark-operator-spark",
 )
-IMAGE = Variable.get(
-    "source_to_raw_spark_image",
-    default_var="ghcr.io/antonminiazev/source-to-raw-spark:latest",
-)
+DEFAULT_IMAGE = "ghcr.io/antonminiazev/source-to-raw-spark:latest"
+
+
+def _resolve_image(value: str | None) -> str:
+    if not value:
+        return DEFAULT_IMAGE
+    if "/" in value:
+        return value
+    return f"ghcr.io/antonminiazev/source-to-raw-spark:{value}"
+
+
+IMAGE = _resolve_image(Variable.get("source_to_raw_spark_image", default_var=None))
 IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default_var="IfNotPresent")
 
 PG_HOST = Variable.get("pg_host", default_var="postgres-service")
