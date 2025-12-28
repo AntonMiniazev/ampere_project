@@ -6,7 +6,7 @@ metadata:
 spec:
   type: Python
   mode: cluster
-  sparkVersion: "3.5.1"
+  sparkVersion: "4.1.0"
   image: {{ params.image }}
   imagePullPolicy: {{ params.image_pull_policy }}
   imagePullSecrets:
@@ -26,8 +26,8 @@ spec:
   deps:
     jars:
       - local:///opt/spark/jars/postgresql-42.7.3.jar
-      - local:///opt/spark/jars/hadoop-aws-3.3.4.jar
-      - local:///opt/spark/jars/aws-java-sdk-bundle-1.12.262.jar
+      - local:///opt/spark/jars/hadoop-aws-3.4.2.jar
+      - local:///opt/spark/jars/aws-java-sdk-bundle-1.12.796.jar
   sparkConf:
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"

@@ -1,12 +1,12 @@
-FROM apache/spark:3.5.1
+FROM apache/spark:4.1.0
 
 ENV PYTHONUNBUFFERED=1
 ENV PYSPARK_PYTHON=python3
 
 WORKDIR /opt/spark/app
 
-ARG HADOOP_AWS_VERSION=3.3.4
-ARG AWS_SDK_BUNDLE_VERSION=1.12.262
+ARG HADOOP_AWS_VERSION=3.4.2
+ARG AWS_SDK_BUNDLE_VERSION=1.12.796
 
 RUN curl -fsSL -o /opt/spark/jars/postgresql-42.7.3.jar \
     https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.3/postgresql-42.7.3.jar \
