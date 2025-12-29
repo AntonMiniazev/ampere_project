@@ -44,15 +44,11 @@ MINIO_BUCKET = Variable.get("minio_raw_bucket", default_var="ampere-raw")
 OUTPUT_PREFIX = Variable.get("raw_output_prefix", default_var="source")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
-DRIVER_CORE_REQUEST = Variable.get(
-    "spark_driver_core_request", default_var="500m"
-)
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="1g")
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="250m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="768m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
-EXECUTOR_CORE_REQUEST = Variable.get(
-    "spark_executor_core_request", default_var="500m"
-)
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="1g")
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="768m")
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="1"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_source_to_raw_max_active_tasks", default_var="3")
