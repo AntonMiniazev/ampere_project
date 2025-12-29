@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from airflow import DAG
 from airflow.models import Variable
+from airflow.operators.python import PythonOperator
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
-)
-from airflow.providers.cncf.kubernetes.sensors.spark_kubernetes import (
-    SparkKubernetesSensor,
 )
 
 DAG_ID = "source_to_raw_spark"
@@ -87,9 +85,22 @@ TABLES = [
 
 default_args = {
     "owner": "airflow",
-    "start_date": datetime(2025, 1, 1),
+    "depends_on_past": False,
+    "start_date": datetime.now() - timedelta(days=1),
+    "email": ["airflow@example.com"],
+    "email_on_failure": False,
+    "email_on_retry": False,
+    "max_active_runs": 1,
     "retries": 0,
 }
+
+
+def startBatch() -> None:
+    print("##### startBatch #####")
+
+
+def done() -> None:
+    print("##### done #####")
 
 
 def _minio_ssl_enabled(endpoint: str) -> str:
@@ -100,12 +111,25 @@ with DAG(
     dag_id=DAG_ID,
     default_args=default_args,
     schedule=None,
+    start_date=datetime.now() - timedelta(days=1),
+    tags=["spark", "raw_layer", "source_layer", "prod"],
     catchup=False,
     max_active_runs=1,
     max_active_tasks=MAX_ACTIVE_TASKS,
     template_searchpath=SPARK_TEMPLATE_PATHS,
-    tags=["spark", "raw_layer", "source_layer", "prod"],
 ) as dag:
+    start_batch_task = PythonOperator(
+        task_id="startBatch",
+        python_callable=startBatch,
+    )
+
+    done_task = PythonOperator(
+        task_id="done",
+        python_callable=done,
+    )
+
+    submit_tasks = []
+
     for table in TABLES:
         params = {
             "namespace": SPARK_NAMESPACE,
@@ -135,19 +159,9 @@ with DAG(
             namespace=SPARK_NAMESPACE,
             application_file=SPARK_APP_TEMPLATE,
             params=params,
-            do_xcom_push=True,
+            kubernetes_conn_id="kubernetes_default",
+            do_xcom_push=False,
         )
+        submit_tasks.append(submit)
 
-        monitor = SparkKubernetesSensor(
-            task_id=f"monitor_{table}",
-            namespace=SPARK_NAMESPACE,
-            application_name=(
-                "{{ task_instance.xcom_pull("
-                "task_ids='submit_" + table + "')['metadata']['name'] }}"
-            ),
-            poke_interval=30,
-            timeout=60 * 60,
-            attach_log=True,
-        )
-
-        submit >> monitor
+    start_batch_task >> submit_tasks >> done_task
