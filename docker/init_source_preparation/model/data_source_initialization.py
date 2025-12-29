@@ -73,5 +73,7 @@ def initialize_data_sources() -> None:
 
         if table_name == "delivery_resource":
             logger.info("Generating delivery resources")
-            df_delivery_resource = generate_delivery_resource(n_delivery_resource)
+            df_delivery_resource = generate_delivery_resource(
+                n_delivery_resource, project_start_date=project_start_date
+            )
             upload_new_data(df_delivery_resource, table_name, schema_init)

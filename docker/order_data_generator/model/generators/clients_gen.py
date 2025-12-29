@@ -15,7 +15,7 @@ fake = Faker()
 logger = logging.getLogger(APP_NAME)
 
 
-def update_churned(ids: list[int], schema: str) -> None:
+def update_churned(ids: list[int], schema: str, today: date) -> None:
     if not ids:
         logger.info("No clients marked for churn update.")
         return
@@ -24,7 +24,8 @@ def update_churned(ids: list[int], schema: str) -> None:
     id_list_str = ",".join(str(i) for i in ids)
     query = f'''
         UPDATE "{schema}"."clients"
-        SET churned = TRUE
+        SET churned = TRUE,
+            updated_at = '{today.isoformat()}'
         WHERE id IN ({id_list_str})
     '''
     exec_sql(query)
@@ -33,7 +34,6 @@ def update_churned(ids: list[int], schema: str) -> None:
 
 def generate_clients(n: int, store_id: int, today: date) -> list[dict]:
     clients = []
-
     for _ in range(n):
         # Use Faker to create realistic names and register them today.
         fullname = f"{fake.first_name()} {fake.last_name()}"

@@ -24,6 +24,10 @@ models:
         description: Client registration date.
         data_type: date
 
+      - name: updated_at
+        description: Date of the last client update.
+        data_type: date
+
       - name: churned
         description: Indicates whether the client is churned.
         data_type: boolean
@@ -277,6 +281,14 @@ models:
         constraints:
           - not_null
 
+      - name: created_at
+        description: Date when the courier record was created.
+        data_type: date
+
+      - name: updated_at
+        description: Date of the last courier update.
+        data_type: date
+
       - name: active_flag
         description: Indicates whether the courier is active.
         data_type: boolean
@@ -364,6 +376,10 @@ models:
         data_type: integer
         constraints:
           - not_null
+
+      - name: order_date
+        description: Order date.
+        data_type: date
 
       - name: product_id
         description: Product identifier.

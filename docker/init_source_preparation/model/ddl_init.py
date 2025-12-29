@@ -8,6 +8,7 @@ CREATE TABLE "{schema}"."clients"(
     fullname varchar(255) NOT NULL,
     preferred_store_id smallint,
     registration_date date,
+    updated_at date DEFAULT NULL,
     churned boolean
 )
 """
@@ -91,6 +92,8 @@ CREATE TABLE "{schema}"."delivery_resource"(
     fullname varchar(50) NOT NULL,
     delivery_type_id smallint NOT NULL,
     store_id smallint NOT NULL,
+    created_at date,
+    updated_at date DEFAULT NULL,
     active_flag boolean NOT NULL
 )
 """
@@ -124,6 +127,7 @@ CREATE TABLE "{schema}"."orders"(
 order_product_query = f"""
 CREATE TABLE "{schema}"."order_product"(
     order_id integer NOT NULL,
+    order_date date,
     product_id integer NOT NULL,
     quantity numeric(6,2),
     sales_price numeric(10,2)

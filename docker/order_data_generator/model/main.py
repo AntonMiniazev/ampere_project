@@ -35,7 +35,7 @@ def run_generation(run_date: date, config: GeneratorConfig) -> None:
     to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
         run_date, config
     )
-    update_churned(to_churn_ids, config.schema)
+    update_churned(to_churn_ids, config.schema, run_date)
 
     if clients_for_upload:
         upload_new_data(pl.DataFrame(clients_for_upload), "clients", config.schema)

@@ -741,7 +741,7 @@ def prepare_orders_statuses(
         order_product = order_product.join(order_id_map, on="order_key")
 
         orders_product_upload = order_product.rename({"price": "sales_price"}).select(
-            ["order_id", "product_id", "quantity", "sales_price"]
+            ["order_id", "order_date", "product_id", "quantity", "sales_price"]
         )
         upload_new_data(orders_product_upload, "order_product", config.schema)
 

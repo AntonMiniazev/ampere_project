@@ -1,4 +1,5 @@
 import random
+from datetime import date, datetime, timedelta
 
 import polars as pl
 from faker import Faker
@@ -7,8 +8,14 @@ fake = Faker()
 
 
 def generate_delivery_resource(
-    n: int = 100, store_id_range: tuple[int, int] = (1, 5)
+    n: int = 100,
+    store_id_range: tuple[int, int] = (1, 5),
+    project_start_date: str | None = None,
 ) -> pl.DataFrame:
+    if project_start_date is None:
+        project_start_date = date.today().isoformat()
+    start_date = datetime.strptime(project_start_date, "%Y-%m-%d").date()
+
     delivery_type_choices = [1, 2, 3]
     delivery_type_weights = [0.5, 0.35, 0.15]
 
@@ -19,6 +26,8 @@ def generate_delivery_resource(
         for _ in range(n)
     ]
     store_ids = [random.randint(*store_id_range) for _ in range(n)]
+    days_ago = [random.randint(0, 14) for _ in range(n)]
+    created_at = [start_date - timedelta(days=delta) for delta in days_ago]
     active_flags = [True] * n
 
     return pl.DataFrame(
@@ -27,6 +36,7 @@ def generate_delivery_resource(
             "fullname": fullnames,
             "delivery_type_id": delivery_type_ids,
             "store_id": store_ids,
+            "created_at": created_at,
             "active_flag": active_flags,
         }
     )
