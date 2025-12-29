@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: source-to-raw-{{ params.table }}-{{ ts_nodash }}
+  name: source-to-raw-{{ params.stream }}-{{ params.table }}-{{ ts_nodash }}
   namespace: {{ params.namespace }}
 spec:
   type: Python
@@ -19,10 +19,32 @@ spec:
     - {{ params.schema }}
     - --run-date
     - "{{ ds }}"
+    - --run-id
+    - "{{ params.run_id }}"
+    - --mode
+    - "{{ params.mode }}"
+    - --partition-key
+    - "{{ params.partition_key }}"
+    - --event-date-column
+    - "{{ params.event_date_column }}"
+    - --watermark-column
+    - "{{ params.watermark_column }}"
+    - --watermark-from
+    - "{{ params.watermark_from }}"
+    - --watermark-to
+    - "{{ params.watermark_to }}"
+    - --lookback-days
+    - "{{ params.lookback_days }}"
     - --bucket
     - {{ params.bucket }}
     - --output-prefix
     - {{ params.output_prefix }}
+    - --source-system
+    - {{ params.source_system }}
+    - --app-name
+    - {{ params.app_name }}
+    - --image
+    - {{ params.image }}
   deps:
     jars:
       - local:///opt/spark/ivy/postgresql-42.7.3.jar

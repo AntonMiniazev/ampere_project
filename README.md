@@ -22,7 +22,7 @@
     - [x] Prepare sub-script for Helm charts on master
 - [ ] ETL
   - [x] Establish DS → Stage layer
-	  - [x] Launch generator DAG (deployed through `dags/my_dags/orders_clients_gen_dag.py`)
+  - [x] Launch generator DAG (deployed through `dags/my_dags/ampere__pre_raw__generators__daily.py`)
     - [x] Launch transfer ingestion DAG (deployed through `dags/my_dags/source_to_minio.py`)
     - [x] Launch MinIO cleaning DAG to remove unnecessary artefacts in RAW and Processing buckets (deployed through `dags/my_dags/cleanup_minio_shapshots.py`)
     - [x] Prepare multi-stage docker image for dbt development (local dev container + dev image for pod to process dbt models) 

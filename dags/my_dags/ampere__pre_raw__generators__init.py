@@ -3,12 +3,17 @@ import json
 
 from airflow import DAG
 from airflow.models import Variable
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
-DAG_ID = "orders_clients_generation"
+DAG_ID = "ampere__pre_raw__generators__init"
+
+default_args = {
+    "owner": "airflow",
+    "start_date": datetime(2025, 1, 1),
+    "retries": 0,
+}
 
 # Namespace where the pod runs; affects K8s placement and secret lookup.
 NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
@@ -33,10 +38,17 @@ def _load_image_map() -> dict:
 
 GHCR_IMAGES = _load_image_map()
 # Tag-only map; always compose full image from the tag.
-IMAGE_TAG = GHCR_IMAGES.get("orders_clients_generation", "latest")
-IMAGE = f"ghcr.io/antonminiazev/order-data-generator:{IMAGE_TAG}"
-# Per-pod Postgres settings (libpq PGOPTIONS); raises work_mem for heavy sorts.
-PGOPTIONS = Variable.get("pg_work_mem", default_var="64MB")
+IMAGE_TAG = GHCR_IMAGES.get("source_preparation", "latest")
+IMAGE = f"ghcr.io/antonminiazev/init-source-preparation:{IMAGE_TAG}"
+
+
+def _get_optional_var(name: str) -> str | None:
+    value = Variable.get(name, default_var=None)
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
 
 pg_user = Secret(
     deploy_type="env",
@@ -54,39 +66,44 @@ pg_pass = Secret(
 
 with DAG(
     dag_id=DAG_ID,
-    schedule="0 3 * * *",
-    start_date=datetime(2025, 8, 24),
-    tags=["prod", "init", "generator", "source_layer"],
+    default_args=default_args,
+    schedule=None,
     catchup=False,
-    max_active_runs=1,
+    description=(
+        "Initial data source creation and dictionary population with data stored in "
+        "excel tables. Executed one time only; daily generation happens in "
+        "ampere__pre_raw__generators__daily."
+    ),
+    tags=["layer:pre_raw", "system:postgres", "mode:init"],
 ) as dag:
-    generate_data = KubernetesPodOperator(
-        task_id="generate_source_data",
-        name="order-data-generator",
-        depends_on_past=True,
+    env_vars = {
+        # Use logical date as base for generated registrations.
+        "PROJECT_START_DATE": "{{ ds }}",
+    }
+    init_client_num = _get_optional_var("init_client_num")
+    if init_client_num is not None:
+        env_vars["N_OF_INIT_CLIENTS"] = init_client_num
+    init_delivery_resource = _get_optional_var("init_delivery_resource")
+    if init_delivery_resource is not None:
+        env_vars["N_DELIVERY_RESOURCE"] = init_delivery_resource
+
+    init_data_task = KubernetesPodOperator(
+        task_id="run__pre_raw__init",
+        name="init-source-preparation",
+        startup_timeout_seconds=240,
         namespace=NAMESPACE,
         node_selector=NODE_SELECTOR,
         image=IMAGE,
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
-        env_vars={"PGOPTIONS": f"-c work_mem={PGOPTIONS}"},
-        cmds=["python", "-m", "order_data_generator"],
-        # Use logical date as "today" for order generation.
-        arguments=["--run-date", "{{ ds }}"],
+        env_vars=env_vars,
         container_resources=V1ResourceRequirements(
-            requests={"cpu": "250m", "memory": "1Gi"},
-            limits={"cpu": "2", "memory": "3Gi"},
+            requests={"cpu": "200m", "memory": "512Mi"},
+            limits={"cpu": "1", "memory": "1Gi"},
         ),
         get_logs=True,
         is_delete_operator_pod=True,
     )
 
-    # trigger_source_to_minio = TriggerDagRunOperator(
-    #    task_id="trigger_source_to_minio",
-    #    trigger_dag_id="source_to_minio",
-    #    logical_date="{{ logical_date }}",
-    # )
-
-    generate_data
-    # generate_data >> trigger_source_to_minio
+    init_data_task
