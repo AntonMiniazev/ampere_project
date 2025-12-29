@@ -33,6 +33,10 @@ spec:
     spark.hadoop.fs.s3a.path.style.access: "true"
     spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
     spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+  volumes:
+    - name: ivy-cache
+      persistentVolumeClaim:
+        claimName: ivy-cache
   restartPolicy:
     type: Never
   driver:
@@ -40,6 +44,9 @@ spec:
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
     serviceAccount: {{ params.service_account }}
+    volumeMounts:
+      - name: ivy-cache
+        mountPath: /opt/spark/ivy
     env:
       - name: PGHOST
         value: "{{ params.pg_host }}"
@@ -74,6 +81,9 @@ spec:
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
+    volumeMounts:
+      - name: ivy-cache
+        mountPath: /opt/spark/ivy
     env:
       - name: PGHOST
         value: "{{ params.pg_host }}"
