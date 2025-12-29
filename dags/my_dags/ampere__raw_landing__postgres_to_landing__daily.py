@@ -46,16 +46,14 @@ OUTPUT_PREFIX = Variable.get("raw_output_prefix", default_var="postgres-pre-raw"
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="250m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="768m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="500m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="768m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="500m")
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="1"))
-EVENT_LOOKBACK_DAYS = int(
-    Variable.get("spark_event_lookback_days", default_var="2")
-)
+EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
-    Variable.get("spark_source_to_raw_max_active_tasks", default_var="3")
+    Variable.get("spark_source_to_raw_max_active_tasks", default_var="4")
 )
 
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
@@ -172,98 +170,68 @@ with DAG(
     submit_tasks = []
     base_params = _base_params()
 
-    for table in SNAPSHOT_TABLES:
-        params = {
-            **base_params,
-            "table": table,
-            "stream": "snapshots",
+    stream_groups = [
+        {
+            "group": "snapshots",
             "mode": "snapshot",
             "partition_key": "snapshot_date",
+            "tables": SNAPSHOT_TABLES,
+            "table_config": {},
             "event_date_column": "",
             "watermark_column": "",
-            "watermark_from": "",
-            "watermark_to": "",
             "lookback_days": 0,
-            "app_name": f"source-to-raw-{table}",
-        }
-        submit_tasks.append(
-            SparkKubernetesOperator(
-                task_id=f"run__sparkapp__table_{table}",
-                namespace=SPARK_NAMESPACE,
-                application_file=SPARK_APP_TEMPLATE,
-                params=params,
-                kubernetes_conn_id="kubernetes_default",
-                do_xcom_push=False,
-            )
-        )
-
-    for table, meta in MUTABLE_DIM_TABLES.items():
-        params = {
-            **base_params,
-            "table": table,
-            "stream": "mutable_dims",
+        },
+        {
+            "group": "mutable_dims",
             "mode": "incremental",
             "partition_key": "extract_date",
+            "tables": list(MUTABLE_DIM_TABLES.keys()),
+            "table_config": MUTABLE_DIM_TABLES,
             "event_date_column": "",
-            "watermark_column": meta["watermark_column"],
-            "watermark_from": "",
-            "watermark_to": "",
+            "watermark_column": "valid_from",
             "lookback_days": 0,
-            "app_name": f"source-to-raw-{table}",
-        }
-        submit_tasks.append(
-            SparkKubernetesOperator(
-                task_id=f"run__sparkapp__table_{table}",
-                namespace=SPARK_NAMESPACE,
-                application_file=SPARK_APP_TEMPLATE,
-                params=params,
-                kubernetes_conn_id="kubernetes_default",
-                do_xcom_push=False,
-            )
-        )
-
-    for table, meta in FACT_TABLES.items():
-        params = {
-            **base_params,
-            "table": table,
-            "stream": "facts",
+        },
+        {
+            "group": "facts",
             "mode": "incremental",
             "partition_key": "event_date",
-            "event_date_column": meta["event_date_column"],
+            "tables": list(FACT_TABLES.keys()),
+            "table_config": FACT_TABLES,
+            "event_date_column": "",
             "watermark_column": "",
-            "watermark_from": "",
-            "watermark_to": "",
             "lookback_days": 0,
-            "app_name": f"source-to-raw-{table}",
-        }
-        submit_tasks.append(
-            SparkKubernetesOperator(
-                task_id=f"run__sparkapp__table_{table}",
-                namespace=SPARK_NAMESPACE,
-                application_file=SPARK_APP_TEMPLATE,
-                params=params,
-                kubernetes_conn_id="kubernetes_default",
-                do_xcom_push=False,
-            )
-        )
-
-    for table, meta in EVENT_TABLES.items():
-        params = {
-            **base_params,
-            "table": table,
-            "stream": "events",
+        },
+        {
+            "group": "events",
             "mode": "incremental",
             "partition_key": "event_date",
-            "event_date_column": meta["event_date_column"],
+            "tables": list(EVENT_TABLES.keys()),
+            "table_config": EVENT_TABLES,
+            "event_date_column": "",
             "watermark_column": "",
-            "watermark_from": "",
-            "watermark_to": "",
             "lookback_days": EVENT_LOOKBACK_DAYS,
-            "app_name": f"source-to-raw-{table}",
+        },
+    ]
+
+    for group in stream_groups:
+        params = {
+            **base_params,
+            "group": group["group"],
+            "tables": ",".join(group["tables"]),
+            "table_config": group["table_config"],
+            "stream": group["group"],
+            "mode": group["mode"],
+            "partition_key": group["partition_key"],
+            "event_date_column": group["event_date_column"],
+            "watermark_column": group["watermark_column"],
+            "watermark_from": "",
+            "watermark_to": "",
+            "lookback_days": group["lookback_days"],
+            "app_name": f"source-to-raw-{group['group']}",
         }
         submit_tasks.append(
             SparkKubernetesOperator(
-                task_id=f"run__sparkapp__table_{table}",
+                task_id=f"run__sparkapp__group_{group['group']}",
                 namespace=SPARK_NAMESPACE,
                 application_file=SPARK_APP_TEMPLATE,
                 params=params,

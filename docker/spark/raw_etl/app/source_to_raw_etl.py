@@ -42,7 +42,17 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract source tables to MinIO-backed parquet."
     )
-    parser.add_argument("--table", required=True, help="Source table name")
+    parser.add_argument("--table", default="", help="Source table name")
+    parser.add_argument(
+        "--tables",
+        default="",
+        help="Comma-separated table list for group extraction",
+    )
+    parser.add_argument(
+        "--table-config",
+        default="",
+        help="JSON mapping of table-specific overrides",
+    )
     parser.add_argument("--schema", default="source", help="Source schema name")
     parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
     parser.add_argument(
@@ -403,10 +413,21 @@ def main() -> None:
     if not minio_access_key or not minio_secret_key:
         raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
 
+    table_list = []
+    if args.tables:
+        table_list = [t.strip() for t in args.tables.split(",") if t.strip()]
+    if not table_list and args.table:
+        table_list = [args.table]
+    if not table_list:
+        raise ValueError("No tables provided. Use --table or --tables.")
+
+    table_config = {}
+    if args.table_config:
+        table_config = json.loads(args.table_config)
+
     logger.info(
-        "Starting ETL for %s.%s (run_date=%s, mode=%s)",
-        args.schema,
-        args.table,
+        "Starting ETL for %s (run_date=%s, mode=%s)",
+        ",".join(table_list),
         run_date_str,
         args.mode,
     )
@@ -423,203 +444,216 @@ def main() -> None:
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     _configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
 
-    state_path = None
-    if args.mode == "incremental" and args.partition_key == "extract_date":
-        if not watermark_column:
-            raise ValueError(
-                "watermark_column is required for extract_date batches."
-            )
-        state_path = _state_path(
-            args.bucket, args.source_system, args.schema, args.table
-        )
-        if watermark_from is None:
-            state = _read_state(spark, state_path)
-            if state and state.get("last_watermark"):
-                watermark_from = _parse_optional_datetime(state["last_watermark"])
-        if watermark_to is None:
-            watermark_to = datetime.now(timezone.utc)
-        if watermark_from is None:
-            watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
-
     jdbc_url = f"jdbc:postgresql://{pg_host}:{pg_port}/{pg_db}"
-    where_clause = _build_where_clause(
-        args.mode,
-        args.partition_key,
-        run_date,
-        event_date_column,
-        watermark_column,
-        lookback_days,
-        watermark_from,
-        watermark_to,
-    )
-    dbtable = _build_dbtable(args.schema, args.table, where_clause)
-
-    logger.info("Reading %s via JDBC", dbtable)
-    df = (
-        spark.read.format("jdbc")
-        .option("url", jdbc_url)
-        .option("dbtable", dbtable)
-        .option("user", pg_user)
-        .option("password", pg_password)
-        .option("driver", "org.postgresql.Driver")
-        .load()
-    )
-
-    base_columns = df.columns
-    hash_expr = F.sha2(
-        F.concat_ws(
-            "||",
-            *[
-                F.coalesce(F.col(col_name).cast("string"), F.lit("<NULL>"))
-                for col_name in base_columns
-            ],
-        ),
-        256,
-    )
-    df = df.withColumn("_row_hash", hash_expr)
-    df = df.withColumn("_ingest_run_id", F.lit(run_id))
-    df = df.withColumn("_ingest_ts", F.current_timestamp())
-    df = df.withColumn("_source_system", F.lit(args.source_system))
-    df = df.withColumn("_source_table", F.lit(args.table))
-    df = df.withColumn(
-        "_op", F.lit("snapshot" if args.mode == "snapshot" else "incremental")
-    )
-
-    output_base = _build_output_base(
-        args.bucket, args.output_prefix, args.schema, args.table
-    )
-    schema_hash = _hash_schema(df.schema.json())
-
     ingest_ts_utc = datetime.now(timezone.utc).isoformat()
-    manifest_base = {
-        "manifest_version": "1",
-        "source_system": args.source_system,
-        "source_schema": args.schema,
-        "source_table": args.table,
-        "contract_name": f"{args.schema}.{args.table}",
-        "contract_version": "1",
-        "run_id": run_id,
-        "ingest_ts_utc": ingest_ts_utc,
-        "batch_type": args.mode,
-        "storage_format": "parquet",
-        "schema_hash": schema_hash,
-        "checksum": schema_hash,
-        "producer": {
-            "tool": "spark",
-            "image": args.image or "unknown",
-            "app_name": args.app_name,
-            "git_sha": _get_env("GIT_SHA", "unknown"),
-        },
-        "source_extract": {
-            "query": dbtable,
-            "read_mode": "jdbc",
-            "partitioning": None,
-        },
-    }
 
-    if args.mode == "snapshot":
-        partition_value = run_date_str
-        output_path = (
-            f"{output_base}/mode=snapshot/snapshot_date={partition_value}/"
-            f"run_id={run_id}/"
-        )
-        manifest_context = {
-            **manifest_base,
-            "snapshot_date": partition_value,
-        }
-        _write_batch(
-            spark,
-            df,
-            output_path,
-            manifest_context,
-            base_columns,
-            logger,
-        )
-    elif args.partition_key == "extract_date":
-        partition_value = run_date_str
-        output_path = (
-            f"{output_base}/mode=incremental/extract_date={partition_value}/"
-            f"run_id={run_id}/"
-        )
-        manifest_context = {
-            **manifest_base,
-            "extract_date": partition_value,
-        }
-        upper = watermark_to or datetime.now(timezone.utc)
-        lower = watermark_from or (upper - timedelta(days=1))
-        if watermark_column:
-            window_from = _format_ts(lower)
-            window_to = _format_ts(upper)
-            manifest_context["watermark"] = {
-                "column": watermark_column,
-                "from": window_from,
-                "to": window_to,
-            }
-        batch_result = _write_batch(
-            spark,
-            df,
-            output_path,
-            manifest_context,
-            base_columns,
-            logger,
-        )
-        if state_path and batch_result["success"]:
-            state_payload = {
-                "source_system": args.source_system,
-                "source_schema": args.schema,
-                "source_table": args.table,
-                "watermark_column": watermark_column,
-                "last_watermark": _format_ts(upper),
-                "last_successful_run_id": run_id,
-                "last_successful_ingest_ts_utc": ingest_ts_utc,
-                "last_manifest_path": batch_result["manifest_path"],
-            }
-            _write_file(
-                spark,
-                state_path,
-                json.dumps(state_payload, indent=2, sort_keys=True).encode("utf-8"),
+    for table in table_list:
+        table_meta = table_config.get(table, {})
+        table_event_col = table_meta.get("event_date_column") or event_date_column
+        table_watermark_col = table_meta.get("watermark_column") or watermark_column
+
+        state_path = None
+        table_watermark_from = watermark_from
+        table_watermark_to = watermark_to
+        if args.mode == "incremental" and args.partition_key == "extract_date":
+            if not table_watermark_col:
+                raise ValueError(
+                    "watermark_column is required for extract_date batches."
+                )
+            state_path = _state_path(
+                args.bucket, args.source_system, args.schema, table
             )
-    else:
-        event_col = event_date_column
-        if not event_col:
-            raise ValueError("event_date_column is required for event_date batches.")
+            if table_watermark_from is None:
+                state = _read_state(spark, state_path)
+                if state and state.get("last_watermark"):
+                    table_watermark_from = _parse_optional_datetime(
+                        state["last_watermark"]
+                    )
+            if table_watermark_to is None:
+                table_watermark_to = datetime.now(timezone.utc)
+            if table_watermark_from is None:
+                table_watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
 
-        _, _, event_dates = _date_range(run_date, lookback_days)
-        event_date_strings = [d.isoformat() for d in event_dates]
-        df_with_event_date = df.withColumn(
-            "_event_date", F.to_date(F.col(event_col))
+        where_clause = _build_where_clause(
+            args.mode,
+            args.partition_key,
+            run_date,
+            table_event_col,
+            table_watermark_col,
+            lookback_days,
+            table_watermark_from,
+            table_watermark_to,
+        )
+        dbtable = _build_dbtable(args.schema, table, where_clause)
+
+        logger.info("Reading %s via JDBC", dbtable)
+        df = (
+            spark.read.format("jdbc")
+            .option("url", jdbc_url)
+            .option("dbtable", dbtable)
+            .option("user", pg_user)
+            .option("password", pg_password)
+            .option("driver", "org.postgresql.Driver")
+            .load()
         )
 
-        for event_date in event_date_strings:
+        base_columns = df.columns
+        hash_expr = F.sha2(
+            F.concat_ws(
+                "||",
+                *[
+                    F.coalesce(F.col(col_name).cast("string"), F.lit("<NULL>"))
+                    for col_name in base_columns
+                ],
+            ),
+            256,
+        )
+        df = df.withColumn("_row_hash", hash_expr)
+        df = df.withColumn("_ingest_run_id", F.lit(run_id))
+        df = df.withColumn("_ingest_ts", F.current_timestamp())
+        df = df.withColumn("_source_system", F.lit(args.source_system))
+        df = df.withColumn("_source_table", F.lit(table))
+        df = df.withColumn(
+            "_op", F.lit("snapshot" if args.mode == "snapshot" else "incremental")
+        )
+
+        output_base = _build_output_base(
+            args.bucket, args.output_prefix, args.schema, table
+        )
+        schema_hash = _hash_schema(df.schema.json())
+
+        manifest_base = {
+            "manifest_version": "1",
+            "source_system": args.source_system,
+            "source_schema": args.schema,
+            "source_table": table,
+            "contract_name": f"{args.schema}.{table}",
+            "contract_version": "1",
+            "run_id": run_id,
+            "ingest_ts_utc": ingest_ts_utc,
+            "batch_type": args.mode,
+            "storage_format": "parquet",
+            "schema_hash": schema_hash,
+            "checksum": schema_hash,
+            "producer": {
+                "tool": "spark",
+                "image": args.image or "unknown",
+                "app_name": args.app_name,
+                "git_sha": _get_env("GIT_SHA", "unknown"),
+            },
+            "source_extract": {
+                "query": dbtable,
+                "read_mode": "jdbc",
+                "partitioning": None,
+            },
+        }
+
+        if args.mode == "snapshot":
+            partition_value = run_date_str
             output_path = (
-                f"{output_base}/mode=incremental/event_date={event_date}/"
+                f"{output_base}/mode=snapshot/snapshot_date={partition_value}/"
                 f"run_id={run_id}/"
             )
             manifest_context = {
                 **manifest_base,
-                "event_date": event_date,
+                "snapshot_date": partition_value,
             }
-            if lookback_days > 1:
-                start_date, end_date, _ = _date_range(run_date, lookback_days)
-                manifest_context["lookback_days"] = lookback_days
-                manifest_context["window"] = {
-                    "from": start_date.isoformat(),
-                    "to": end_date.isoformat(),
-                }
-                manifest_context["event_dates_covered"] = event_date_strings
-            df_partition = df_with_event_date.filter(
-                F.col("_event_date") == F.lit(event_date)
-            ).drop("_event_date")
             _write_batch(
                 spark,
-                df_partition,
+                df,
                 output_path,
                 manifest_context,
                 base_columns,
                 logger,
             )
+        elif args.partition_key == "extract_date":
+            partition_value = run_date_str
+            output_path = (
+                f"{output_base}/mode=incremental/extract_date={partition_value}/"
+                f"run_id={run_id}/"
+            )
+            manifest_context = {
+                **manifest_base,
+                "extract_date": partition_value,
+            }
+            upper = table_watermark_to or datetime.now(timezone.utc)
+            lower = table_watermark_from or (upper - timedelta(days=1))
+            if table_watermark_col:
+                window_from = _format_ts(lower)
+                window_to = _format_ts(upper)
+                manifest_context["watermark"] = {
+                    "column": table_watermark_col,
+                    "from": window_from,
+                    "to": window_to,
+                }
+            batch_result = _write_batch(
+                spark,
+                df,
+                output_path,
+                manifest_context,
+                base_columns,
+                logger,
+            )
+            if state_path and batch_result["success"]:
+                state_payload = {
+                    "source_system": args.source_system,
+                    "source_schema": args.schema,
+                    "source_table": table,
+                    "watermark_column": table_watermark_col,
+                    "last_watermark": _format_ts(upper),
+                    "last_successful_run_id": run_id,
+                    "last_successful_ingest_ts_utc": ingest_ts_utc,
+                    "last_manifest_path": batch_result["manifest_path"],
+                }
+                _write_file(
+                    spark,
+                    state_path,
+                    json.dumps(state_payload, indent=2, sort_keys=True).encode("utf-8"),
+                )
+        else:
+            event_col = table_event_col
+            if not event_col:
+                raise ValueError(
+                    "event_date_column is required for event_date batches."
+                )
 
-    logger.info("ETL completed for %s.%s", args.schema, args.table)
+            _, _, event_dates = _date_range(run_date, lookback_days)
+            event_date_strings = [d.isoformat() for d in event_dates]
+            df_with_event_date = df.withColumn(
+                "_event_date", F.to_date(F.col(event_col))
+            )
+
+            for event_date in event_date_strings:
+                output_path = (
+                    f"{output_base}/mode=incremental/event_date={event_date}/"
+                    f"run_id={run_id}/"
+                )
+                manifest_context = {
+                    **manifest_base,
+                    "event_date": event_date,
+                }
+                if lookback_days > 1:
+                    start_date, end_date, _ = _date_range(run_date, lookback_days)
+                    manifest_context["lookback_days"] = lookback_days
+                    manifest_context["window"] = {
+                        "from": start_date.isoformat(),
+                        "to": end_date.isoformat(),
+                    }
+                    manifest_context["event_dates_covered"] = event_date_strings
+                df_partition = df_with_event_date.filter(
+                    F.col("_event_date") == F.lit(event_date)
+                ).drop("_event_date")
+                _write_batch(
+                    spark,
+                    df_partition,
+                    output_path,
+                    manifest_context,
+                    base_columns,
+                    logger,
+                )
+
+        logger.info("ETL completed for %s.%s", args.schema, table)
+
     spark.stop()
 
 

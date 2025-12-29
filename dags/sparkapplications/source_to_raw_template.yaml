@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: source-to-raw-{{ params.stream }}-{{ params.table }}-{{ ts_nodash }}
+  name: source-to-raw-{{ params.stream }}-{{ ts_nodash }}
   namespace: {{ params.namespace }}
 spec:
   type: Python
@@ -13,8 +13,10 @@ spec:
     - ghcr-pull
   mainApplicationFile: local:///opt/spark/app/source_to_raw_etl.py
   arguments:
-    - --table
-    - {{ params.table }}
+    - --tables
+    - "{{ params.tables }}"
+    - --table-config
+    - '{{ params.table_config | tojson }}'
     - --schema
     - {{ params.schema }}
     - --run-date
