@@ -44,6 +44,8 @@ spec:
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
     serviceAccount: {{ params.service_account }}
+    nodeSelector:
+      kubernetes.io/hostname: ampere-k8s-node3
     volumeMounts:
       - name: ivy-cache
         mountPath: /opt/spark/ivy
@@ -81,6 +83,8 @@ spec:
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
+    nodeSelector:
+      kubernetes.io/hostname: ampere-k8s-node3
     volumeMounts:
       - name: ivy-cache
         mountPath: /opt/spark/ivy
