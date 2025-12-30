@@ -314,7 +314,8 @@ def _collect_stats(df, base_columns: list[str]) -> tuple[dict, dict]:
     null_counts = {}
     min_max = {}
     for col_name in base_columns:
-        null_counts[col_name] = int(getattr(stats_row, f"{col_name}__nulls"))
+        null_value = getattr(stats_row, f"{col_name}__nulls")
+        null_counts[col_name] = int(null_value) if null_value is not None else 0
         min_val = getattr(stats_row, f"{col_name}__min")
         max_val = getattr(stats_row, f"{col_name}__max")
         min_max[col_name] = {

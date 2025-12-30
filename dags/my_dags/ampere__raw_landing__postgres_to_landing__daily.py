@@ -136,7 +136,6 @@ def _base_params() -> dict:
         "executor_core_request": EXECUTOR_CORE_REQUEST,
         "executor_memory": EXECUTOR_MEMORY,
         "executor_instances": EXECUTOR_INSTANCES,
-        "run_id": "{{ run_id }}-{{ ti.try_number }}",
     }
 
 

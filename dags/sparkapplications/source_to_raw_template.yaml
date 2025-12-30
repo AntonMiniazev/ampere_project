@@ -22,7 +22,7 @@ spec:
     - --run-date
     - "{{ ds }}"
     - --run-id
-    - "{{ params.run_id }}"
+    - "{{ run_id }}-{{ ti.try_number }}"
     - --mode
     - "{{ params.mode }}"
     - --partition-key
