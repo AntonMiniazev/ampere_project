@@ -68,6 +68,11 @@ def _parse_args() -> argparse.Namespace:
         help="Partition key for raw landing layout",
     )
     parser.add_argument(
+        "--snapshot-partitioned",
+        default="true",
+        help="Whether snapshot output is partitioned by snapshot_date",
+    )
+    parser.add_argument(
         "--event-date-column",
         default="",
         help="Date/timestamp column for event/fact extractions",
@@ -173,6 +178,11 @@ def _format_ts(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat()
+
+
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized in {"1", "true", "yes", "y", "on"}
 
 
 def _build_where_clause(
@@ -397,6 +407,7 @@ def main() -> None:
     lookback_days = max(args.lookback_days, 0)
     watermark_from = _parse_optional_datetime(args.watermark_from.strip())
     watermark_to = _parse_optional_datetime(args.watermark_to.strip())
+    snapshot_partitioned = _parse_bool(args.snapshot_partitioned)
 
     pg_host = _get_env("PGHOST", "postgres-service")
     pg_port = _get_env("PGPORT", "5432")
@@ -551,10 +562,13 @@ def main() -> None:
 
         if args.mode == "snapshot":
             partition_value = run_date_str
-            output_path = (
-                f"{output_base}/mode=snapshot/snapshot_date={partition_value}/"
-                f"run_id={run_id}/"
-            )
+            if snapshot_partitioned:
+                output_path = (
+                    f"{output_base}/mode=snapshot/snapshot_date={partition_value}/"
+                    f"run_id={run_id}/"
+                )
+            else:
+                output_path = f"{output_base}/mode=snapshot/run_id={run_id}/"
             manifest_context = {
                 **manifest_base,
                 "snapshot_date": partition_value,

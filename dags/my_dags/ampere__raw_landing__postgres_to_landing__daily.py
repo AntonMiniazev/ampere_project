@@ -179,6 +179,7 @@ with DAG(
             "event_date_column": "",
             "watermark_column": "",
             "lookback_days": 0,
+            "snapshot_partitioned": "false",
         },
         {
             "group": "mutable_dims",
@@ -189,6 +190,7 @@ with DAG(
             "event_date_column": "",
             "watermark_column": "valid_from",
             "lookback_days": 0,
+            "snapshot_partitioned": "true",
         },
         {
             "group": "facts",
@@ -199,6 +201,7 @@ with DAG(
             "event_date_column": "",
             "watermark_column": "",
             "lookback_days": 0,
+            "snapshot_partitioned": "true",
         },
         {
             "group": "events",
@@ -209,6 +212,7 @@ with DAG(
             "event_date_column": "",
             "watermark_column": "",
             "lookback_days": EVENT_LOOKBACK_DAYS,
+            "snapshot_partitioned": "true",
         },
     ]
 
@@ -226,6 +230,7 @@ with DAG(
             "watermark_from": "",
             "watermark_to": "",
             "lookback_days": group["lookback_days"],
+            "snapshot_partitioned": group["snapshot_partitioned"],
             "app_name": f"source-to-raw-{group['group']}",
         }
         submit_tasks.append(

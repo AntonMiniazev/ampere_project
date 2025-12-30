@@ -27,6 +27,8 @@ spec:
     - "{{ params.mode }}"
     - --partition-key
     - "{{ params.partition_key }}"
+    - --snapshot-partitioned
+    - "{{ params.snapshot_partitioned }}"
     - --event-date-column
     - "{{ params.event_date_column }}"
     - --watermark-column
@@ -47,12 +49,10 @@ spec:
     - {{ params.app_name }}
     - --image
     - {{ params.image }}
-  deps:
-    jars:
-      - local:///opt/spark/ivy/postgresql-42.7.3.jar
-      - local:///opt/spark/ivy/hadoop-aws-3.4.2.jar
-      - local:///opt/spark/ivy/bundle-2.40.16.jar
   sparkConf:
+    spark.driver.extraClassPath: "/opt/spark/ivy/*"
+    spark.executor.extraClassPath: "/opt/spark/ivy/*"
+    spark.ui.enabled: "false"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"
     spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
