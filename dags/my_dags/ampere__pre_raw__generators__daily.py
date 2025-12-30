@@ -15,7 +15,7 @@ NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
 # Target node hostname; controls scheduling affinity.
 NODE_SELECTOR = {
     "kubernetes.io/hostname": Variable.get(
-        "source_prep_node", default_var="ampere-k8s-node3"
+        "source_prep_node", default_var="ampere-k8s-node4"
     )
 }
 
