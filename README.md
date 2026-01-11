@@ -1,43 +1,67 @@
-# Project Overview:
+# Ampere Project Overview
 
-<b> [WIP:] </b> Establishing Generation + ETL + Reporting on my homelab (Ubuntu server).
+Ampere is a homelab data platform that generates synthetic operational data, lands it in Postgres, moves it into a lakehouse (MinIO + Spark + Delta), and publishes curated marts for BI. The end state is a data engineering stack running on a small K8s cluster.
 
-<b> [Current stage:] </b> ETL development and dbt model preparation.
+Combination of services based on **_practice-first_** focus rather than actual project need.
 
-- [x] Complete [master diagram](https://raw.githubusercontent.com/AntonMiniazev/ampere_project/refs/heads/master/project_images/ampere_project_structure.svg)
-  - [x] Initialized
-  - [x] Update tables
-- [x] Prepare Python generators
-  - [x] Prepare python scripts to generate raw data (`dags/generators`)
-  - [x] Complete diagram with [generator's logic](https://github.com/AntonMiniazev/ampere_project/blob/master/project_images/python_generator_script.svg)
-- [x] Deployment
-  - [x] Prepare Helm charts
-    - [x] Airflow (`kube-cluster/airflow-chart`)
-    - [x] MinIO (`kube-cluster/minio-chart`)
-    - [x] SQL Server (`kube-cluster/ms-chart`)
-    - [x] DuckDB + dbt (`kube-cluster/dbt-chart`)
-  - [x] Prepare one script for deployment
-    - [x] Prepare sub-script (`kube-cluster/deploy.sh`) for VM deployment
-    - [x] Organize `Vagrantfile` for separate deployment (`kube-cluster/other_scripts/post-deployment.sh`)
-    - [x] Prepare sub-script for Helm charts on master
-- [ ] ETL
-  - [x] Establish DS → Stage layer
-  - [x] Launch generator DAG (deployed through `dags/my_dags/ampere__pre_raw__generators__daily.py`)
-    - [x] Launch transfer ingestion DAG (deployed through `dags/my_dags/source_to_minio.py`)
-    - [x] Launch MinIO cleaning DAG to remove unnecessary artefacts in RAW and Processing buckets (deployed through `dags/my_dags/cleanup_minio_shapshots.py`)
-    - [x] Prepare multi-stage docker image for dbt development (local dev container + dev image for pod to process dbt models) 
-    - [x] Create dbt model for processing layer
-      - [x] Processing dbt model with tests (deployed through `/workspaces/ampere_project/dbt/models/processing/`)
-      - [x] DAG to manage processing dbt model (deployed through `dags/my_dags/dbt_processing_model.py`)
-    - [x] Create dbt model for stage pre-business logic layer
-      - [x] Pre-BL dbt model (deployed through `dbt/models/business_logic/export_processing_to_mssql.py`)
-      - [x] DAG to manage BL dbt model
-  - [x] Stage to Business logic process
-    - [x] Initial schemas
-    - [x] DDL / DML scripts with associated DAGs
-    - [ ] Backups
-- [ ] Enchance all layers with incremental updates/SCD adoption
-- [ ] BI layer
+Current focus: finishing raw landing refactoring, then re-building Bronze/Silver/Gold pipelines and operational controls.
+
+## Project Structure
+- dags/ — Airflow DAGs and SparkApplication templates.
+- docker/ — container images (generators, Spark ETL).
+- dbt/ — dbt models and tests [to be refactored].
+- project_images/ — diagrams [outdated].
+
+## Architecture Summary
+1) Pre-raw generators -> PostgreSQL (source schema)
+2) Source -> Raw landing (Spark -> Parquet in MinIO)
+3) Raw -> Bronze Delta (Spark)
+4) Bronze -> Silver Delta (Spark)
+5) Silver -> Gold marts (DuckDB + dbt -> PostgreSQL)
+
+Deployment reference: follow the completed infra runbook from https://github.com/AntonMiniazev/bohr_project.
+
+## Execution Plan and Status
+
+### 0) Platform and cluster
+- [x] K8s cluster (control plane + workers)
+- [x] Airflow, MinIO, Postgres, Spark Operator, monitoring stack
+- [ ] Delta Lake OSS runtime config
+- [ ] Networking polish (ingress, TLS, hostname routing)
+
+### 1) Pre-raw generation (Postgres)
+- [x] Generator code + Docker images
+- [x] Init DAG: dags/my_dags/ampere__pre_raw__generators__init.py
+- [x] Daily DAG: dags/my_dags/ampere__pre_raw__generators__daily.py
+- [x] Postgres schema + indexes
+
+### 2) Source -> Raw landing (MinIO)
+- [x] Spark ETL image: docker/spark/raw_etl
+- [x] SparkApplication template: dags/sparkapplications/source_to_raw_template.yaml
+- [x] DAG: dags/my_dags/ampere__raw_landing__postgres_to_landing__daily.py
+- [x] _manifest.json + _SUCCESS
+- [x] State-based watermarks for mutable dims (B2)
+- [ ] Operational tuning (resources, retries, SLA)
+
+### 3) Raw -> Bronze Delta
+- [ ] Spark jobs for deduplication, type normalization, and schema evolution
+- [ ] Delta Lake tables in MinIO
+- [ ] Airflow DAG for bronze load and backfill
+
+### 4) Bronze -> Silver Delta
+- [ ] Conformed dimensions + SCD handling
+- [ ] Airflow DAG for silver load and backfill
+
+### 5) Silver -> Gold marts (PostgreSQL)
+- [ ] DuckDB/dbt models for business logic
+- [ ] Airflow DAGs for dbt runs + exports
+- [ ] Backups and retention
+
+### 6) Observability and Data Quality
+- [ ] dbt artifacts (manifest/run_results)
+- [ ] DQ checks / contracts
+- [ ] Pipeline status dashboard
+
 ---
 
 <p align="center">

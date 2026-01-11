@@ -22,8 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Use uv for fast, reproducible deps
 WORKDIR /workspace
 COPY pyproject.toml uv.lock ./
-RUN pipx install uv && uv sync
-RUN . /workspace/.venv/bin/activate && uv pip install --no-cache-dir "psycopg[binary]>=3.2.2"
+RUN pipx install uv
 
 ############################
 # Stage: dbt-runner

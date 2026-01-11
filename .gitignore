@@ -21,6 +21,7 @@ wheels/
 .vscode/
 .ruff_cache/
 ruff.toml
+.codex/
 
 # =========================
 # Devcontainer / Docker
@@ -47,6 +48,7 @@ deployment/sql_scripts/
 kube-cluster copy/
 .$*
 internal_docs/
+ampere_db/
 
 # =========================
 # dbt
