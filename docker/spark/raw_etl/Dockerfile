@@ -5,7 +5,10 @@ ENV PYSPARK_PYTHON=python3
 
 WORKDIR /opt/spark/app
 
+USER root
+ENV HOME=/root
 RUN python3 -m pip install --no-cache-dir delta-spark==4.0.1
+USER 185
 
 RUN mkdir -p /opt/spark/ivy
 
