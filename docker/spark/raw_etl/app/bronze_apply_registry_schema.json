@@ -1,0 +1,26 @@
+{
+  "fields": [
+    {"name": "source_system", "type": "string", "nullable": false},
+    {"name": "source_schema", "type": "string", "nullable": false},
+    {"name": "source_table", "type": "string", "nullable": false},
+    {"name": "run_id", "type": "string", "nullable": false},
+    {"name": "manifest_path", "type": "string", "nullable": true},
+    {"name": "batch_type", "type": "string", "nullable": true},
+    {"name": "partition_kind", "type": "string", "nullable": true},
+    {"name": "partition_value", "type": "string", "nullable": true},
+    {"name": "ingest_ts_utc", "type": "string", "nullable": true},
+    {"name": "schema_hash", "type": "string", "nullable": true},
+    {"name": "contract_version", "type": "string", "nullable": true},
+    {"name": "apply_ts_utc", "type": "string", "nullable": true},
+    {"name": "status", "type": "string", "nullable": true},
+    {"name": "details", "type": "string", "nullable": true},
+    {"name": "watermark_from", "type": "string", "nullable": true},
+    {"name": "watermark_to", "type": "string", "nullable": true},
+    {"name": "lookback_days", "type": "int", "nullable": true},
+    {"name": "window_from", "type": "string", "nullable": true},
+    {"name": "window_to", "type": "string", "nullable": true},
+    {"name": "row_count", "type": "int", "nullable": true},
+    {"name": "file_count", "type": "int", "nullable": true}
+  ]
+}
+
