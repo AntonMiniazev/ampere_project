@@ -10,6 +10,8 @@ from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
 
+from utils.stream_group_config import build_bronze_stream_groups
+
 DAG_ID = "ampere__bronze__landing_to_delta__daily"
 
 SPARK_NAMESPACE = Variable.get("spark_namespace", default_var="ampere")
@@ -61,33 +63,6 @@ SPARK_TEMPLATE_PATHS = [
     str(Path(__file__).resolve().parents[1] / "sparkapplications"),
 ]
 
-SNAPSHOT_TABLES = [
-    "stores",
-    "zones",
-    "product_categories",
-    "order_statuses",
-    "delivery_type",
-    "delivery_costing",
-    "assortment",
-]
-
-MUTABLE_DIM_TABLES = {
-    "clients": {"merge_keys": ["id"]},
-    "delivery_resource": {"merge_keys": ["id"]},
-    "products": {"merge_keys": ["id", "valid_from"]},
-    "costing": {"merge_keys": ["product_id", "store_id", "valid_from"]},
-}
-
-FACT_TABLES = {
-    "orders": {"merge_keys": ["id"]},
-    "order_product": {"merge_keys": ["order_id", "product_id"]},
-    "payments": {"merge_keys": ["order_id", "payment_date"]},
-}
-
-EVENT_TABLES = {
-    "order_status_history": {"merge_keys": ["order_id", "status_datetime"]},
-    "delivery_tracking": {"merge_keys": ["order_id", "status_datetime"]},
-}
 
 
 def _minio_ssl_enabled(endpoint: str) -> str:
@@ -163,44 +138,7 @@ with DAG(
 
     base_params = _base_params()
 
-    stream_groups = [
-        {
-            "group": "snapshots",
-            "mode": "snapshot",
-            "partition_key": "snapshot_date",
-            "tables": SNAPSHOT_TABLES,
-            "table_config": {},
-            "event_date_column": "",
-            "lookback_days": 0,
-        },
-        {
-            "group": "mutable_dims",
-            "mode": "incremental",
-            "partition_key": "extract_date",
-            "tables": list(MUTABLE_DIM_TABLES.keys()),
-            "table_config": MUTABLE_DIM_TABLES,
-            "event_date_column": "",
-            "lookback_days": 0,
-        },
-        {
-            "group": "facts",
-            "mode": "incremental",
-            "partition_key": "event_date",
-            "tables": list(FACT_TABLES.keys()),
-            "table_config": FACT_TABLES,
-            "event_date_column": "",
-            "lookback_days": 0,
-        },
-        {
-            "group": "events",
-            "mode": "incremental",
-            "partition_key": "event_date",
-            "tables": list(EVENT_TABLES.keys()),
-            "table_config": EVENT_TABLES,
-            "event_date_column": "",
-            "lookback_days": EVENT_LOOKBACK_DAYS,
-        },
-    ]
+    stream_groups = build_bronze_stream_groups(EVENT_LOOKBACK_DAYS)
 
     registry_params = {
         **base_params,

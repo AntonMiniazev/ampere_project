@@ -306,7 +306,15 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
             break
         data.extend(buffer.array()[:read_bytes])
     input_stream.close()
-    return json.loads(data.decode("utf-8"))
+    if not data:
+        return None
+    try:
+        return json.loads(data.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        logging.getLogger(APP_NAME).warning(
+            "Invalid manifest JSON at %s: %s", path_str, exc
+        )
+        return None
 
 
 def _list_partitions(

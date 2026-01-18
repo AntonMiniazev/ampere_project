@@ -1,0 +1,78 @@
+{
+  "events": {
+    "delivery_tracking": {
+      "event_date_column": "status_datetime",
+      "merge_keys": [
+        "order_id",
+        "status_datetime"
+      ]
+    },
+    "order_status_history": {
+      "event_date_column": "status_datetime",
+      "merge_keys": [
+        "order_id",
+        "status_datetime"
+      ]
+    }
+  },
+  "facts": {
+    "order_product": {
+      "event_date_column": "order_date",
+      "merge_keys": [
+        "order_id",
+        "product_id"
+      ]
+    },
+    "orders": {
+      "event_date_column": "order_date",
+      "merge_keys": [
+        "id"
+      ]
+    },
+    "payments": {
+      "event_date_column": "payment_date",
+      "merge_keys": [
+        "order_id",
+        "payment_date"
+      ]
+    }
+  },
+  "mutable_dims": {
+    "clients": {
+      "merge_keys": [
+        "id"
+      ],
+      "watermark_column": "updated_at"
+    },
+    "costing": {
+      "merge_keys": [
+        "product_id",
+        "store_id",
+        "valid_from"
+      ],
+      "watermark_column": "valid_from"
+    },
+    "delivery_resource": {
+      "merge_keys": [
+        "id"
+      ],
+      "watermark_column": "updated_at"
+    },
+    "products": {
+      "merge_keys": [
+        "id",
+        "valid_from"
+      ],
+      "watermark_column": "valid_from"
+    }
+  },
+  "snapshots": [
+    "stores",
+    "zones",
+    "product_categories",
+    "order_statuses",
+    "delivery_type",
+    "delivery_costing",
+    "assortment"
+  ]
+}

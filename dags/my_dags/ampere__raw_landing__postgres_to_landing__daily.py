@@ -10,6 +10,8 @@ from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
 
+from utils.stream_group_config import build_raw_stream_groups
+
 DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
 
 SPARK_NAMESPACE = Variable.get("spark_namespace", default_var="ampere")
@@ -62,33 +64,6 @@ SPARK_TEMPLATE_PATHS = [
     str(Path(__file__).resolve().parents[1] / "sparkapplications"),
 ]
 
-SNAPSHOT_TABLES = [
-    "stores",
-    "zones",
-    "product_categories",
-    "order_statuses",
-    "delivery_type",
-    "delivery_costing",
-    "assortment",
-]
-
-MUTABLE_DIM_TABLES = {
-    "clients": {"watermark_column": "updated_at"},
-    "delivery_resource": {"watermark_column": "updated_at"},
-    "products": {"watermark_column": "valid_from"},
-    "costing": {"watermark_column": "valid_from"},
-}
-
-FACT_TABLES = {
-    "orders": {"event_date_column": "order_date"},
-    "order_product": {"event_date_column": "order_date"},
-    "payments": {"event_date_column": "payment_date"},
-}
-
-EVENT_TABLES = {
-    "order_status_history": {"event_date_column": "status_datetime"},
-    "delivery_tracking": {"event_date_column": "status_datetime"},
-}
 
 default_args = {
     "owner": "airflow",
@@ -169,52 +144,7 @@ with DAG(
     submit_tasks = []
     base_params = _base_params()
 
-    stream_groups = [
-        {
-            "group": "snapshots",
-            "mode": "snapshot",
-            "partition_key": "snapshot_date",
-            "tables": SNAPSHOT_TABLES,
-            "table_config": {},
-            "event_date_column": "",
-            "watermark_column": "",
-            "lookback_days": 0,
-            "snapshot_partitioned": "false",
-        },
-        {
-            "group": "mutable_dims",
-            "mode": "incremental",
-            "partition_key": "extract_date",
-            "tables": list(MUTABLE_DIM_TABLES.keys()),
-            "table_config": MUTABLE_DIM_TABLES,
-            "event_date_column": "",
-            "watermark_column": "valid_from",
-            "lookback_days": 0,
-            "snapshot_partitioned": "true",
-        },
-        {
-            "group": "facts",
-            "mode": "incremental",
-            "partition_key": "event_date",
-            "tables": list(FACT_TABLES.keys()),
-            "table_config": FACT_TABLES,
-            "event_date_column": "",
-            "watermark_column": "",
-            "lookback_days": 0,
-            "snapshot_partitioned": "true",
-        },
-        {
-            "group": "events",
-            "mode": "incremental",
-            "partition_key": "event_date",
-            "tables": list(EVENT_TABLES.keys()),
-            "table_config": EVENT_TABLES,
-            "event_date_column": "",
-            "watermark_column": "",
-            "lookback_days": EVENT_LOOKBACK_DAYS,
-            "snapshot_partitioned": "true",
-        },
-    ]
+    stream_groups = build_raw_stream_groups(EVENT_LOOKBACK_DAYS)
 
     for group in stream_groups:
         params = {

@@ -1,0 +1,30 @@
+[
+  {
+    "group": "snapshots",
+    "lookback_days": 0,
+    "mode": "snapshot",
+    "partition_key": "snapshot_date",
+    "snapshot_partitioned": "true"
+  },
+  {
+    "group": "mutable_dims",
+    "lookback_days": 0,
+    "mode": "incremental",
+    "partition_key": "extract_date",
+    "snapshot_partitioned": "true"
+  },
+  {
+    "group": "facts",
+    "lookback_days": 0,
+    "mode": "incremental",
+    "partition_key": "event_date",
+    "snapshot_partitioned": "true"
+  },
+  {
+    "group": "events",
+    "lookback_days": 2,
+    "mode": "incremental",
+    "partition_key": "event_date",
+    "snapshot_partitioned": "true"
+  }
+]
