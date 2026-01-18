@@ -45,9 +45,6 @@ def _parse_date(value: str) -> str:
     return value
 
 
-def _parse_bool(value: str) -> bool:
-    return str(value).strip().lower() in {"1", "true", "yes", "y"}
-
 
 def _parse_optional_datetime(value: str) -> Optional[datetime]:
     if not value:
@@ -133,7 +130,6 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--app-name", default=APP_NAME, help="Spark app name")
     parser.add_argument("--image", default="", help="Container image reference")
-    parser.add_argument("--init-registry", type=_parse_bool, default="false", help="Initialize registry table")
     return parser.parse_args()
 
 
@@ -246,41 +242,36 @@ def _load_registry_schema(schema_path: str) -> StructType:
     return StructType(fields)
 
 
-def _ensure_registry_table(
-    spark: SparkSession, path_str: str, schema: StructType
+def _append_registry_row(
+    spark: SparkSession, path_str: str, schema: StructType, row: dict
 ) -> None:
     logger = logging.getLogger(APP_NAME)
+    df = spark.createDataFrame([row], schema=schema)
     retries = 5
     last_exc = None
+    retry_tokens = (
+        "ProtocolChangedException",
+        "ConcurrentAppendException",
+        "ConcurrentWriteException",
+        "CommitFailedException",
+    )
     for attempt in range(retries):
-        if DeltaTable.isDeltaTable(spark, path_str):
-            return
-        empty_df = spark.createDataFrame([], schema=schema)
         try:
-            empty_df.write.format("delta").mode("overwrite").save(path_str)
+            df.write.format("delta").mode("append").save(path_str)
             return
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
-            if "ProtocolChangedException" in str(exc):
+            if any(token in str(exc) for token in retry_tokens):
                 logger.warning(
-                    "Registry table creation race detected; retrying (%s/%s).",
+                    "Registry append conflict; retrying (%s/%s).",
                     attempt + 1,
                     retries,
                 )
                 time.sleep(1 + attempt)
                 continue
             raise
-    if DeltaTable.isDeltaTable(spark, path_str):
-        return
     if last_exc:
         raise last_exc
-
-
-def _append_registry_row(
-    spark: SparkSession, path_str: str, schema: StructType, row: dict
-) -> None:
-    df = spark.createDataFrame([row], schema=schema)
-    df.write.format("delta").mode("append").save(path_str)
 
 
 def _list_dirs(spark: SparkSession, path_str: str) -> list[str]:
@@ -537,10 +528,8 @@ def main() -> None:
         str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
     )
     registry_schema = _load_registry_schema(schema_path)
-    if args.init_registry:
-        _ensure_registry_table(spark, registry_path, registry_schema)
-    elif not DeltaTable.isDeltaTable(spark, registry_path):
-        raise ValueError("Registry table is missing; run init-registry first.")
+    if not DeltaTable.isDeltaTable(spark, registry_path):
+        raise ValueError("Registry table is missing; run bronze_registry_init first.")
     registry_df = _load_registry_table(spark, registry_path)
 
     apply_ts_utc = datetime.now(timezone.utc).isoformat()

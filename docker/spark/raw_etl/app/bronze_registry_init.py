@@ -124,7 +124,7 @@ def main() -> None:
 
     logger.info("Creating registry table: %s", registry_path)
     empty_df = spark.createDataFrame([], schema=registry_schema)
-    empty_df.write.format("delta").mode("overwrite").save(registry_path)
+    empty_df.write.format("delta").mode("overwrite").partitionBy("source_table").save(registry_path)
     logger.info("Registry table created: %s", registry_path)
     spark.stop()
 

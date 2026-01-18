@@ -55,6 +55,7 @@ MAX_ACTIVE_TASKS = int(
 )
 
 SPARK_APP_TEMPLATE = "raw_to_bronze_template.yaml"
+REGISTRY_INIT_TEMPLATE = "bronze_registry_init.yaml"
 SPARK_TEMPLATE_PATHS = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[1] / "sparkapplications"),
@@ -201,6 +202,21 @@ with DAG(
         },
     ]
 
+    registry_params = {
+        **base_params,
+        "app_name": "bronze-registry-init",
+        "executor_instances": 1,
+    }
+
+    init_registry_task = SparkKubernetesOperator(
+        task_id="run__sparkapp__registry_init",
+        namespace=SPARK_NAMESPACE,
+        application_file=REGISTRY_INIT_TEMPLATE,
+        params=registry_params,
+        kubernetes_conn_id="kubernetes_default",
+        do_xcom_push=False,
+    )
+
     submit_tasks = []
     tasks_by_group = {}
     for group in stream_groups:
@@ -215,7 +231,6 @@ with DAG(
             "partition_key": group["partition_key"],
             "event_date_column": group["event_date_column"],
             "lookback_days": group["lookback_days"],
-            "init_registry": str(group["group"] == "snapshots").lower(),
             "app_name": f"raw-to-bronze-{group['group']}",
         }
         task = SparkKubernetesOperator(
@@ -237,7 +252,15 @@ with DAG(
     ]
     other_tasks = [task for task in other_tasks if task is not None]
 
-    if snapshots_task is None:
-        raise ValueError("Snapshots task is required for registry initialization.")
-
-    start_batch_task >> snapshots_task >> other_tasks >> done_task
+    start_batch_task >> init_registry_task
+    if snapshots_task is not None:
+        init_registry_task >> snapshots_task
+        if other_tasks:
+            snapshots_task >> other_tasks
+            other_tasks >> done_task
+        else:
+            snapshots_task >> done_task
+    elif other_tasks:
+        init_registry_task >> other_tasks >> done_task
+    else:
+        init_registry_task >> done_task

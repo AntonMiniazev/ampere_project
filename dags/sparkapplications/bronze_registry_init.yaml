@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: raw-to-bronze-{{ params.stream }}-{{ ts_nodash }}
+  name: bronze-registry-init-{{ ts_nodash }}
   namespace: {{ params.namespace }}
 spec:
   type: Python
@@ -11,40 +11,14 @@ spec:
   imagePullPolicy: {{ params.image_pull_policy }}
   imagePullSecrets:
     - ghcr-pull
-  mainApplicationFile: local:///opt/spark/app/raw_to_bronze_etl.py
+  mainApplicationFile: local:///opt/spark/app/bronze_registry_init.py
   arguments:
-    - --tables
-    - "{{ params.tables }}"
-    - --table-config
-    - '{{ params.table_config | tojson }}'
-    - --groups-config
-    - '{{ params.groups_config | tojson }}'
-    - --schema
-    - {{ params.schema }}
-    - --run-date
-    - "{{ ds }}"
-    - --mode
-    - "{{ params.mode }}"
-    - --partition-key
-    - "{{ params.partition_key }}"
-    - --event-date-column
-    - "{{ params.event_date_column }}"
-    - --lookback-days
-    - "{{ params.lookback_days }}"
-    - --raw-bucket
-    - {{ params.raw_bucket }}
-    - --raw-prefix
-    - {{ params.raw_prefix }}
     - --bronze-bucket
     - {{ params.bronze_bucket }}
     - --bronze-prefix
     - {{ params.bronze_prefix }}
-    - --source-system
-    - {{ params.source_system }}
     - --app-name
     - {{ params.app_name }}
-    - --image
-    - {{ params.image }}
   sparkConf:
     spark.driver.extraClassPath: "/opt/spark/ivy/*"
     spark.executor.extraClassPath: "/opt/spark/ivy/*"
