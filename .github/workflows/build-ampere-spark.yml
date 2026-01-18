@@ -1,4 +1,4 @@
-name: Build source-to-raw Spark image
+name: Build ampere-spark image
 
 on:
   push:
