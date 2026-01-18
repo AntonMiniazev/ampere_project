@@ -28,10 +28,7 @@ def _resolve_image(value: str | None) -> str:
     return f"ghcr.io/antonminiazev/ampere-spark:{value}"
 
 
-IMAGE = _resolve_image(
-    Variable.get("spark_etl_image", default_var=None)
-    or Variable.get("raw_to_bronze_spark_image", default_var=None)
-)
+IMAGE = _resolve_image(Variable.get("ampere-spark-image", default_var=None))
 IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default_var="IfNotPresent")
 
 MINIO_ENDPOINT = Variable.get(
