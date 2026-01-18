@@ -185,6 +185,12 @@ def _parse_bool(value: str) -> bool:
     return normalized in {"1", "true", "yes", "y", "on"}
 
 
+def _format_date_window(start_date: date, end_date: date) -> tuple[str, str]:
+    start_ts = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    end_ts = datetime.combine(end_date, datetime.min.time(), tzinfo=timezone.utc)
+    return _format_ts(start_ts), _format_ts(end_ts)
+
+
 def _build_where_clause(
     mode: str,
     partition_key: str,
@@ -229,6 +235,14 @@ def _build_dbtable(schema: str, table: str, where_clause: Optional[str]) -> str:
 
 def _hash_schema(schema_json: str) -> str:
     return hashlib.md5(schema_json.encode("utf-8")).hexdigest()
+
+
+def _compute_batch_checksum(files: list[dict]) -> str:
+    ordered = sorted(files, key=lambda entry: entry.get("path", ""))
+    payload = "|".join(
+        f"{entry.get('path','')}:{entry.get('checksum','')}" for entry in ordered
+    )
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
 
 def _collect_file_details(
@@ -281,6 +295,13 @@ def _write_file(spark: SparkSession, path_str: str, content: bytes) -> None:
     output_stream = fs.create(path, True)
     output_stream.write(content)
     output_stream.close()
+
+
+def _exists(spark: SparkSession, path_str: str) -> bool:
+    jvm = spark._jvm
+    path = jvm.org.apache.hadoop.fs.Path(path_str)
+    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
+    return fs.exists(path)
 
 
 def _read_state(spark: SparkSession, path_str: str) -> Optional[dict]:
@@ -348,6 +369,7 @@ def _write_batch(
 
     files = _collect_file_details(spark, output_path)
     file_count = len(files)
+    batch_checksum = _compute_batch_checksum(files)
 
     null_counts, min_max = _collect_stats(df, base_columns)
 
@@ -355,6 +377,7 @@ def _write_batch(
         **manifest_context,
         "file_count": file_count,
         "row_count": row_count,
+        "checksum": batch_checksum,
         "files": files,
         "checks": [
             {
@@ -367,23 +390,32 @@ def _write_batch(
         "null_counts": null_counts,
     }
 
+    manifest_path = output_path.rstrip("/") + "/_manifest.json"
     manifest_payload = json.dumps(manifest, indent=2, sort_keys=True).encode(
         "utf-8"
     )
-    _write_marker(spark, output_path, "_manifest.json", manifest_payload)
+    _write_file(spark, manifest_path, manifest_payload)
+    if not _exists(spark, manifest_path):
+        logger.error("Manifest write failed: %s", manifest_path)
+        return {
+            "success": False,
+            "manifest_path": manifest_path,
+            "row_count": row_count,
+            "file_count": file_count,
+        }
 
     if any(check["status"] == "fail" for check in manifest["checks"]):
         logger.warning("Skipping _SUCCESS due to failed checks.")
         return {
             "success": False,
-            "manifest_path": output_path.rstrip("/") + "/_manifest.json",
+            "manifest_path": manifest_path,
             "row_count": row_count,
             "file_count": file_count,
         }
     _write_marker(spark, output_path, "_SUCCESS", b"")
     return {
         "success": True,
-        "manifest_path": output_path.rstrip("/") + "/_manifest.json",
+        "manifest_path": manifest_path,
         "row_count": row_count,
         "file_count": file_count,
     }
@@ -546,7 +578,6 @@ def main() -> None:
             "batch_type": args.mode,
             "storage_format": "parquet",
             "schema_hash": schema_hash,
-            "checksum": schema_hash,
             "producer": {
                 "tool": "spark",
                 "image": args.image or "unknown",
@@ -650,9 +681,10 @@ def main() -> None:
                 if lookback_days > 1:
                     start_date, end_date, _ = _date_range(run_date, lookback_days)
                     manifest_context["lookback_days"] = lookback_days
+                    window_from, window_to = _format_date_window(start_date, end_date)
                     manifest_context["window"] = {
-                        "from": start_date.isoformat(),
-                        "to": end_date.isoformat(),
+                        "from": window_from,
+                        "to": window_to,
                     }
                     manifest_context["event_dates_covered"] = event_date_strings
                 df_partition = df_with_event_date.filter(

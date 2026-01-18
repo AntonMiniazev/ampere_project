@@ -414,23 +414,75 @@ def _candidate_runs(
 
 def _manifest_ok(manifest: dict) -> tuple[bool, str]:
     required = [
+        "manifest_version",
         "source_system",
         "source_schema",
         "source_table",
+        "contract_name",
+        "contract_version",
         "run_id",
         "ingest_ts_utc",
         "batch_type",
+        "storage_format",
         "schema_hash",
-        "contract_version",
+        "checksum",
+        "file_count",
+        "row_count",
         "files",
         "checks",
+        "min_max",
+        "null_counts",
+        "producer",
+        "source_extract",
     ]
     for key in required:
         if key not in manifest:
             return False, f"missing {key}"
-    for check in manifest.get("checks", []):
+        if manifest[key] is None:
+            return False, f"null {key}"
+
+    if manifest.get("batch_type") not in {"snapshot", "incremental"}:
+        return False, "invalid batch_type"
+
+    files = manifest.get("files", [])
+    if not isinstance(files, list) or not files:
+        return False, "missing files"
+    for entry in files:
+        for file_key in ("path", "size_bytes", "row_count", "checksum"):
+            if file_key not in entry:
+                return False, f"missing file.{file_key}"
+
+    if isinstance(manifest.get("file_count"), int) and len(files) != manifest["file_count"]:
+        return False, "file_count mismatch"
+
+    checks = manifest.get("checks", [])
+    if not isinstance(checks, list):
+        return False, "checks not a list"
+    for check in checks:
         if check.get("status") == "fail":
             return False, "manifest checks failed"
+
+    partition_kind, _ = _partition_info(manifest)
+    if not partition_kind:
+        return False, "missing partition info"
+    if partition_kind == "snapshot_date" and "snapshot_date" not in manifest:
+        return False, "missing snapshot_date"
+    if partition_kind == "extract_date":
+        watermark = manifest.get("watermark")
+        if not isinstance(watermark, dict):
+            return False, "missing watermark"
+        for key in ("column", "from", "to"):
+            if not watermark.get(key):
+                return False, f"missing watermark.{key}"
+    if partition_kind == "event_date":
+        lookback_days = manifest.get("lookback_days")
+        if lookback_days:
+            window = manifest.get("window") or {}
+            if not window.get("from") or not window.get("to"):
+                return False, "missing window"
+            if not manifest.get("event_dates_covered"):
+                return False, "missing event_dates_covered"
+
     return True, "ok"
 
 
@@ -540,8 +592,6 @@ def main() -> None:
         raise ValueError("Registry table is missing; run bronze_registry_init first.")
     registry_df = _load_registry_table(spark, registry_path)
 
-    apply_ts_utc = datetime.now(timezone.utc).isoformat()
-
     for group in groups:
         group_name = group.get("group", "group")
         group_tables = group.get("tables", [])
@@ -607,19 +657,13 @@ def main() -> None:
                 logger.info("No candidate batches for %s", table)
                 continue
     
-            apply_queue = [
-                c for c in candidates if c["run_id"] not in applied_run_ids
-            ]
-            if not apply_queue:
-                logger.info("No new batches to apply for %s", table)
-                continue
-    
-            for batch in sorted(
-                apply_queue,
-                key=lambda b: (b["partition_value"], b["run_id"]),
-            ):
-                manifest = _read_json(spark, batch["manifest_path"])
+            apply_queue = []
+            for candidate in candidates:
+                if candidate["run_id"] in applied_run_ids:
+                    continue
+                manifest = _read_json(spark, candidate["manifest_path"])
                 if not manifest:
+                    batch_apply_ts = datetime.now(timezone.utc).isoformat()
                     _append_registry_row(
                         spark,
                         registry_path,
@@ -628,15 +672,15 @@ def main() -> None:
                             "source_system": args.source_system,
                             "source_schema": args.schema,
                             "source_table": table,
-                            "run_id": batch["run_id"],
-                            "manifest_path": batch["manifest_path"],
+                            "run_id": candidate["run_id"],
+                            "manifest_path": candidate["manifest_path"],
                             "batch_type": None,
-                            "partition_kind": batch["partition_kind"],
-                            "partition_value": batch["partition_value"],
+                            "partition_kind": candidate["partition_kind"],
+                            "partition_value": candidate["partition_value"],
                             "ingest_ts_utc": None,
                             "schema_hash": None,
                             "contract_version": None,
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "failed",
                             "details": "missing manifest",
                             "watermark_from": None,
@@ -649,7 +693,29 @@ def main() -> None:
                         },
                     )
                     continue
+                candidate["manifest"] = manifest
+                candidate["ingest_ts_utc"] = manifest.get("ingest_ts_utc")
+                apply_queue.append(candidate)
+            if not apply_queue:
+                logger.info("No new batches to apply for %s", table)
+                continue
     
+            def _apply_sort_key(batch: dict) -> tuple:
+                ingest_dt = _parse_optional_datetime(
+                    batch.get("ingest_ts_utc") or ""
+                )
+                if ingest_dt and ingest_dt.tzinfo is None:
+                    ingest_dt = ingest_dt.replace(tzinfo=timezone.utc)
+                ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
+                return (batch["partition_value"], ingest_key, batch["run_id"])
+
+            for batch in sorted(
+                apply_queue,
+                key=_apply_sort_key,
+            ):
+                manifest = batch["manifest"]
+                batch_apply_ts = datetime.now(timezone.utc).isoformat()
+
                 ok, reason = _manifest_ok(manifest)
                 if not ok:
                     _append_registry_row(
@@ -668,7 +734,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "failed",
                             "details": reason,
                             "watermark_from": None,
@@ -699,7 +765,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "skipped",
                             "details": "schema_hash mismatch",
                             "watermark_from": None,
@@ -730,7 +796,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "skipped",
                             "details": "contract_version mismatch",
                             "watermark_from": None,
@@ -762,7 +828,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "failed",
                             "details": "missing partition info",
                             "watermark_from": None,
@@ -794,7 +860,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "failed",
                             "details": "no files in manifest",
                             "watermark_from": None,
@@ -811,7 +877,7 @@ def main() -> None:
                 try:
                     df = spark.read.parquet(*file_paths)
                     df = df.withColumn("_bronze_last_run_id", F.lit(manifest.get("run_id")))
-                    df = df.withColumn("_bronze_last_apply_ts", F.lit(apply_ts_utc))
+                    df = df.withColumn("_bronze_last_apply_ts", F.lit(batch_apply_ts))
                     df = df.withColumn(
                         "_bronze_last_manifest_path", F.lit(batch["manifest_path"])
                     )
@@ -869,7 +935,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "applied",
                             "details": "ok",
                             "watermark_from": watermark_from,
@@ -901,7 +967,7 @@ def main() -> None:
                             "ingest_ts_utc": manifest.get("ingest_ts_utc"),
                             "schema_hash": manifest.get("schema_hash"),
                             "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": apply_ts_utc,
+                            "apply_ts_utc": batch_apply_ts,
                             "status": "failed",
                             "details": f"bronze apply failed: {exc}",
                             "watermark_from": None,
