@@ -307,6 +307,7 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         data.extend(buffer.array()[:read_bytes])
     input_stream.close()
     if not data:
+        logging.getLogger(APP_NAME).warning("Empty manifest JSON at %s", path_str)
         return None
     try:
         return json.loads(data.decode("utf-8"))
@@ -622,7 +623,12 @@ def main() -> None:
                     & (F.col("source_table") == table)
                 )
                 applied_run_ids = {
-                    row.run_id for row in table_registry.select("run_id").collect()
+                    row.run_id
+                    for row in table_registry.filter(
+                        F.col("status").isin("applied", "skipped")
+                    )
+                    .select("run_id")
+                    .collect()
                 }
                 latest_row = (
                     table_registry.orderBy(F.col("apply_ts_utc").desc()).limit(1).collect()
@@ -682,7 +688,7 @@ def main() -> None:
                             "contract_version": None,
                             "apply_ts_utc": batch_apply_ts,
                             "status": "failed",
-                            "details": "missing manifest",
+                            "details": "missing or invalid manifest",
                             "watermark_from": None,
                             "watermark_to": None,
                             "lookback_days": None,
