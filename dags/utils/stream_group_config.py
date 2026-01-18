@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).resolve().parent / "config"
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 TABLES_PATH = CONFIG_DIR / "table_definitions.json"
 STREAM_GROUPS_PATH = CONFIG_DIR / "stream_groups.json"
 
