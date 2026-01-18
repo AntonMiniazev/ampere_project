@@ -201,29 +201,27 @@ with DAG(
         },
     ]
 
-    submit_tasks = []
-    for group in stream_groups:
-        params = {
-            **base_params,
-            "group": group["group"],
-            "tables": ",".join(group["tables"]),
-            "table_config": group["table_config"],
-            "stream": group["group"],
-            "mode": group["mode"],
-            "partition_key": group["partition_key"],
-            "event_date_column": group["event_date_column"],
-            "lookback_days": group["lookback_days"],
-            "app_name": f"raw-to-bronze-{group['group']}",
-        }
-        submit_tasks.append(
-            SparkKubernetesOperator(
-                task_id=f"run__sparkapp__group_{group['group']}",
-                namespace=SPARK_NAMESPACE,
-                application_file=SPARK_APP_TEMPLATE,
-                params=params,
-                kubernetes_conn_id="kubernetes_default",
-                do_xcom_push=False,
-            )
-        )
+    params = {
+        **base_params,
+        "group": "all",
+        "tables": "",
+        "table_config": {},
+        "groups_config": stream_groups,
+        "stream": "all",
+        "mode": "snapshot",
+        "partition_key": "snapshot_date",
+        "event_date_column": "",
+        "lookback_days": 0,
+        "app_name": "raw-to-bronze-all",
+    }
 
-    start_batch_task >> submit_tasks >> done_task
+    submit_task = SparkKubernetesOperator(
+        task_id="run__sparkapp__group_all",
+        namespace=SPARK_NAMESPACE,
+        application_file=SPARK_APP_TEMPLATE,
+        params=params,
+        kubernetes_conn_id="kubernetes_default",
+        do_xcom_push=False,
+    )
+
+    start_batch_task >> submit_task >> done_task

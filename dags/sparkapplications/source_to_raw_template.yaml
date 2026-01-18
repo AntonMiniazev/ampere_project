@@ -6,7 +6,7 @@ metadata:
 spec:
   type: Python
   mode: cluster
-  sparkVersion: "4.1.0"
+  sparkVersion: "4.0.1"
   image: {{ params.image }}
   imagePullPolicy: {{ params.image_pull_policy }}
   imagePullSecrets:

@@ -1,4 +1,4 @@
-FROM apache/spark:4.1.0
+FROM apache/spark:4.0.1
 
 ENV PYTHONUNBUFFERED=1
 ENV PYSPARK_PYTHON=python3
@@ -7,7 +7,7 @@ WORKDIR /opt/spark/app
 
 USER root
 ENV HOME=/root
-RUN python3 -m pip install --no-cache-dir delta-spark==4.0.1
+RUN python3 -m pip install --no-cache-dir --no-deps delta-spark==4.0.1
 USER 185
 
 RUN mkdir -p /opt/spark/ivy
