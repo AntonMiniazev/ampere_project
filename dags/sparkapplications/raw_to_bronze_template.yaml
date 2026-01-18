@@ -48,6 +48,9 @@ spec:
   sparkConf:
     spark.driver.extraClassPath: "/opt/spark/ivy/*"
     spark.executor.extraClassPath: "/opt/spark/ivy/*"
+    spark.driver.userClassPathFirst: "true"
+    spark.executor.userClassPathFirst: "true"
+    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.2.jar,local:///opt/spark/ivy/hadoop-common-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-runtime-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-api-3.4.2.jar,local:///opt/spark/ivy/aws-java-sdk-bundle-1.12.796.jar,local:///opt/spark/ivy/delta-spark_2.13-4.0.1.jar"
     spark.ui.enabled: "false"
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
