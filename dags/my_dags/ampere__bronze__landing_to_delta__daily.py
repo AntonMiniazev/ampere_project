@@ -219,3 +219,17 @@ with DAG(
             "event_date_column": group["event_date_column"],
             "lookback_days": group["lookback_days"],
 
+            "app_name": f"raw-to-bronze-{group['group']}",
+        }
+        submit_tasks.append(
+            SparkKubernetesOperator(
+                task_id=f"run__sparkapp__group_{group['group']}",
+                namespace=SPARK_NAMESPACE,
+                application_file=SPARK_APP_TEMPLATE,
+                params=params,
+                kubernetes_conn_id="kubernetes_default",
+                do_xcom_push=False,
+            )
+        )
+
+    start_batch_task >> submit_tasks >> done_task
