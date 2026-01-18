@@ -17,7 +17,7 @@ SERVICE_ACCOUNT = Variable.get(
     "spark_service_account",
     default_var="spark-operator-spark",
 )
-DEFAULT_IMAGE = "ghcr.io/antonminiazev/raw-to-bronze-spark:latest"
+DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 
 
 def _resolve_image(value: str | None) -> str:
@@ -25,7 +25,7 @@ def _resolve_image(value: str | None) -> str:
         return DEFAULT_IMAGE
     if "/" in value:
         return value
-    return f"ghcr.io/antonminiazev/raw-to-bronze-spark:{value}"
+    return f"ghcr.io/antonminiazev/ampere-spark:{value}"
 
 
 IMAGE = _resolve_image(
@@ -52,9 +52,7 @@ EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_CORE_REQUEST = "500m"
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="768m")
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="4"))
-EVENT_LOOKBACK_DAYS = int(
-    Variable.get("spark_event_lookback_days", default_var="2")
-)
+EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="4")
 )
@@ -218,7 +216,6 @@ with DAG(
             "partition_key": group["partition_key"],
             "event_date_column": group["event_date_column"],
             "lookback_days": group["lookback_days"],
-
             "app_name": f"raw-to-bronze-{group['group']}",
         }
         submit_tasks.append(

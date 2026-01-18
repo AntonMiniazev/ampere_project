@@ -17,7 +17,7 @@ SERVICE_ACCOUNT = Variable.get(
     "spark_service_account",
     default_var="spark-operator-spark",
 )
-DEFAULT_IMAGE = "ghcr.io/antonminiazev/source-to-raw-spark:latest"
+DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 
 
 def _resolve_image(value: str | None) -> str:
@@ -25,7 +25,7 @@ def _resolve_image(value: str | None) -> str:
         return DEFAULT_IMAGE
     if "/" in value:
         return value
-    return f"ghcr.io/antonminiazev/source-to-raw-spark:{value}"
+    return f"ghcr.io/antonminiazev/ampere-spark:{value}"
 
 
 IMAGE = _resolve_image(
@@ -248,4 +248,3 @@ with DAG(
         )
 
     start_batch_task >> submit_tasks >> done_task
-

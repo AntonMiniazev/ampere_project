@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - "docker/spark/raw_etl/**"
-      - ".github/workflows/build-source-to-raw-spark.yml"
+      - ".github/workflows/build-ampere-spark.yml"
   workflow_dispatch:
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/source-to-raw-spark
+          images: ghcr.io/${{ github.repository_owner }}/ampere-spark
           tags: |
             type=raw,value=latest
             type=raw,value=sha-${{ github.sha }}
