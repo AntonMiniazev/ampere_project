@@ -52,7 +52,7 @@ spec:
   sparkConf:
     spark.driver.extraClassPath: "/opt/spark/ivy/*"
     spark.executor.extraClassPath: "/opt/spark/ivy/*"
-    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.2.jar,local:///opt/spark/ivy/hadoop-common-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-runtime-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-api-3.4.2.jar,local:///opt/spark/ivy/bundle-2.40.16.jar,local:///opt/spark/ivy/delta-spark_2.13-4.0.1.jar"
+    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.2.jar,local:///opt/spark/ivy/hadoop-common-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-runtime-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-api-3.4.2.jar,local:///opt/spark/ivy/bundle-2.40.16.jar,local:///opt/spark/ivy/postgresql-42.7.3.jar"
     spark.ui.enabled: "false"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"
