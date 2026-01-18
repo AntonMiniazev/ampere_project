@@ -292,28 +292,58 @@ def _exists(spark: SparkSession, path_str: str) -> bool:
 
 
 def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
+    logger = logging.getLogger(APP_NAME)
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
     if not fs.exists(path):
         return None
+    file_size = None
+    try:
+        file_size = fs.getFileStatus(path).getLen()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to stat manifest at %s: %s", path_str, exc)
     input_stream = fs.open(path)
     data = bytearray()
     buffer = jvm.java.nio.ByteBuffer.allocate(8192)
     while True:
         read_bytes = input_stream.read(buffer.array())
-        if read_bytes <= 0:
+        if read_bytes < 0:
+            break
+        if read_bytes == 0:
             break
         data.extend(buffer.array()[:read_bytes])
     input_stream.close()
     if not data:
-        logging.getLogger(APP_NAME).warning("Empty manifest JSON at %s", path_str)
+        logger.warning(
+            "Empty manifest JSON at %s (size=%s)", path_str, file_size
+        )
+        try:
+            rows = spark.read.text(path_str).collect()
+            payload = "\n".join(
+                row.value for row in rows if row.value is not None
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Fallback text read failed at %s: %s", path_str, exc
+            )
+            return None
+    else:
+        payload = data.decode("utf-8", errors="replace")
+    cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
+    if not cleaned:
+        logger.warning("Manifest JSON empty after cleanup at %s", path_str)
         return None
     try:
-        return json.loads(data.decode("utf-8"))
+        return json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        logging.getLogger(APP_NAME).warning(
-            "Invalid manifest JSON at %s: %s", path_str, exc
+        preview = cleaned[:200].replace("\n", "\\n")
+        logger.warning(
+            "Invalid manifest JSON at %s (size=%s): %s | preview=%s",
+            path_str,
+            file_size,
+            exc,
+            preview,
         )
         return None
 

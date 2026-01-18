@@ -322,6 +322,49 @@ def _read_state(spark: SparkSession, path_str: str) -> Optional[dict]:
     return json.loads(data.decode("utf-8"))
 
 
+def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
+    logger = logging.getLogger(APP_NAME)
+    jvm = spark._jvm
+    path = jvm.org.apache.hadoop.fs.Path(path_str)
+    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
+    if not fs.exists(path):
+        return None
+    file_size = None
+    try:
+        file_size = fs.getFileStatus(path).getLen()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to stat JSON at %s: %s", path_str, exc)
+    input_stream = fs.open(path)
+    data = bytearray()
+    buffer = jvm.java.nio.ByteBuffer.allocate(8192)
+    while True:
+        read_bytes = input_stream.read(buffer.array())
+        if read_bytes <= 0:
+            break
+        data.extend(buffer.array()[:read_bytes])
+    input_stream.close()
+    if not data:
+        logger.warning("Empty JSON at %s (size=%s)", path_str, file_size)
+        return None
+    payload = data.decode("utf-8", errors="replace")
+    cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
+    if not cleaned:
+        logger.warning("JSON empty after cleanup at %s", path_str)
+        return None
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        preview = cleaned[:200].replace("\n", "\\n")
+        logger.warning(
+            "Invalid JSON at %s (size=%s): %s | preview=%s",
+            path_str,
+            file_size,
+            exc,
+            preview,
+        )
+        return None
+
+
 def _state_path(
     bucket: str, source_system: str, schema: str, table: str
 ) -> str:
@@ -397,6 +440,14 @@ def _write_batch(
     _write_file(spark, manifest_path, manifest_payload)
     if not _exists(spark, manifest_path):
         logger.error("Manifest write failed: %s", manifest_path)
+        return {
+            "success": False,
+            "manifest_path": manifest_path,
+            "row_count": row_count,
+            "file_count": file_count,
+        }
+    if _read_json(spark, manifest_path) is None:
+        logger.error("Manifest invalid after write: %s", manifest_path)
         return {
             "success": False,
             "manifest_path": manifest_path,
