@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -42,6 +43,10 @@ def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
 def _parse_date(value: str) -> str:
     datetime.strptime(value, "%Y-%m-%d")
     return value
+
+
+def _parse_bool(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
 
 
 def _parse_optional_datetime(value: str) -> Optional[datetime]:
@@ -128,6 +133,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--app-name", default=APP_NAME, help="Spark app name")
     parser.add_argument("--image", default="", help="Container image reference")
+    parser.add_argument("--init-registry", type=_parse_bool, default="false", help="Initialize registry table")
     return parser.parse_args()
 
 
@@ -243,10 +249,31 @@ def _load_registry_schema(schema_path: str) -> StructType:
 def _ensure_registry_table(
     spark: SparkSession, path_str: str, schema: StructType
 ) -> None:
+    logger = logging.getLogger(APP_NAME)
+    retries = 5
+    last_exc = None
+    for attempt in range(retries):
+        if DeltaTable.isDeltaTable(spark, path_str):
+            return
+        empty_df = spark.createDataFrame([], schema=schema)
+        try:
+            empty_df.write.format("delta").mode("overwrite").save(path_str)
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if "ProtocolChangedException" in str(exc):
+                logger.warning(
+                    "Registry table creation race detected; retrying (%s/%s).",
+                    attempt + 1,
+                    retries,
+                )
+                time.sleep(1 + attempt)
+                continue
+            raise
     if DeltaTable.isDeltaTable(spark, path_str):
         return
-    empty_df = spark.createDataFrame([], schema=schema)
-    empty_df.write.format("delta").mode("overwrite").save(path_str)
+    if last_exc:
+        raise last_exc
 
 
 def _append_registry_row(
@@ -510,7 +537,10 @@ def main() -> None:
         str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
     )
     registry_schema = _load_registry_schema(schema_path)
-    _ensure_registry_table(spark, registry_path, registry_schema)
+    if args.init_registry:
+        _ensure_registry_table(spark, registry_path, registry_schema)
+    elif not DeltaTable.isDeltaTable(spark, registry_path):
+        raise ValueError("Registry table is missing; run init-registry first.")
     registry_df = _load_registry_table(spark, registry_path)
 
     apply_ts_utc = datetime.now(timezone.utc).isoformat()

@@ -202,6 +202,7 @@ with DAG(
     ]
 
     submit_tasks = []
+    tasks_by_group = {}
     for group in stream_groups:
         params = {
             **base_params,
@@ -214,17 +215,29 @@ with DAG(
             "partition_key": group["partition_key"],
             "event_date_column": group["event_date_column"],
             "lookback_days": group["lookback_days"],
+            "init_registry": str(group["group"] == "snapshots").lower(),
             "app_name": f"raw-to-bronze-{group['group']}",
         }
-        submit_tasks.append(
-            SparkKubernetesOperator(
-                task_id=f"run__sparkapp__group_{group['group']}",
-                namespace=SPARK_NAMESPACE,
-                application_file=SPARK_APP_TEMPLATE,
-                params=params,
-                kubernetes_conn_id="kubernetes_default",
-                do_xcom_push=False,
-            )
+        task = SparkKubernetesOperator(
+            task_id=f"run__sparkapp__group_{group['group']}",
+            namespace=SPARK_NAMESPACE,
+            application_file=SPARK_APP_TEMPLATE,
+            params=params,
+            kubernetes_conn_id="kubernetes_default",
+            do_xcom_push=False,
         )
+        submit_tasks.append(task)
+        tasks_by_group[group["group"]] = task
 
-    start_batch_task >> submit_tasks >> done_task
+    snapshots_task = tasks_by_group.get("snapshots")
+    other_tasks = [
+        tasks_by_group.get("mutable_dims"),
+        tasks_by_group.get("facts"),
+        tasks_by_group.get("events"),
+    ]
+    other_tasks = [task for task in other_tasks if task is not None]
+
+    if snapshots_task is None:
+        raise ValueError("Snapshots task is required for registry initialization.")
+
+    start_batch_task >> snapshots_task >> other_tasks >> done_task

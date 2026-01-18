@@ -45,6 +45,8 @@ spec:
     - {{ params.app_name }}
     - --image
     - {{ params.image }}
+    - --init-registry
+    - "{{ params.init_registry }}"
   sparkConf:
     spark.driver.extraClassPath: "/opt/spark/ivy/*"
     spark.executor.extraClassPath: "/opt/spark/ivy/*"
