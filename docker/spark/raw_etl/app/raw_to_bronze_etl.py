@@ -303,6 +303,14 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         file_size = fs.getFileStatus(path).getLen()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to stat manifest at %s: %s", path_str, exc)
+    def _read_via_spark() -> Optional[str]:
+        try:
+            rows = spark.read.text(path_str).collect()
+            return "\n".join(row.value for row in rows if row.value is not None)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Spark text read failed at %s: %s", path_str, exc)
+            return None
+
     input_stream = fs.open(path)
     data = bytearray()
     buffer = jvm.java.nio.ByteBuffer.allocate(8192)
@@ -318,22 +326,27 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         logger.warning(
             "Empty manifest JSON at %s (size=%s)", path_str, file_size
         )
-        try:
-            rows = spark.read.text(path_str).collect()
-            payload = "\n".join(
-                row.value for row in rows if row.value is not None
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Fallback text read failed at %s: %s", path_str, exc
-            )
+        payload = _read_via_spark()
+        if payload is None:
             return None
     else:
         payload = data.decode("utf-8", errors="replace")
     cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
     if not cleaned:
-        logger.warning("Manifest JSON empty after cleanup at %s", path_str)
-        return None
+        logger.warning(
+            "Manifest JSON empty after cleanup at %s (size=%s)", path_str, file_size
+        )
+        payload = _read_via_spark()
+        if payload is None:
+            return None
+        cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
+        if not cleaned:
+            logger.warning(
+                "Manifest JSON still empty after spark read at %s (size=%s)",
+                path_str,
+                file_size,
+            )
+            return None
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as exc:
@@ -345,7 +358,29 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
             exc,
             preview,
         )
-        return None
+        payload = _read_via_spark()
+        if payload is None:
+            return None
+        cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
+        if not cleaned:
+            logger.warning(
+                "Manifest JSON empty after spark read at %s (size=%s)",
+                path_str,
+                file_size,
+            )
+            return None
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError as fallback_exc:
+            preview = cleaned[:200].replace("\n", "\\n")
+            logger.warning(
+                "Invalid manifest JSON after spark read at %s (size=%s): %s | preview=%s",
+                path_str,
+                file_size,
+                fallback_exc,
+                preview,
+            )
+            return None
 
 
 def _list_partitions(
