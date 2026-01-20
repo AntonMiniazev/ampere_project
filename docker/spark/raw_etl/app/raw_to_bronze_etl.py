@@ -310,6 +310,50 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Spark text read failed at %s: %s", path_str, exc)
             return None
+    def _read_via_boto3() -> Optional[str]:
+        try:
+            import boto3
+            from botocore.client import Config
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("boto3 unavailable for manifest fallback: %s", exc)
+            return None
+        endpoint = _get_env(
+            "MINIO_S3_ENDPOINT",
+            "http://minio.ampere.svc.cluster.local:9000",
+        )
+        access_key = _get_env("MINIO_ACCESS_KEY")
+        secret_key = _get_env("MINIO_SECRET_KEY")
+        if not access_key or not secret_key:
+            logger.warning("Missing MinIO creds for boto3 manifest fallback.")
+            return None
+        if not path_str.startswith("s3a://"):
+            logger.warning(
+                "Unsupported manifest path for boto3 fallback: %s", path_str
+            )
+            return None
+        bucket_key = path_str[len("s3a://") :]
+        bucket, _, key = bucket_key.partition("/")
+        if not bucket or not key:
+            logger.warning("Invalid manifest path for boto3 fallback: %s", path_str)
+            return None
+        try:
+            client = boto3.client(
+                "s3",
+                endpoint_url=endpoint,
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                config=Config(signature_version="s3v4"),
+                region_name="us-east-1",
+            )
+            body = client.get_object(Bucket=bucket, Key=key)["Body"].read()
+            if not body:
+                logger.warning("Empty manifest via boto3 at %s", path_str)
+                return None
+            logger.warning("Using boto3 fallback for manifest at %s", path_str)
+            return body.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("boto3 manifest read failed at %s: %s", path_str, exc)
+            return None
 
     input_stream = fs.open(path)
     data = bytearray()
@@ -328,6 +372,8 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         )
         payload = _read_via_spark()
         if payload is None:
+            payload = _read_via_boto3()
+        if payload is None:
             return None
     else:
         payload = data.decode("utf-8", errors="replace")
@@ -338,11 +384,13 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         )
         payload = _read_via_spark()
         if payload is None:
+            payload = _read_via_boto3()
+        if payload is None:
             return None
         cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
         if not cleaned:
             logger.warning(
-                "Manifest JSON still empty after spark read at %s (size=%s)",
+                "Manifest JSON still empty after fallbacks at %s (size=%s)",
                 path_str,
                 file_size,
             )
@@ -360,11 +408,13 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         )
         payload = _read_via_spark()
         if payload is None:
+            payload = _read_via_boto3()
+        if payload is None:
             return None
         cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
         if not cleaned:
             logger.warning(
-                "Manifest JSON empty after spark read at %s (size=%s)",
+                "Manifest JSON empty after fallbacks at %s (size=%s)",
                 path_str,
                 file_size,
             )
@@ -374,7 +424,7 @@ def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
         except json.JSONDecodeError as fallback_exc:
             preview = cleaned[:200].replace("\n", "\\n")
             logger.warning(
-                "Invalid manifest JSON after spark read at %s (size=%s): %s | preview=%s",
+                "Invalid manifest JSON after fallbacks at %s (size=%s): %s | preview=%s",
                 path_str,
                 file_size,
                 fallback_exc,
