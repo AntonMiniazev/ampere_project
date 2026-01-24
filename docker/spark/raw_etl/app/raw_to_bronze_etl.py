@@ -1,3 +1,5 @@
+"""Apply raw landing batches to Bronze Delta tables."""
+
 import argparse
 import json
 import logging
@@ -34,6 +36,7 @@ APP_NAME = "raw-to-bronze-etl"
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse CLI args for raw-to-bronze processing."""
     parser = argparse.ArgumentParser(
         description="Transform raw landing data to bronze Delta tables."
     )
@@ -112,6 +115,7 @@ def _parse_table_list(raw: str) -> list[str]:
 
 
 def _parse_groups_config(raw: str) -> list[dict]:
+    """Parse group config JSON into a normalized list of group dicts."""
     if not raw:
         return []
     data = json.loads(raw)
@@ -197,6 +201,7 @@ def _append_registry_row(
 def _list_partitions(
     spark: SparkSession, base_path: str, partition_key: str
 ) -> list[date]:
+    """List available partition dates for a given landing table."""
     mode_path = (
         f"{base_path}/mode=snapshot"
         if partition_key == "snapshot_date"
@@ -252,6 +257,7 @@ def _candidate_runs(
     partition_key: str,
     search_start: Optional[date],
 ) -> list[dict]:
+    """Collect candidate run folders with _SUCCESS and _manifest.json."""
     candidates = []
     partitions = _list_partitions(spark, base_path, partition_key)
 
@@ -290,6 +296,7 @@ def _candidate_runs(
 
 
 def _manifest_ok(manifest: dict) -> tuple[bool, str]:
+    """Validate manifest structure and required fields; return (ok, reason)."""
     required = [
         "manifest_version",
         "source_system",
@@ -364,6 +371,7 @@ def _manifest_ok(manifest: dict) -> tuple[bool, str]:
 
 
 def _partition_info(manifest: dict) -> tuple[str, str]:
+    """Return (partition_kind, partition_value) from a manifest."""
     if "snapshot_date" in manifest:
         return "snapshot_date", manifest["snapshot_date"]
     if "extract_date" in manifest:
@@ -385,6 +393,7 @@ def _merge_to_delta(
     target_path: str,
     merge_keys: list[str],
 ) -> None:
+    """Merge or overwrite a Delta table using stable business keys."""
     if DeltaTable.isDeltaTable(spark, target_path):
         delta_table = DeltaTable.forPath(spark, target_path)
         conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
@@ -400,6 +409,7 @@ def _merge_to_delta(
 
 
 def main() -> None:
+    """Entry point for applying raw landing batches to Bronze."""
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 
@@ -459,6 +469,7 @@ def main() -> None:
     )
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
 
+    # Registry is the source of truth for applied landing batches.
     registry_path = bronze_registry_path(args.bronze_bucket, args.bronze_prefix)
     schema_path = get_env(
         "BRONZE_REGISTRY_SCHEMA_PATH",

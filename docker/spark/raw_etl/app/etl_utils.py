@@ -1,3 +1,5 @@
+"""Shared ETL helpers for Spark + MinIO IO, pathing, and JSON parsing."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +13,7 @@ from pyspark.sql import SparkSession
 
 
 def setup_logging(level: str | None = None) -> None:
+    """Configure root logging using LOG_LEVEL or the provided level."""
     resolved = level or os.getenv("LOG_LEVEL", "INFO")
     logging.basicConfig(
         level=resolved,
@@ -22,6 +25,7 @@ def setup_logging(level: str | None = None) -> None:
 
 
 def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Return environment variable or default; empty strings are treated as missing."""
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -29,11 +33,13 @@ def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
 
 
 def parse_date(value: str) -> str:
+    """Validate a YYYY-MM-DD date string and return it unchanged."""
     datetime.strptime(value, "%Y-%m-%d")
     return value
 
 
 def parse_optional_datetime(value: str) -> Optional[datetime]:
+    """Parse ISO-8601 or YYYY-MM-DD into datetime; returns None for blank input."""
     if not value:
         return None
     normalized = value.strip()
@@ -52,6 +58,7 @@ def configure_s3(
     access_key: str,
     secret_key: str,
 ) -> None:
+    """Configure Spark's Hadoop S3A settings for MinIO or S3-compatible storage."""
     hadoop_conf = spark._jsc.hadoopConfiguration()
     hadoop_conf.set("fs.s3a.endpoint", endpoint)
     hadoop_conf.set("fs.s3a.access.key", access_key)
@@ -69,6 +76,7 @@ def configure_s3(
 
 
 def s3_path(bucket: str, *parts: str) -> str:
+    """Build an s3a:// path from a bucket and optional path parts."""
     cleaned = [part.strip("/") for part in parts if part]
     if not cleaned:
         return f"s3a://{bucket}"
@@ -76,6 +84,7 @@ def s3_path(bucket: str, *parts: str) -> str:
 
 
 def table_base_path(bucket: str, prefix: str, schema: str, table: str) -> str:
+    """Return the base path for a table under bucket/prefix/schema."""
     prefix = prefix.strip("/")
     if prefix:
         return s3_path(bucket, prefix, schema, table)
@@ -83,12 +92,14 @@ def table_base_path(bucket: str, prefix: str, schema: str, table: str) -> str:
 
 
 def state_path(bucket: str, source_system: str, schema: str, table: str) -> str:
+    """Return the landing _state JSON path for a given table."""
     return s3_path(
         bucket, source_system, schema, "_state", f"_state_{table}.json"
     )
 
 
 def bronze_registry_path(bucket: str, prefix: str) -> str:
+    """Return the Delta registry table path for Bronze apply tracking."""
     prefix = prefix.strip("/")
     if prefix:
         return s3_path(bucket, prefix, "ops", "bronze_apply_registry")
@@ -96,6 +107,7 @@ def bronze_registry_path(bucket: str, prefix: str) -> str:
 
 
 def list_dirs(spark: SparkSession, path_str: str) -> list[str]:
+    """List child directory names under a Hadoop FS path."""
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -106,6 +118,7 @@ def list_dirs(spark: SparkSession, path_str: str) -> list[str]:
 
 
 def exists(spark: SparkSession, path_str: str) -> bool:
+    """Check whether a Hadoop FS path exists."""
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -113,6 +126,7 @@ def exists(spark: SparkSession, path_str: str) -> bool:
 
 
 def write_bytes(spark: SparkSession, path_str: str, content: bytes) -> None:
+    """Write raw bytes to a Hadoop FS path, overwriting existing data."""
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -124,6 +138,7 @@ def write_bytes(spark: SparkSession, path_str: str, content: bytes) -> None:
 def write_marker(
     spark: SparkSession, output_path: str, filename: str, content: bytes
 ) -> None:
+    """Write a marker file within an output directory."""
     path_str = output_path.rstrip("/") + "/" + filename
     write_bytes(spark, path_str, content)
 
@@ -133,6 +148,7 @@ def read_json(
     path_str: str,
     logger: Optional[logging.Logger] = None,
 ) -> Optional[dict]:
+    """Read JSON from storage with Hadoop/Spark/boto3 fallbacks."""
     logger = logger or logging.getLogger(__name__)
     readers = [
         ("hadoop", lambda: _read_bytes_hadoop(spark, path_str, logger)),
@@ -167,6 +183,7 @@ def _read_bytes_hadoop(
     path_str: str,
     logger: logging.Logger,
 ) -> Optional[bytes]:
+    """Read raw bytes via Hadoop FS; returns None if the file does not exist."""
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -190,6 +207,7 @@ def _read_bytes_spark(
     path_str: str,
     logger: logging.Logger,
 ) -> Optional[bytes]:
+    """Read raw bytes via Spark whole-text read; returns None on failure."""
     try:
         rows = (
             spark.read.option("wholetext", "true").text(path_str).collect()
@@ -209,6 +227,7 @@ def _read_bytes_boto3(
     path_str: str,
     logger: logging.Logger,
 ) -> Optional[bytes]:
+    """Read raw bytes from s3a:// paths using boto3."""
     try:
         import boto3
         from botocore.client import Config
@@ -252,6 +271,7 @@ def _read_bytes_boto3(
 
 
 def _clean_payload(payload: bytes) -> str:
+    """Normalize payloads by stripping null bytes, BOM, and whitespace."""
     text = payload.decode("utf-8", errors="replace")
     return text.replace("\x00", "").lstrip("\ufeff").strip()
 
@@ -259,6 +279,7 @@ def _clean_payload(payload: bytes) -> str:
 def _log_empty_payload(
     logger: logging.Logger, path_str: str, payload: bytes, source: str
 ) -> None:
+    """Log diagnostics for payloads that become empty after cleanup."""
     size = len(payload)
     null_count = payload.count(b"\x00")
     preview = payload[:32].hex()

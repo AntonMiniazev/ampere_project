@@ -1,3 +1,5 @@
+"""Extract source tables to raw landing (parquet + manifest + success marker)."""
+
 import argparse
 import hashlib
 import json
@@ -27,6 +29,7 @@ APP_NAME = "source-to-raw-etl"
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse CLI args for source-to-raw extraction."""
     parser = argparse.ArgumentParser(
         description="Extract source tables to MinIO-backed parquet."
     )
@@ -147,6 +150,7 @@ def _build_where_clause(
     watermark_from: Optional[datetime],
     watermark_to: Optional[datetime],
 ) -> Optional[str]:
+    """Build a WHERE clause for incremental pulls based on partition strategy."""
     if mode != "incremental":
         return None
 
@@ -173,6 +177,7 @@ def _build_where_clause(
 
 
 def _build_dbtable(schema: str, table: str, where_clause: Optional[str]) -> str:
+    """Build a JDBC dbtable string, optionally wrapping a filtered subquery."""
     source_table = f'"{schema}"."{table}"'
     if where_clause:
         return f"(SELECT * FROM {source_table} WHERE {where_clause}) AS src"
@@ -254,6 +259,7 @@ def _write_batch(
     base_columns: list[str],
     logger: logging.Logger,
 ) -> dict:
+    """Write parquet output plus manifest and _SUCCESS for a single batch."""
     row_count = df.count()
     df.write.mode("overwrite").parquet(output_path)
 
@@ -320,6 +326,7 @@ def _write_batch(
 
 
 def main() -> None:
+    """Entry point for source-to-raw extraction."""
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 
@@ -450,6 +457,7 @@ def main() -> None:
             ),
             256,
         )
+        # Add technical columns used for lineage, idempotency, and audits.
         df = df.withColumn("_row_hash", hash_expr)
         df = df.withColumn("_ingest_run_id", F.lit(run_id))
         df = df.withColumn("_ingest_ts", F.current_timestamp())

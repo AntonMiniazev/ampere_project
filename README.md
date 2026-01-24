@@ -26,8 +26,8 @@ Deployment reference: follow the completed infra runbook from https://github.com
 ### 0) Platform and cluster
 - [x] K8s cluster (control plane + workers)
 - [x] Airflow, MinIO, Postgres, Spark Operator, monitoring stack
-- [ ] Delta Lake OSS runtime config
-- [ ] Networking polish (ingress, TLS, hostname routing)
+- [ ] Delta Lake config
+- [x] Networking polish (ingress, TLS, hostname routing)
 
 ### 1) Pre-raw generation (Postgres)
 - [x] Generator code + Docker images
@@ -45,8 +45,8 @@ Deployment reference: follow the completed infra runbook from https://github.com
 
 ### 3) Raw -> Bronze Delta
 - [ ] Spark jobs for deduplication, type normalization, and schema evolution
-- [ ] Delta Lake tables in MinIO
-- [ ] Airflow DAG for bronze load and backfill
+- [x] Delta Lake tables in MinIO
+- [x] Airflow DAG for bronze load and backfill
 
 ### 4) Bronze -> Silver Delta
 - [ ] Conformed dimensions + SCD handling
