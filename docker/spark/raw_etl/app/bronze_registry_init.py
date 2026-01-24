@@ -201,11 +201,17 @@ def _try_create_registry_without_spark(
 
 def main() -> None:
     """Initialize the bronze registry table, avoiding Spark when possible."""
+    # Step 1: Initialize logging and parse CLI arguments.
+    # This keeps the driver output consistent and captures the registry inputs early.
+    # The expected outcome is a fully populated args object before touching storage.
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 
     args = _parse_args()
 
+    # Step 2: Resolve MinIO credentials and registry schema metadata.
+    # These values must be present to check existence and optionally create the table.
+    # The expected outcome is a valid endpoint, credentials, and schema path.
     minio_endpoint = get_env(
         "MINIO_S3_ENDPOINT", "http://minio.ampere.svc.cluster.local:9000"
     )
@@ -221,6 +227,9 @@ def main() -> None:
     )
     registry_schema = _load_registry_schema(schema_path)
 
+    # Step 3: Fast existence check against the Delta log without Spark.
+    # This avoids driver startup cost when the registry already exists.
+    # The expected outcome is a boolean or None when the check cannot be performed.
     # Fast path: check for _delta_log without Spark.
     exists = _delta_log_exists(
         registry_path,
@@ -233,6 +242,9 @@ def main() -> None:
         logger.info("Registry table already exists: %s", registry_path)
         return
 
+    # Step 4: Attempt a fast delta-rs init when the registry is missing.
+    # This writes an empty Delta table directly to storage for quick bootstrap.
+    # The expected outcome is a successful creation without Spark when libraries exist.
     if exists is False:
         # Try to create with delta-rs for a faster init when available.
         if _try_create_registry_without_spark(
@@ -245,6 +257,9 @@ def main() -> None:
         ):
             return
 
+    # Step 5: Fall back to Spark-based initialization when needed.
+    # This guarantees registry creation even when delta-rs or boto3 are unavailable.
+    # The expected outcome is an empty Delta table partitioned by source_table.
     if DeltaTable is None:
         raise ImportError("delta-spark is required for Spark-based registry init.")
 

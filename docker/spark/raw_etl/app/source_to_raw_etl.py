@@ -29,7 +29,14 @@ APP_NAME = "source-to-raw-etl"
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse CLI args for source-to-raw extraction."""
+    """Parse CLI args for source-to-raw extraction.
+
+    Example CLI inputs:
+        --tables "orders,customers"
+        --mode incremental
+        --partition-key event_date
+        --run-date "2026-01-24"
+    """
     parser = argparse.ArgumentParser(
         description="Extract source tables to MinIO-backed parquet."
     )
@@ -107,12 +114,23 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _sanitize_run_id(value: str) -> str:
+    """Normalize run_id to a safe folder name.
+
+    Args:
+        value: Raw run id, e.g. "manual__2026-01-24T12:00:00+00:00".
+    """
     if not value:
         return value
     return re.sub(r"[^a-zA-Z0-9._-]", "_", value)
 
 
 def _date_range(run_date: date, lookback_days: int) -> tuple[date, date, list[date]]:
+    """Return [start, end) window and the list of dates in the window.
+
+    Args:
+        run_date: Logical run date, e.g. date(2026, 1, 24).
+        lookback_days: Lookback size, e.g. 2.
+    """
     if lookback_days < 1:
         lookback_days = 1
     end_date = run_date + timedelta(days=1)
@@ -124,17 +142,33 @@ def _date_range(run_date: date, lookback_days: int) -> tuple[date, date, list[da
 
 
 def _format_ts(value: datetime) -> str:
+    """Format a datetime in ISO-8601 with timezone awareness.
+
+    Args:
+        value: Datetime value, e.g. datetime(2026, 1, 24, tzinfo=UTC).
+    """
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat()
 
 
 def _parse_bool(value: str) -> bool:
+    """Parse common truthy strings into a boolean.
+
+    Args:
+        value: Boolean-like string, e.g. "true", "1", "yes".
+    """
     normalized = value.strip().lower()
     return normalized in {"1", "true", "yes", "y", "on"}
 
 
 def _format_date_window(start_date: date, end_date: date) -> tuple[str, str]:
+    """Build UTC window timestamps for a [start, end) date range.
+
+    Args:
+        start_date: Start date, e.g. date(2026, 1, 23).
+        end_date: End date, e.g. date(2026, 1, 25).
+    """
     start_ts = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_ts = datetime.combine(end_date, datetime.min.time(), tzinfo=timezone.utc)
     return _format_ts(start_ts), _format_ts(end_ts)
@@ -150,7 +184,18 @@ def _build_where_clause(
     watermark_from: Optional[datetime],
     watermark_to: Optional[datetime],
 ) -> Optional[str]:
-    """Build a WHERE clause for incremental pulls based on partition strategy."""
+    """Build a WHERE clause for incremental pulls based on partition strategy.
+
+    Args:
+        mode: Extract mode, e.g. "snapshot" or "incremental".
+        partition_key: Partition type, e.g. "extract_date" or "event_date".
+        run_date: Logical run date, e.g. date(2026, 1, 24).
+        event_date_column: Event column, e.g. "order_date".
+        watermark_column: Watermark column, e.g. "updated_at".
+        lookback_days: Lookback size, e.g. 2.
+        watermark_from: Lower watermark, e.g. datetime(2026, 1, 23, tzinfo=UTC).
+        watermark_to: Upper watermark, e.g. datetime(2026, 1, 24, tzinfo=UTC).
+    """
     if mode != "incremental":
         return None
 
@@ -177,7 +222,13 @@ def _build_where_clause(
 
 
 def _build_dbtable(schema: str, table: str, where_clause: Optional[str]) -> str:
-    """Build a JDBC dbtable string, optionally wrapping a filtered subquery."""
+    """Build a JDBC dbtable string, optionally wrapping a filtered subquery.
+
+    Args:
+        schema: Source schema, e.g. "source".
+        table: Table name, e.g. "orders".
+        where_clause: Optional SQL filter, e.g. "updated_at > TIMESTAMPTZ ...".
+    """
     source_table = f'"{schema}"."{table}"'
     if where_clause:
         return f"(SELECT * FROM {source_table} WHERE {where_clause}) AS src"
@@ -185,10 +236,20 @@ def _build_dbtable(schema: str, table: str, where_clause: Optional[str]) -> str:
 
 
 def _hash_schema(schema_json: str) -> str:
+    """Hash a Spark schema JSON string.
+
+    Args:
+        schema_json: Spark schema JSON, e.g. df.schema.json().
+    """
     return hashlib.md5(schema_json.encode("utf-8")).hexdigest()
 
 
 def _compute_batch_checksum(files: list[dict]) -> str:
+    """Compute a stable checksum across file entries.
+
+    Args:
+        files: File list, e.g. [{"path": "...", "checksum": "..."}].
+    """
     ordered = sorted(files, key=lambda entry: entry.get("path", ""))
     payload = "|".join(
         f"{entry.get('path','')}:{entry.get('checksum','')}" for entry in ordered
@@ -199,6 +260,12 @@ def _compute_batch_checksum(files: list[dict]) -> str:
 def _collect_file_details(
     spark: SparkSession, output_path: str
 ) -> list[dict]:
+    """Collect file-level metadata for part files in an output folder.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        output_path: Output folder, e.g. "s3a://ampere-raw/.../run_id=...".
+    """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(output_path)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -227,6 +294,12 @@ def _collect_file_details(
 
 
 def _collect_stats(df, base_columns: list[str]) -> tuple[dict, dict]:
+    """Compute null counts and min/max stats for each column.
+
+    Args:
+        df: Spark DataFrame, e.g. spark.read.parquet("s3a://...").
+        base_columns: Column names, e.g. ["id", "created_at"].
+    """
     null_exprs = [
         F.sum(F.when(F.col(col_name).isNull(), 1).otherwise(0)).alias(
             f"{col_name}__nulls"
@@ -258,9 +331,29 @@ def _write_batch(
     manifest_context: dict,
     base_columns: list[str],
     logger: logging.Logger,
+    allow_empty: bool = True,
 ) -> dict:
-    """Write parquet output plus manifest and _SUCCESS for a single batch."""
+    """Write parquet output plus manifest and _SUCCESS for a single batch.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        df: Source DataFrame, e.g. spark.read.jdbc(...).
+        output_path: Output folder, e.g. "s3a://ampere-raw/.../run_id=...".
+        manifest_context: Base manifest metadata, e.g. {"source_table": "orders"}.
+        base_columns: Base column list, e.g. ["id", "created_at"].
+        logger: Logger instance, e.g. logging.getLogger("source-to-raw-etl").
+        allow_empty: Whether to emit empty batches, e.g. False for event partitions.
+    """
     row_count = df.count()
+    if row_count == 0 and not allow_empty:
+        logger.info("Skipping empty batch at %s", output_path)
+        return {
+            "success": False,
+            "manifest_path": output_path.rstrip("/") + "/_manifest.json",
+            "row_count": row_count,
+            "file_count": 0,
+            "empty": True,
+        }
     df.write.mode("overwrite").parquet(output_path)
 
     files = _collect_file_details(spark, output_path)
@@ -325,8 +418,39 @@ def _write_batch(
     }
 
 
+def _has_existing_incremental(
+    spark: SparkSession, output_base: str
+) -> bool:
+    """Return True when incremental data already exists for a table.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        output_base: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+    """
+    return exists(spark, f"{output_base}/mode=incremental")
+
+
+def _collect_event_dates(df, event_col: str) -> list[str]:
+    """Collect distinct event dates from the DataFrame.
+
+    Args:
+        df: Spark DataFrame, e.g. spark.read.jdbc(...).
+        event_col: Event column name, e.g. "order_date".
+    """
+    rows = (
+        df.select(F.to_date(F.col(event_col)).alias("event_date"))
+        .where(F.col("event_date").isNotNull())
+        .distinct()
+        .collect()
+    )
+    return sorted({row.event_date.isoformat() for row in rows if row.event_date})
+
+
 def main() -> None:
-    """Entry point for source-to-raw extraction."""
+    """Extract source tables to raw landing parquet with manifests and state."""
+    # Step 1: Initialize logging and parse CLI inputs for the run.
+    # This makes sure run_date, mode, and partition settings are resolved consistently.
+    # The expected outcome is a stable run_id and validated arguments before work begins.
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 
@@ -339,6 +463,9 @@ def main() -> None:
     run_date = date.fromisoformat(run_date_str)
     run_id = _sanitize_run_id(args.run_id or str(uuid.uuid4()))
 
+    # Step 2: Resolve per-run configuration and credentials.
+    # This prepares event/watermark settings and verifies DB/MinIO secrets.
+    # The expected outcome is non-empty credentials and normalized inputs.
     event_date_column = args.event_date_column.strip() or None
     watermark_column = args.watermark_column.strip() or None
     lookback_days = max(args.lookback_days, 0)
@@ -362,6 +489,9 @@ def main() -> None:
     if not minio_access_key or not minio_secret_key:
         raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
 
+    # Step 3: Build the table list and optional per-table config.
+    # This allows a single job to handle multiple tables with overrides.
+    # The expected outcome is a non-empty table list before starting Spark.
     table_list = []
     if args.tables:
         table_list = [t.strip() for t in args.tables.split(",") if t.strip()]
@@ -389,6 +519,9 @@ def main() -> None:
     )
     logger.info("MinIO endpoint=%s bucket=%s", minio_endpoint, args.bucket)
 
+    # Step 4: Initialize Spark, configure S3, and build the JDBC URL.
+    # This sets the execution context used by every table extract.
+    # The expected outcome is a ready SparkSession and valid JDBC target.
     spark = SparkSession.builder.appName(args.app_name).getOrCreate()
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
@@ -397,6 +530,9 @@ def main() -> None:
     ingest_ts_utc = datetime.now(timezone.utc).isoformat()
 
     for table in table_list:
+        # Step 5: Resolve per-table settings and detect initial-load conditions.
+        # This decides how we filter incremental loads and whether to pull full history.
+        # The expected outcome is a clear per-table extraction strategy before reading.
         table_meta = table_config.get(table, {})
         table_event_col = table_meta.get("event_date_column") or event_date_column
         table_watermark_col = table_meta.get("watermark_column") or watermark_column
@@ -423,16 +559,33 @@ def main() -> None:
             if table_watermark_from is None:
                 table_watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
 
-        where_clause = _build_where_clause(
-            args.mode,
-            args.partition_key,
-            run_date,
-            table_event_col,
-            table_watermark_col,
-            lookback_days,
-            table_watermark_from,
-            table_watermark_to,
+        output_base = table_base_path(
+            args.bucket, args.output_prefix, args.schema, table
         )
+        initial_event_load = False
+        if args.mode == "incremental" and args.partition_key == "event_date":
+            if not _has_existing_incremental(spark, output_base):
+                initial_event_load = True
+                logger.info(
+                    "Initial event load detected; extracting full table for %s",
+                    table,
+                )
+
+        # Step 6: Build the query filter and read source data via JDBC.
+        # This ensures we only read the required slice when incrementing.
+        # The expected outcome is a DataFrame covering the intended window.
+        where_clause = None
+        if not initial_event_load:
+            where_clause = _build_where_clause(
+                args.mode,
+                args.partition_key,
+                run_date,
+                table_event_col,
+                table_watermark_col,
+                lookback_days,
+                table_watermark_from,
+                table_watermark_to,
+            )
         dbtable = _build_dbtable(args.schema, table, where_clause)
 
         logger.info("Reading %s via JDBC", dbtable)
@@ -446,6 +599,9 @@ def main() -> None:
             .load()
         )
 
+        # Step 7: Add technical columns and construct manifest metadata.
+        # This makes raw batches traceable and consistent for downstream validation.
+        # The expected outcome is a DataFrame with lineage fields and a manifest base.
         base_columns = df.columns
         hash_expr = F.sha2(
             F.concat_ws(
@@ -467,9 +623,6 @@ def main() -> None:
             "_op", F.lit("snapshot" if args.mode == "snapshot" else "incremental")
         )
 
-        output_base = table_base_path(
-            args.bucket, args.output_prefix, args.schema, table
-        )
         schema_hash = _hash_schema(df.schema.json())
 
         manifest_base = {
@@ -497,6 +650,9 @@ def main() -> None:
             },
         }
 
+        # Step 8: Write output batches based on the partition strategy.
+        # This emits parquet, manifest, and _SUCCESS markers in the expected paths.
+        # The expected outcome is a complete batch per partition and updated state.
         if args.mode == "snapshot":
             partition_value = run_date_str
             if snapshot_partitioned:
@@ -569,11 +725,22 @@ def main() -> None:
                     "event_date_column is required for event_date batches."
                 )
 
-            _, _, event_dates = _date_range(run_date, lookback_days)
-            event_date_strings = [d.isoformat() for d in event_dates]
+            if initial_event_load:
+                event_date_strings = _collect_event_dates(df, event_col)
+            else:
+                _, _, event_dates = _date_range(run_date, lookback_days)
+                event_date_strings = [d.isoformat() for d in event_dates]
+
             df_with_event_date = df.withColumn(
                 "_event_date", F.to_date(F.col(event_col))
             )
+            missing_event_dates = df_with_event_date.filter(
+                F.col("_event_date").isNull()
+            ).limit(1).count()
+            if missing_event_dates:
+                logger.warning(
+                    "Null event_date detected for %s.%s", args.schema, table
+                )
 
             for event_date in event_date_strings:
                 output_path = (
@@ -584,7 +751,7 @@ def main() -> None:
                     **manifest_base,
                     "event_date": event_date,
                 }
-                if lookback_days > 1:
+                if not initial_event_load and lookback_days > 1:
                     start_date, end_date, _ = _date_range(run_date, lookback_days)
                     manifest_context["lookback_days"] = lookback_days
                     window_from, window_to = _format_date_window(start_date, end_date)
@@ -603,6 +770,7 @@ def main() -> None:
                     manifest_context,
                     base_columns,
                     logger,
+                    allow_empty=False,
                 )
 
         logger.info("ETL completed for %s.%s", args.schema, table)

@@ -423,6 +423,9 @@ def main() -> None:
     The flow loads registry metadata, discovers candidate runs, validates manifests,
     writes Delta data, and appends status rows into the registry.
     """
+    # Step 1: Initialize logging and parse CLI inputs.
+    # This fixes the runtime configuration for tables, groups, and run date.
+    # The expected outcome is a fully populated args object before Spark starts.
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 
@@ -430,6 +433,9 @@ def main() -> None:
     run_date_str = args.run_date or date.today().isoformat()
     run_date = date.fromisoformat(run_date_str)
 
+    # Step 2: Normalize group config and shuffle settings.
+    # This decides how many groups run and which shuffle override each group gets.
+    # The expected outcome is a structured list of groups ready for execution.
     default_shuffle_partitions = (
         args.shuffle_partitions if args.shuffle_partitions > 0 else None
     )
@@ -481,6 +487,9 @@ def main() -> None:
             run_date_str,
         )
 
+    # Step 3: Start Spark and configure MinIO access.
+    # This prepares the session for reading raw data and writing Delta outputs.
+    # The expected outcome is a SparkSession configured with S3A credentials.
     spark = (
         SparkSession.builder.appName(args.app_name)
         .config("spark.sql.session.timeZone", "UTC")
@@ -488,6 +497,9 @@ def main() -> None:
     )
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
 
+    # Step 4: Load the registry table to track applied batches.
+    # This drives idempotency and prevents duplicate loads per partition.
+    # The expected outcome is a Delta-backed DataFrame or None when missing.
     # Registry is the source of truth for applied landing batches.
     registry_path = bronze_registry_path(args.bronze_bucket, args.bronze_prefix)
     schema_path = get_env(
@@ -500,6 +512,9 @@ def main() -> None:
     registry_df = load_registry_table(spark, registry_path)
 
     for group in groups:
+        # Step 5: Apply group-level overrides and resolve tables to process.
+        # This allows per-group tuning (like shuffle partitions) before table work.
+        # The expected outcome is a non-empty table list for the group.
         group_name = group.get("group", "group")
         group_tables = group.get("tables", [])
         if not group_tables:
@@ -520,6 +535,9 @@ def main() -> None:
         )
 
         for table in group_tables:
+            # Step 6: Build per-table context from the registry and state files.
+            # This determines the search window and expected schema/contract.
+            # The expected outcome is a search_start date and applied batch set.
             table_meta = table_config.get(table, {})
             merge_keys = table_meta.get("merge_keys", [])
             raw_base = table_base_path(
@@ -530,7 +548,7 @@ def main() -> None:
             )
     
             table_registry = None
-            applied_run_ids = set()
+            applied_batches = set()
             expected_schema_hash = None
             expected_contract_version = None
             if registry_df is not None:
@@ -539,12 +557,12 @@ def main() -> None:
                     & (F.col("source_schema") == args.schema)
                     & (F.col("source_table") == table)
                 )
-                applied_run_ids = {
-                    row.run_id
+                applied_batches = {
+                    (row.run_id, row.partition_value)
                     for row in table_registry.filter(
                         F.col("status").isin("applied", "skipped")
                     )
-                    .select("run_id")
+                    .select("run_id", "partition_value")
                     .collect()
                 }
                 latest_row = (
@@ -573,6 +591,9 @@ def main() -> None:
                 lookback_days,
             )
 
+            # Step 7: Discover candidate runs and validate manifests.
+            # This filters to batches with _SUCCESS and required metadata.
+            # The expected outcome is an ordered apply queue of valid batches.
             candidates = _candidate_runs(
                 spark, raw_base, partition_key, search_start
             )
@@ -582,7 +603,10 @@ def main() -> None:
     
             apply_queue = []
             for candidate in candidates:
-                if candidate["run_id"] in applied_run_ids:
+                if (
+                    candidate["run_id"],
+                    candidate["partition_value"],
+                ) in applied_batches:
                     continue
                 manifest = read_json(spark, candidate["manifest_path"], logger)
                 if not manifest:
@@ -643,6 +667,9 @@ def main() -> None:
                 ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
                 return (batch["partition_value"], ingest_key, batch["run_id"])
 
+            # Step 8: Apply batches to bronze and record outcomes in the registry.
+            # This writes Delta data and appends apply status for traceability.
+            # The expected outcome is applied or skipped registry rows for each batch.
             for batch in sorted(
                 apply_queue,
                 key=_apply_sort_key,
@@ -682,6 +709,47 @@ def main() -> None:
                             "lookback_days": manifest.get("lookback_days"),
                             "window_from": None,
                             "window_to": None,
+                            "row_count": manifest.get("row_count"),
+                            "file_count": manifest.get("file_count"),
+                        },
+                    )
+                    continue
+
+                if manifest.get("row_count", 0) == 0 or manifest.get("file_count", 0) == 0:
+                    logger.info(
+                        "Skipping empty batch for %s run_id=%s",
+                        table,
+                        manifest.get("run_id", batch["run_id"]),
+                    )
+                    watermark_from = None
+                    watermark_to = None
+                    if manifest.get("watermark"):
+                        watermark_from = manifest["watermark"].get("from")
+                        watermark_to = manifest["watermark"].get("to")
+                    _append_registry_row(
+                        spark,
+                        registry_path,
+                        registry_schema,
+                        {
+                            "source_system": manifest.get("source_system", args.source_system),
+                            "source_schema": manifest.get("source_schema", args.schema),
+                            "source_table": manifest.get("source_table", table),
+                            "run_id": manifest.get("run_id", batch["run_id"]),
+                            "manifest_path": batch["manifest_path"],
+                            "batch_type": manifest.get("batch_type"),
+                            "partition_kind": batch["partition_kind"],
+                            "partition_value": batch["partition_value"],
+                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
+                            "schema_hash": manifest.get("schema_hash"),
+                            "contract_version": manifest.get("contract_version"),
+                            "apply_ts_utc": batch_apply_ts,
+                            "status": "skipped",
+                            "details": "empty batch",
+                            "watermark_from": watermark_from,
+                            "watermark_to": watermark_to,
+                            "lookback_days": manifest.get("lookback_days"),
+                            "window_from": (manifest.get("window") or {}).get("from"),
+                            "window_to": (manifest.get("window") or {}).get("to"),
                             "row_count": manifest.get("row_count"),
                             "file_count": manifest.get("file_count"),
                         },
