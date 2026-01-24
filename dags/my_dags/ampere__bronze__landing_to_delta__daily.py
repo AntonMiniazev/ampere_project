@@ -60,10 +60,10 @@ EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default_var="64m"
 )
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="1"))
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
-    Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="4")
+    Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="2")
 )
 
 SPARK_APP_TEMPLATE = "raw_to_bronze_template.yaml"
