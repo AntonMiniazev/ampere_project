@@ -17,6 +17,8 @@ spec:
     - "{{ params.tables }}"
     - --table-config
     - '{{ params.table_config | tojson }}'
+    - --groups-config
+    - '{{ params.groups_config | tojson }}'
     - --schema
     - {{ params.schema }}
     - --run-date
@@ -39,6 +41,8 @@ spec:
     - "{{ params.watermark_to }}"
     - --lookback-days
     - "{{ params.lookback_days }}"
+    - --shuffle-partitions
+    - "{{ params.shuffle_partitions }}"
     - --bucket
     - {{ params.bucket }}
     - --output-prefix
