@@ -150,31 +150,34 @@ def read_json(
 ) -> Optional[dict]:
     """Read JSON from storage with Hadoop/Spark/boto3 fallbacks."""
     logger = logger or logging.getLogger(__name__)
-    readers = [
-        ("hadoop", lambda: _read_bytes_hadoop(spark, path_str, logger)),
-        ("spark", lambda: _read_bytes_spark(spark, path_str, logger)),
-        ("boto3", lambda: _read_bytes_boto3(path_str, logger)),
-    ]
-    for source, reader in readers:
-        payload = reader()
-        if payload is None:
-            continue
-        cleaned = _clean_payload(payload)
-        if not cleaned:
-            _log_empty_payload(logger, path_str, payload, source)
-            continue
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError as exc:
-            preview = cleaned[:200].replace("\n", "\\n")
-            logger.warning(
-                "Invalid JSON via %s at %s: %s | preview=%s",
-                source,
-                path_str,
-                exc,
-                preview,
-            )
-            continue
+    hadoop_payload = _read_bytes_hadoop(spark, path_str, logger)
+    if hadoop_payload is not None:
+        if _is_all_nulls(hadoop_payload):
+            _log_null_payload(logger, path_str, hadoop_payload, "hadoop")
+            boto_payload = _read_bytes_boto3(path_str, logger)
+            if boto_payload is None or _is_all_nulls(boto_payload):
+                if boto_payload is not None:
+                    _log_null_payload(logger, path_str, boto_payload, "boto3")
+                return None
+            parsed = _try_parse_json(path_str, boto_payload, "boto3", logger)
+            if parsed is not None:
+                return parsed
+            return None
+        parsed = _try_parse_json(path_str, hadoop_payload, "hadoop", logger)
+        if parsed is not None:
+            return parsed
+
+    boto_payload = _read_bytes_boto3(path_str, logger)
+    if boto_payload is not None:
+        parsed = _try_parse_json(path_str, boto_payload, "boto3", logger)
+        if parsed is not None:
+            return parsed
+
+    spark_payload = _read_bytes_spark(spark, path_str, logger)
+    if spark_payload is not None:
+        parsed = _try_parse_json(path_str, spark_payload, "spark", logger)
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -189,7 +192,24 @@ def _read_bytes_hadoop(
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
     if not fs.exists(path):
         return None
+    file_size = None
+    try:
+        file_size = fs.getFileStatus(path).getLen()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to stat JSON at %s: %s", path_str, exc)
     input_stream = fs.open(path)
+    head_bytes = None
+    if file_size and file_size > 0:
+        head_size = min(2048, int(file_size))
+        head_bytes = bytearray(head_size)
+        read_head = input_stream.read(head_bytes)
+        if read_head > 0:
+            head_bytes = head_bytes[:read_head]
+        else:
+            head_bytes = bytearray()
+        if head_bytes and _is_all_nulls(bytes(head_bytes)):
+            input_stream.close()
+            return bytes(head_bytes)
     data = bytearray()
     buffer = jvm.java.nio.ByteBuffer.allocate(8192)
     while True:
@@ -199,6 +219,8 @@ def _read_bytes_hadoop(
         chunk = buffer.array()[:read_bytes]
         data.extend(chunk)
     input_stream.close()
+    if head_bytes:
+        data = head_bytes + data
     return bytes(data)
 
 
@@ -276,6 +298,44 @@ def _clean_payload(payload: bytes) -> str:
     return text.replace("\x00", "").lstrip("\ufeff").strip()
 
 
+def _is_all_nulls(payload: bytes) -> bool:
+    if not payload:
+        return False
+    return payload.count(b"\x00") == len(payload)
+
+
+def _json_kind(path_str: str) -> str:
+    if "_state_" in path_str:
+        return "state"
+    if path_str.endswith("/_manifest.json") or path_str.endswith("_manifest.json"):
+        return "manifest"
+    return "json"
+
+
+def _try_parse_json(
+    path_str: str,
+    payload: bytes,
+    source: str,
+    logger: logging.Logger,
+) -> Optional[dict]:
+    cleaned = _clean_payload(payload)
+    if not cleaned:
+        _log_empty_payload(logger, path_str, payload, source)
+        return None
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        preview = cleaned[:200].replace("\n", "\\n")
+        logger.warning(
+            "Invalid JSON via %s at %s: %s | preview=%s",
+            source,
+            path_str,
+            exc,
+            preview,
+        )
+        return None
+
+
 def _log_empty_payload(
     logger: logging.Logger, path_str: str, payload: bytes, source: str
 ) -> None:
@@ -290,4 +350,19 @@ def _log_empty_payload(
         size,
         null_count,
         preview,
+    )
+
+
+def _log_null_payload(
+    logger: logging.Logger, path_str: str, payload: bytes, source: str
+) -> None:
+    """Log a clear warning for NUL-filled JSON objects."""
+    size = len(payload)
+    kind = _json_kind(path_str)
+    logger.warning(
+        "NUL-filled %s JSON via %s at %s (size=%s)",
+        kind,
+        source,
+        path_str,
+        size,
     )
