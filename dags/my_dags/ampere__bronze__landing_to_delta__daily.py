@@ -155,27 +155,50 @@ with DAG(
         do_xcom_push=False,
     )
 
-    bronze_params = {
-        **base_params,
-        "group": "all",
-        "tables": "",
-        "table_config": {},
-        "groups_config": stream_groups,
-        "stream": "all",
-        "mode": "snapshot",
-        "partition_key": "snapshot_date",
-        "event_date_column": "",
-        "lookback_days": EVENT_LOOKBACK_DAYS,
-        "app_name": "raw-to-bronze-all",
-    }
+    submit_tasks = []
+    tasks_by_group = {}
+    for group in stream_groups:
+        params = {
+            **base_params,
+            "group": group["group"],
+            "tables": ",".join(group["tables"]),
+            "table_config": group["table_config"],
+            "groups_config": [],
+            "stream": group["group"],
+            "mode": group["mode"],
+            "partition_key": group["partition_key"],
+            "event_date_column": group["event_date_column"],
+            "lookback_days": group["lookback_days"],
+            "app_name": f"raw-to-bronze-{group['group']}",
+        }
+        task = SparkKubernetesOperator(
+            task_id=f"run__sparkapp__group_{group['group']}",
+            namespace=SPARK_NAMESPACE,
+            application_file=SPARK_APP_TEMPLATE,
+            params=params,
+            kubernetes_conn_id="kubernetes_default",
+            do_xcom_push=False,
+        )
+        submit_tasks.append(task)
+        tasks_by_group[group["group"]] = task
 
-    bronze_task = SparkKubernetesOperator(
-        task_id="run__sparkapp__groups_all",
-        namespace=SPARK_NAMESPACE,
-        application_file=SPARK_APP_TEMPLATE,
-        params=bronze_params,
-        kubernetes_conn_id="kubernetes_default",
-        do_xcom_push=False,
-    )
+    snapshots_task = tasks_by_group.get("snapshots")
+    other_tasks = [
+        tasks_by_group.get("mutable_dims"),
+        tasks_by_group.get("facts"),
+        tasks_by_group.get("events"),
+    ]
+    other_tasks = [task for task in other_tasks if task is not None]
 
-    start_batch_task >> init_registry_task >> bronze_task >> done_task
+    start_batch_task >> init_registry_task
+    if snapshots_task is not None:
+        init_registry_task >> snapshots_task
+        if other_tasks:
+            snapshots_task >> other_tasks
+            other_tasks >> done_task
+        else:
+            snapshots_task >> done_task
+    elif other_tasks:
+        init_registry_task >> other_tasks >> done_task
+    else:
+        init_registry_task >> done_task
