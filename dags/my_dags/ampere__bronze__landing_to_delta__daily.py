@@ -51,25 +51,17 @@ BRONZE_PREFIX = Variable.get("bronze_output_prefix", default_var="bronze")
 SOURCE_SYSTEM = Variable.get("raw_source_system", default_var="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
-DRIVER_CORE_REQUEST = Variable.get(
-    "spark_driver_core_request", default_var="250m"
-)
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="250m")
 DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="512m")
-DRIVER_MEMORY_OVERHEAD = Variable.get(
-    "spark_driver_memory_overhead", default_var="64m"
-)
+DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default_var="64m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
-EXECUTOR_CORE_REQUEST = Variable.get(
-    "spark_executor_core_request", default_var="250m"
-)
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default_var="64m"
 )
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
-SHUFFLE_PARTITIONS = int(
-    Variable.get("spark_sql_shuffle_partitions", default_var="4")
-)
+SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default_var="4"))
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="2")
@@ -81,7 +73,6 @@ SPARK_TEMPLATE_PATHS = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[1] / "sparkapplications"),
 ]
-
 
 
 def _minio_ssl_enabled(endpoint: str) -> str:
@@ -196,7 +187,7 @@ with DAG(
         "max_active_runs": 1,
         "retries": 0,
     },
-    schedule=None,
+    schedule="0 6 * * *",
     start_date=datetime.now() - timedelta(days=1),
     tags=[
         "layer:bronze",
@@ -224,9 +215,7 @@ with DAG(
     stream_groups = build_bronze_stream_groups(EVENT_LOOKBACK_DAYS)
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
-        group["shuffle_partitions"] = (
-            1 if name == "snapshots" else SHUFFLE_PARTITIONS
-        )
+        group["shuffle_partitions"] = 1 if name == "snapshots" else SHUFFLE_PARTITIONS
 
     registry_check = BranchPythonOperator(
         task_id="run__sparkapp__registry_check",

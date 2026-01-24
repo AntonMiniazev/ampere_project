@@ -117,7 +117,7 @@ def _base_params() -> dict:
 with DAG(
     dag_id=DAG_ID,
     default_args=default_args,
-    schedule=None,
+    schedule="0 4 * * *",
     start_date=datetime.now() - timedelta(days=1),
     tags=[
         "layer:raw_landing",
