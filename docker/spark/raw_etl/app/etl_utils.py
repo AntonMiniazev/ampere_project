@@ -1,4 +1,4 @@
-"""Shared ETL helpers for Spark + MinIO IO, pathing, and JSON parsing."""
+"""Shared ETL helpers for Spark + MinIO IO, pathing, and metadata validation."""
 
 from __future__ import annotations
 
@@ -9,11 +9,19 @@ import sys
 from datetime import date, datetime
 from typing import Optional
 
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
+
+# --- Logging and environment helpers ---
 
 
 def setup_logging(level: str | None = None) -> None:
-    """Configure root logging using LOG_LEVEL or the provided level."""
+    """Configure root logging for ETL jobs.
+
+    This keeps a consistent format across local runs and Spark driver output.
+
+    Args:
+        level: Optional override for log level, e.g. "INFO", "DEBUG", or None.
+    """
     resolved = level or os.getenv("LOG_LEVEL", "INFO")
     logging.basicConfig(
         level=resolved,
@@ -25,21 +33,38 @@ def setup_logging(level: str | None = None) -> None:
 
 
 def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
-    """Return environment variable or default; empty strings are treated as missing."""
+    """Return an environment variable or fallback when missing.
+
+    Empty strings are treated as missing to avoid accidental blanks.
+
+    Args:
+        name: Environment variable name, e.g. "MINIO_ACCESS_KEY".
+        default: Fallback value, e.g. "minioadmin" or None.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return default
     return value
 
+# --- Parsing helpers ---
+
 
 def parse_date(value: str) -> str:
-    """Validate a YYYY-MM-DD date string and return it unchanged."""
+    """Validate a YYYY-MM-DD date string and return it unchanged.
+
+    Args:
+        value: Date string, e.g. "2026-01-24".
+    """
     datetime.strptime(value, "%Y-%m-%d")
     return value
 
 
 def parse_optional_datetime(value: str) -> Optional[datetime]:
-    """Parse ISO-8601 or YYYY-MM-DD into datetime; returns None for blank input."""
+    """Parse ISO-8601 or YYYY-MM-DD into datetime, or None when blank.
+
+    Args:
+        value: Datetime string, e.g. "2026-01-24T12:00:00Z" or "2026-01-24".
+    """
     if not value:
         return None
     normalized = value.strip()
@@ -51,6 +76,8 @@ def parse_optional_datetime(value: str) -> Optional[datetime]:
         datetime.strptime(normalized, "%Y-%m-%d")
         return datetime.combine(date.fromisoformat(normalized), datetime.min.time())
 
+# --- Spark and storage configuration ---
+
 
 def configure_s3(
     spark: SparkSession,
@@ -58,7 +85,14 @@ def configure_s3(
     access_key: str,
     secret_key: str,
 ) -> None:
-    """Configure Spark's Hadoop S3A settings for MinIO or S3-compatible storage."""
+    """Configure Hadoop S3A settings for MinIO or S3-compatible storage.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        endpoint: S3 endpoint URL, e.g. "http://minio.ampere.svc.cluster.local:9000".
+        access_key: Access key ID, e.g. "minioadmin".
+        secret_key: Secret access key, e.g. "minioadmin".
+    """
     hadoop_conf = spark._jsc.hadoopConfiguration()
     hadoop_conf.set("fs.s3a.endpoint", endpoint)
     hadoop_conf.set("fs.s3a.access.key", access_key)
@@ -74,9 +108,16 @@ def configure_s3(
         "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
     )
 
+# --- Path helpers ---
+
 
 def s3_path(bucket: str, *parts: str) -> str:
-    """Build an s3a:// path from a bucket and optional path parts."""
+    """Build an s3a:// path from a bucket and optional path parts.
+
+    Args:
+        bucket: Bucket name, e.g. "ampere-raw".
+        parts: Path segments, e.g. "postgres-pre-raw", "source", "orders".
+    """
     cleaned = [part.strip("/") for part in parts if part]
     if not cleaned:
         return f"s3a://{bucket}"
@@ -84,7 +125,14 @@ def s3_path(bucket: str, *parts: str) -> str:
 
 
 def table_base_path(bucket: str, prefix: str, schema: str, table: str) -> str:
-    """Return the base path for a table under bucket/prefix/schema."""
+    """Return the base path for a table under bucket/prefix/schema.
+
+    Args:
+        bucket: Bucket name, e.g. "ampere-raw".
+        prefix: Optional prefix, e.g. "postgres-pre-raw".
+        schema: Source schema, e.g. "source".
+        table: Table name, e.g. "orders".
+    """
     prefix = prefix.strip("/")
     if prefix:
         return s3_path(bucket, prefix, schema, table)
@@ -92,22 +140,41 @@ def table_base_path(bucket: str, prefix: str, schema: str, table: str) -> str:
 
 
 def state_path(bucket: str, source_system: str, schema: str, table: str) -> str:
-    """Return the landing _state JSON path for a given table."""
+    """Return the landing _state JSON path for a given table.
+
+    Args:
+        bucket: Bucket name, e.g. "ampere-raw".
+        source_system: Source system id, e.g. "postgres-pre-raw".
+        schema: Source schema, e.g. "source".
+        table: Table name, e.g. "orders".
+    """
     return s3_path(
         bucket, source_system, schema, "_state", f"_state_{table}.json"
     )
 
 
 def bronze_registry_path(bucket: str, prefix: str) -> str:
-    """Return the Delta registry table path for Bronze apply tracking."""
+    """Return the Delta registry table path for bronze apply tracking.
+
+    Args:
+        bucket: Bucket name, e.g. "ampere-bronze".
+        prefix: Optional prefix, e.g. "bronze".
+    """
     prefix = prefix.strip("/")
     if prefix:
         return s3_path(bucket, prefix, "ops", "bronze_apply_registry")
     return s3_path(bucket, "ops", "bronze_apply_registry")
 
+# --- Spark filesystem helpers ---
+
 
 def list_dirs(spark: SparkSession, path_str: str) -> list[str]:
-    """List child directory names under a Hadoop FS path."""
+    """List child directory names under a Hadoop FS path.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: Directory path, e.g. "s3a://ampere-raw/source/orders".
+    """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -118,7 +185,12 @@ def list_dirs(spark: SparkSession, path_str: str) -> list[str]:
 
 
 def exists(spark: SparkSession, path_str: str) -> bool:
-    """Check whether a Hadoop FS path exists."""
+    """Check whether a Hadoop FS path exists.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: Path to check, e.g. "s3a://ampere-raw/.../_manifest.json".
+    """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -126,7 +198,13 @@ def exists(spark: SparkSession, path_str: str) -> bool:
 
 
 def write_bytes(spark: SparkSession, path_str: str, content: bytes) -> None:
-    """Write raw bytes to a Hadoop FS path, overwriting existing data."""
+    """Write raw bytes to a Hadoop FS path, overwriting existing data.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: Target path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        content: File payload, e.g. b"{\"ok\": true}".
+    """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -138,9 +216,18 @@ def write_bytes(spark: SparkSession, path_str: str, content: bytes) -> None:
 def write_marker(
     spark: SparkSession, output_path: str, filename: str, content: bytes
 ) -> None:
-    """Write a marker file within an output directory."""
+    """Write a marker file within an output directory.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        output_path: Directory path, e.g. "s3a://ampere-raw/.../run_id=xyz".
+        filename: Marker name, e.g. "_SUCCESS".
+        content: Marker payload, e.g. b"".
+    """
     path_str = output_path.rstrip("/") + "/" + filename
     write_bytes(spark, path_str, content)
+
+# --- JSON read helpers ---
 
 
 def read_json(
@@ -148,7 +235,15 @@ def read_json(
     path_str: str,
     logger: Optional[logging.Logger] = None,
 ) -> Optional[dict]:
-    """Read JSON from storage with Hadoop/Spark/boto3 fallbacks."""
+    """Read JSON from storage with Hadoop, boto3, and Spark fallbacks.
+
+    This detects NUL-filled payloads and logs diagnostics for bad JSON.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: JSON path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        logger: Logger override, e.g. logging.getLogger("raw-to-bronze").
+    """
     logger = logger or logging.getLogger(__name__)
     hadoop_payload = _read_bytes_hadoop(spark, path_str, logger)
     if hadoop_payload is not None:
@@ -186,7 +281,13 @@ def _read_bytes_hadoop(
     path_str: str,
     logger: logging.Logger,
 ) -> Optional[bytes]:
-    """Read raw bytes via Hadoop FS; returns None if the file does not exist."""
+    """Read raw bytes via Hadoop FS; returns None if the file does not exist.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: File path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
+    """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
@@ -229,7 +330,13 @@ def _read_bytes_spark(
     path_str: str,
     logger: logging.Logger,
 ) -> Optional[bytes]:
-    """Read raw bytes via Spark whole-text read; returns None on failure."""
+    """Read raw bytes via Spark whole-text read; returns None on failure.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: File path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
+    """
     try:
         rows = (
             spark.read.option("wholetext", "true").text(path_str).collect()
@@ -249,7 +356,12 @@ def _read_bytes_boto3(
     path_str: str,
     logger: logging.Logger,
 ) -> Optional[bytes]:
-    """Read raw bytes from s3a:// paths using boto3."""
+    """Read raw bytes from s3a:// paths using boto3.
+
+    Args:
+        path_str: File path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
+    """
     try:
         import boto3
         from botocore.client import Config
@@ -293,18 +405,32 @@ def _read_bytes_boto3(
 
 
 def _clean_payload(payload: bytes) -> str:
-    """Normalize payloads by stripping null bytes, BOM, and whitespace."""
+    """Normalize payloads by stripping null bytes, BOM, and whitespace.
+
+    Args:
+        payload: Raw bytes, e.g. b"\x00\x00{...}\n".
+    """
     text = payload.decode("utf-8", errors="replace")
     return text.replace("\x00", "").lstrip("\ufeff").strip()
 
 
 def _is_all_nulls(payload: bytes) -> bool:
+    """Return True when every byte in the payload is NUL.
+
+    Args:
+        payload: Raw bytes, e.g. b"\x00\x00\x00".
+    """
     if not payload:
         return False
     return payload.count(b"\x00") == len(payload)
 
 
 def _json_kind(path_str: str) -> str:
+    """Classify JSON payloads for logging purposes.
+
+    Args:
+        path_str: File path, e.g. "s3a://.../_manifest.json".
+    """
     if "_state_" in path_str:
         return "state"
     if path_str.endswith("/_manifest.json") or path_str.endswith("_manifest.json"):
@@ -318,6 +444,14 @@ def _try_parse_json(
     source: str,
     logger: logging.Logger,
 ) -> Optional[dict]:
+    """Parse JSON payloads with logging on errors.
+
+    Args:
+        path_str: File path, e.g. "s3a://.../_manifest.json".
+        payload: Raw bytes, e.g. b"{\"a\": 1}".
+        source: Reader name, e.g. "hadoop", "boto3", or "spark".
+        logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
+    """
     cleaned = _clean_payload(payload)
     if not cleaned:
         _log_empty_payload(logger, path_str, payload, source)
@@ -339,7 +473,14 @@ def _try_parse_json(
 def _log_empty_payload(
     logger: logging.Logger, path_str: str, payload: bytes, source: str
 ) -> None:
-    """Log diagnostics for payloads that become empty after cleanup."""
+    """Log diagnostics for payloads that become empty after cleanup.
+
+    Args:
+        logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
+        path_str: File path, e.g. "s3a://.../_manifest.json".
+        payload: Raw bytes, e.g. b"" or b"\x00\x00".
+        source: Reader name, e.g. "hadoop".
+    """
     size = len(payload)
     null_count = payload.count(b"\x00")
     preview = payload[:32].hex()
@@ -356,7 +497,14 @@ def _log_empty_payload(
 def _log_null_payload(
     logger: logging.Logger, path_str: str, payload: bytes, source: str
 ) -> None:
-    """Log a clear warning for NUL-filled JSON objects."""
+    """Log a clear warning for NUL-filled JSON objects.
+
+    Args:
+        logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
+        path_str: File path, e.g. "s3a://.../_manifest.json".
+        payload: Raw bytes, e.g. b"\x00\x00".
+        source: Reader name, e.g. "hadoop".
+    """
     size = len(payload)
     kind = _json_kind(path_str)
     logger.warning(
@@ -366,3 +514,119 @@ def _log_null_payload(
         path_str,
         size,
     )
+
+# --- Metadata validation helpers ---
+
+
+def partition_info(manifest: dict) -> tuple[str, str]:
+    """Return (partition_kind, partition_value) from a manifest.
+
+    Args:
+        manifest: Manifest dict, e.g. {"snapshot_date": "2026-01-24"}.
+    """
+    if "snapshot_date" in manifest:
+        return "snapshot_date", manifest["snapshot_date"]
+    if "extract_date" in manifest:
+        return "extract_date", manifest["extract_date"]
+    if "event_date" in manifest:
+        return "event_date", manifest["event_date"]
+    return "", ""
+
+
+def manifest_ok(manifest: dict) -> tuple[bool, str]:
+    """Validate a landing manifest and return (ok, reason).
+
+    This enforces required fields, consistent file counts, and partition metadata.
+
+    Args:
+        manifest: Parsed manifest dict, e.g. {"batch_type": "snapshot", ...}.
+    """
+    required = [
+        "manifest_version",
+        "source_system",
+        "source_schema",
+        "source_table",
+        "contract_name",
+        "contract_version",
+        "run_id",
+        "ingest_ts_utc",
+        "batch_type",
+        "storage_format",
+        "schema_hash",
+        "checksum",
+        "file_count",
+        "row_count",
+        "files",
+        "checks",
+        "min_max",
+        "null_counts",
+        "producer",
+        "source_extract",
+    ]
+    for key in required:
+        if key not in manifest:
+            return False, f"missing {key}"
+        if manifest[key] is None:
+            return False, f"null {key}"
+
+    if manifest.get("batch_type") not in {"snapshot", "incremental"}:
+        return False, "invalid batch_type"
+
+    files = manifest.get("files", [])
+    if not isinstance(files, list) or not files:
+        return False, "missing files"
+    for entry in files:
+        for file_key in ("path", "size_bytes", "row_count", "checksum"):
+            if file_key not in entry:
+                return False, f"missing file.{file_key}"
+
+    if isinstance(manifest.get("file_count"), int) and len(files) != manifest["file_count"]:
+        return False, "file_count mismatch"
+
+    checks = manifest.get("checks", [])
+    if not isinstance(checks, list):
+        return False, "checks not a list"
+    for check in checks:
+        if check.get("status") == "fail":
+            return False, "manifest checks failed"
+
+    partition_kind, _ = partition_info(manifest)
+    if not partition_kind:
+        return False, "missing partition info"
+    if partition_kind == "snapshot_date" and "snapshot_date" not in manifest:
+        return False, "missing snapshot_date"
+    if partition_kind == "extract_date":
+        watermark = manifest.get("watermark")
+        if not isinstance(watermark, dict):
+            return False, "missing watermark"
+        for key in ("column", "from", "to"):
+            if not watermark.get(key):
+                return False, f"missing watermark.{key}"
+    if partition_kind == "event_date":
+        lookback_days = manifest.get("lookback_days")
+        if lookback_days:
+            window = manifest.get("window") or {}
+            if not window.get("from") or not window.get("to"):
+                return False, "missing window"
+            if not manifest.get("event_dates_covered"):
+                return False, "missing event_dates_covered"
+
+    return True, "ok"
+
+
+def load_registry_table(
+    spark: SparkSession, path_str: str
+) -> Optional[DataFrame]:
+    """Load a Delta registry table when the path is a Delta table.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: Table path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+    """
+    try:
+        from delta.tables import DeltaTable
+    except Exception:
+        return None
+    if DeltaTable.isDeltaTable(spark, path_str):
+        return spark.read.format("delta").load(path_str)
+    return None

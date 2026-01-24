@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import logging
+import os
 from pathlib import Path
 
 from airflow import DAG
 from airflow.models import Variable
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.operators.python import BranchPythonOperator
+from airflow.operators.empty import EmptyOperator
+from airflow.utils.trigger_rule import TriggerRule
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
@@ -37,6 +42,7 @@ MINIO_ENDPOINT = Variable.get(
     "minio_s3_endpoint",
     default_var="http://minio.ampere.svc.cluster.local:9000",
 )
+MINIO_CONN_ID = Variable.get("minio_conn_id", default_var="minio_conn")
 SCHEMA = Variable.get("pg_schema", default_var="source")
 RAW_BUCKET = Variable.get("minio_raw_bucket", default_var="ampere-raw")
 RAW_PREFIX = Variable.get("raw_output_prefix", default_var="postgres-pre-raw")
@@ -61,6 +67,9 @@ EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default_var="64m"
 )
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
+SHUFFLE_PARTITIONS = int(
+    Variable.get("spark_sql_shuffle_partitions", default_var="4")
+)
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="2")
@@ -87,6 +96,67 @@ def done() -> None:
     print("##### done #####")
 
 
+def _registry_exists() -> bool:
+    """Check for the registry Delta log in MinIO via Airflow or env credentials."""
+    logger = logging.getLogger(DAG_ID)
+    prefix = BRONZE_PREFIX.strip("/")
+    delta_prefix = "ops/bronze_apply_registry/_delta_log/"
+    if prefix:
+        delta_prefix = f"{prefix}/{delta_prefix}"
+
+    try:
+        from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("S3Hook unavailable for registry check: %s", exc)
+    else:
+        try:
+            s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
+            client = s3.get_conn()
+            response = client.list_objects_v2(
+                Bucket=BRONZE_BUCKET, Prefix=delta_prefix, MaxKeys=1
+            )
+            return bool(response.get("Contents"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Registry check via S3Hook failed: %s", exc)
+
+    access_key = Variable.get("minio_access_key", default_var=None) or os.getenv(
+        "MINIO_ACCESS_KEY"
+    )
+    secret_key = Variable.get("minio_secret_key", default_var=None) or os.getenv(
+        "MINIO_SECRET_KEY"
+    )
+    if not access_key or not secret_key:
+        logger.warning("Missing MinIO creds; running registry init.")
+        return False
+    try:
+        import boto3
+        from botocore.client import Config
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("boto3 unavailable for registry check: %s", exc)
+        return False
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=MINIO_ENDPOINT,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(signature_version="s3v4"),
+        region_name="us-east-1",
+    )
+    response = client.list_objects_v2(
+        Bucket=BRONZE_BUCKET, Prefix=delta_prefix, MaxKeys=1
+    )
+    return bool(response.get("Contents"))
+
+
+def _select_registry_path() -> str:
+    return (
+        "skip__sparkapp__registry_init"
+        if _registry_exists()
+        else "run__sparkapp__registry_init"
+    )
+
+
 def _base_params() -> dict:
     return {
         "namespace": SPARK_NAMESPACE,
@@ -110,6 +180,7 @@ def _base_params() -> dict:
         "executor_memory": EXECUTOR_MEMORY,
         "executor_memory_overhead": EXECUTOR_MEMORY_OVERHEAD,
         "executor_instances": EXECUTOR_INSTANCES,
+        "shuffle_partitions": SHUFFLE_PARTITIONS,
     }
 
 
@@ -151,6 +222,19 @@ with DAG(
     base_params = _base_params()
 
     stream_groups = build_bronze_stream_groups(EVENT_LOOKBACK_DAYS)
+    group_map = {group["group"]: group for group in stream_groups}
+    for name, group in group_map.items():
+        group["shuffle_partitions"] = (
+            1 if name == "snapshots" else SHUFFLE_PARTITIONS
+        )
+
+    registry_check = BranchPythonOperator(
+        task_id="run__sparkapp__registry_check",
+        python_callable=_select_registry_path,
+    )
+    skip_registry_task = EmptyOperator(
+        task_id="skip__sparkapp__registry_init",
+    )
 
     registry_params = {
         **base_params,
@@ -167,23 +251,33 @@ with DAG(
         do_xcom_push=False,
     )
 
+    registry_ready = EmptyOperator(
+        task_id="run__sparkapp__registry_ready",
+        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
+    )
+
+    group_pairs = [
+        ("snapshots-mutable-dims", ["snapshots", "mutable_dims"]),
+        ("facts-events", ["facts", "events"]),
+    ]
     submit_tasks = []
-    for group in stream_groups:
+    for group_name, group_keys in group_pairs:
+        groups_config = [group_map[key] for key in group_keys if key in group_map]
         params = {
             **base_params,
-            "group": group["group"],
-            "tables": ",".join(group["tables"]),
-            "table_config": group["table_config"],
-            "groups_config": [],
-            "stream": group["group"],
-            "mode": group["mode"],
-            "partition_key": group["partition_key"],
-            "event_date_column": group["event_date_column"],
-            "lookback_days": group["lookback_days"],
-            "app_name": f"raw-to-bronze-{group['group']}",
+            "group": group_name,
+            "tables": "",
+            "table_config": {},
+            "groups_config": groups_config,
+            "stream": group_name,
+            "mode": "snapshot",
+            "partition_key": "snapshot_date",
+            "event_date_column": "",
+            "lookback_days": EVENT_LOOKBACK_DAYS,
+            "app_name": f"raw-to-bronze-{group_name}",
         }
         task = SparkKubernetesOperator(
-            task_id=f"run__sparkapp__group_{group['group']}",
+            task_id=f"run__sparkapp__group_{group_name}",
             namespace=SPARK_NAMESPACE,
             application_file=SPARK_APP_TEMPLATE,
             params=params,
@@ -192,5 +286,8 @@ with DAG(
         )
         submit_tasks.append(task)
 
-    start_batch_task >> init_registry_task >> submit_tasks
+    start_batch_task >> registry_check
+    registry_check >> skip_registry_task >> registry_ready
+    registry_check >> init_registry_task >> registry_ready
+    registry_ready >> submit_tasks
     submit_tasks >> done_task

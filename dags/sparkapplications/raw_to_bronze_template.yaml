@@ -52,6 +52,7 @@ spec:
     spark.ui.enabled: "false"
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+    spark.sql.shuffle.partitions: "{{ params.shuffle_partitions }}"
     spark.kubernetes.driver.memoryOverhead: "{{ params.driver_memory_overhead }}"
     spark.kubernetes.executor.memoryOverhead: "{{ params.executor_memory_overhead }}"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"

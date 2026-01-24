@@ -25,7 +25,13 @@ APP_NAME = "bronze-registry-init"
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse CLI args for registry initialization."""
+    """Parse CLI args for registry initialization.
+
+    Example CLI inputs:
+        --bronze-bucket ampere-bronze
+        --bronze-prefix bronze
+        --app-name bronze-registry-init
+    """
     parser = argparse.ArgumentParser(
         description="Initialize bronze apply registry Delta table."
     )
@@ -36,7 +42,11 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_registry_schema(schema_path: str) -> StructType:
-    """Load the registry schema JSON template into a Spark StructType."""
+    """Load the registry schema JSON template into a Spark StructType.
+
+    Args:
+        schema_path: JSON schema path, e.g. "/opt/spark/app/bronze_apply_registry_schema.json".
+    """
     data = json.loads(Path(schema_path).read_text())
     type_map = {"string": StringType(), "int": IntegerType()}
     fields = []
@@ -57,7 +67,11 @@ def _load_registry_schema(schema_path: str) -> StructType:
 
 
 def _parse_s3a_path(path_str: str) -> tuple[str, str]:
-    """Split an s3a://bucket/key path into bucket and key prefix."""
+    """Split an s3a://bucket/key path into bucket and key prefix.
+
+    Args:
+        path_str: S3A path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+    """
     if not path_str.startswith("s3a://"):
         raise ValueError(f"Expected s3a:// path, got {path_str}")
     bucket_key = path_str[len("s3a://") :]
@@ -74,7 +88,15 @@ def _delta_log_exists(
     secret_key: str,
     logger: logging.Logger,
 ) -> Optional[bool]:
-    """Check for _delta_log objects via boto3; returns None if unavailable."""
+    """Check for _delta_log objects via boto3; returns None if unavailable.
+
+    Args:
+        registry_path: Registry path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+        endpoint: MinIO endpoint, e.g. "http://minio.ampere.svc.cluster.local:9000".
+        access_key: Access key ID, e.g. "minioadmin".
+        secret_key: Secret access key, e.g. "minioadmin".
+        logger: Logger instance, e.g. logging.getLogger("bronze-registry-init").
+    """
     try:
         import boto3
         from botocore.client import Config
@@ -117,7 +139,16 @@ def _try_create_registry_without_spark(
     secret_key: str,
     logger: logging.Logger,
 ) -> bool:
-    """Attempt to create an empty Delta table using delta-rs if available."""
+    """Attempt to create an empty Delta table using delta-rs if available.
+
+    Args:
+        registry_path: Registry path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+        registry_schema: StructType schema, e.g. StructType([...]).
+        endpoint: MinIO endpoint, e.g. "http://minio.ampere.svc.cluster.local:9000".
+        access_key: Access key ID, e.g. "minioadmin".
+        secret_key: Secret access key, e.g. "minioadmin".
+        logger: Logger instance, e.g. logging.getLogger("bronze-registry-init").
+    """
     try:
         import pyarrow as pa
         from deltalake import write_deltalake
@@ -169,7 +200,7 @@ def _try_create_registry_without_spark(
 
 
 def main() -> None:
-    """Entry point for bronze registry initialization."""
+    """Initialize the bronze registry table, avoiding Spark when possible."""
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 

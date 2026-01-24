@@ -17,8 +17,11 @@ from etl_utils import (
     exists,
     get_env,
     list_dirs,
+    load_registry_table,
+    manifest_ok,
     parse_date,
     parse_optional_datetime,
+    partition_info,
     read_json,
     setup_logging,
     state_path,
@@ -36,7 +39,14 @@ APP_NAME = "raw-to-bronze-etl"
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse CLI args for raw-to-bronze processing."""
+    """Parse CLI args for raw-to-bronze processing.
+
+    Example CLI inputs:
+        --tables "orders,customers"
+        --groups-config '[{"group":"snapshots","tables":["orders"],"shuffle_partitions":1}]'
+        --shuffle-partitions 4
+        --run-date "2026-01-24"
+    """
     parser = argparse.ArgumentParser(
         description="Transform raw landing data to bronze Delta tables."
     )
@@ -105,17 +115,36 @@ def _parse_args() -> argparse.Namespace:
         default="postgres-pre-raw",
         help="Source system identifier",
     )
+    parser.add_argument(
+        "--shuffle-partitions",
+        type=int,
+        default=0,
+        help="Override spark.sql.shuffle.partitions (0 keeps Spark default)",
+    )
     parser.add_argument("--app-name", default=APP_NAME, help="Spark app name")
     parser.add_argument("--image", default="", help="Container image reference")
     return parser.parse_args()
 
 
 def _parse_table_list(raw: str) -> list[str]:
+    """Split a comma-separated table list into clean tokens.
+
+    Args:
+        raw: Comma-separated names, e.g. "orders, customers".
+    """
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
-def _parse_groups_config(raw: str) -> list[dict]:
-    """Parse group config JSON into a normalized list of group dicts."""
+def _parse_groups_config(
+    raw: str,
+    default_shuffle_partitions: Optional[int],
+) -> list[dict]:
+    """Parse group config JSON into a normalized list of group dicts.
+
+    Args:
+        raw: JSON list string, e.g. '[{"group":"snapshots","tables":["orders"]}]'.
+        default_shuffle_partitions: Default override, e.g. 4 or None.
+    """
     if not raw:
         return []
     data = json.loads(raw)
@@ -128,6 +157,13 @@ def _parse_groups_config(raw: str) -> list[dict]:
         tables = item.get("tables", [])
         if isinstance(tables, str):
             tables = _parse_table_list(tables)
+        shuffle_partitions = item.get("shuffle_partitions", default_shuffle_partitions)
+        if shuffle_partitions in ("", None):
+            shuffle_partitions = None
+        else:
+            shuffle_partitions = int(shuffle_partitions)
+            if shuffle_partitions <= 0:
+                shuffle_partitions = None
         group = {
             "group": item.get("group", "group"),
             "mode": item.get("mode", "snapshot"),
@@ -136,12 +172,18 @@ def _parse_groups_config(raw: str) -> list[dict]:
             "lookback_days": int(item.get("lookback_days", 0) or 0),
             "tables": tables,
             "table_config": item.get("table_config", {}) or {},
+            "shuffle_partitions": shuffle_partitions,
         }
         groups.append(group)
     return groups
 
 
 def _load_registry_schema(schema_path: str) -> StructType:
+    """Load the registry schema JSON template into a Spark StructType.
+
+    Args:
+        schema_path: JSON schema path, e.g. "/opt/spark/app/bronze_apply_registry_schema.json".
+    """
     data = json.loads(Path(schema_path).read_text())
     type_map = {
         "string": StringType(),
@@ -167,6 +209,14 @@ def _load_registry_schema(schema_path: str) -> StructType:
 def _append_registry_row(
     spark: SparkSession, path_str: str, schema: StructType, row: dict
 ) -> None:
+    """Append a single apply-registry row with retry on concurrent commit errors.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        path_str: Registry table path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+        schema: Registry schema, e.g. StructType([...]).
+        row: Row data, e.g. {"source_table": "orders", "status": "applied"}.
+    """
     logger = logging.getLogger(APP_NAME)
     df = spark.createDataFrame([row], schema=schema)
     retries = 5
@@ -201,7 +251,13 @@ def _append_registry_row(
 def _list_partitions(
     spark: SparkSession, base_path: str, partition_key: str
 ) -> list[date]:
-    """List available partition dates for a given landing table."""
+    """List available partition dates for a landing table.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+        partition_key: Partition type, e.g. "snapshot_date" or "event_date".
+    """
     mode_path = (
         f"{base_path}/mode=snapshot"
         if partition_key == "snapshot_date"
@@ -223,6 +279,15 @@ def _search_start_date(
     run_date: date,
     lookback_days: int,
 ) -> Optional[date]:
+    """Find the earliest date to consider for new batches.
+
+    Args:
+        partition_key: Partition type, e.g. "snapshot_date", "extract_date", "event_date".
+        registry_df: Registry DataFrame or None, e.g. spark.read.format("delta").load(...).
+        state_last_ingest: Last ingest timestamp, e.g. datetime(2026, 1, 24, tzinfo=UTC).
+        run_date: Run date, e.g. date(2026, 1, 24).
+        lookback_days: Lookback window in days, e.g. 2.
+    """
     registry_date = None
     if registry_df is not None:
         row = registry_df.select(F.max("partition_value").alias("pv")).first()
@@ -257,7 +322,14 @@ def _candidate_runs(
     partition_key: str,
     search_start: Optional[date],
 ) -> list[dict]:
-    """Collect candidate run folders with _SUCCESS and _manifest.json."""
+    """Collect run folders that contain _SUCCESS and _manifest.json.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+        partition_key: Partition type, e.g. "snapshot_date".
+        search_start: Earliest date to consider, e.g. date(2026, 1, 20) or None.
+    """
     candidates = []
     partitions = _list_partitions(spark, base_path, partition_key)
 
@@ -295,105 +367,20 @@ def _candidate_runs(
     return candidates
 
 
-def _manifest_ok(manifest: dict) -> tuple[bool, str]:
-    """Validate manifest structure and required fields; return (ok, reason)."""
-    required = [
-        "manifest_version",
-        "source_system",
-        "source_schema",
-        "source_table",
-        "contract_name",
-        "contract_version",
-        "run_id",
-        "ingest_ts_utc",
-        "batch_type",
-        "storage_format",
-        "schema_hash",
-        "checksum",
-        "file_count",
-        "row_count",
-        "files",
-        "checks",
-        "min_max",
-        "null_counts",
-        "producer",
-        "source_extract",
-    ]
-    for key in required:
-        if key not in manifest:
-            return False, f"missing {key}"
-        if manifest[key] is None:
-            return False, f"null {key}"
-
-    if manifest.get("batch_type") not in {"snapshot", "incremental"}:
-        return False, "invalid batch_type"
-
-    files = manifest.get("files", [])
-    if not isinstance(files, list) or not files:
-        return False, "missing files"
-    for entry in files:
-        for file_key in ("path", "size_bytes", "row_count", "checksum"):
-            if file_key not in entry:
-                return False, f"missing file.{file_key}"
-
-    if isinstance(manifest.get("file_count"), int) and len(files) != manifest["file_count"]:
-        return False, "file_count mismatch"
-
-    checks = manifest.get("checks", [])
-    if not isinstance(checks, list):
-        return False, "checks not a list"
-    for check in checks:
-        if check.get("status") == "fail":
-            return False, "manifest checks failed"
-
-    partition_kind, _ = _partition_info(manifest)
-    if not partition_kind:
-        return False, "missing partition info"
-    if partition_kind == "snapshot_date" and "snapshot_date" not in manifest:
-        return False, "missing snapshot_date"
-    if partition_kind == "extract_date":
-        watermark = manifest.get("watermark")
-        if not isinstance(watermark, dict):
-            return False, "missing watermark"
-        for key in ("column", "from", "to"):
-            if not watermark.get(key):
-                return False, f"missing watermark.{key}"
-    if partition_kind == "event_date":
-        lookback_days = manifest.get("lookback_days")
-        if lookback_days:
-            window = manifest.get("window") or {}
-            if not window.get("from") or not window.get("to"):
-                return False, "missing window"
-            if not manifest.get("event_dates_covered"):
-                return False, "missing event_dates_covered"
-
-    return True, "ok"
-
-
-def _partition_info(manifest: dict) -> tuple[str, str]:
-    """Return (partition_kind, partition_value) from a manifest."""
-    if "snapshot_date" in manifest:
-        return "snapshot_date", manifest["snapshot_date"]
-    if "extract_date" in manifest:
-        return "extract_date", manifest["extract_date"]
-    if "event_date" in manifest:
-        return "event_date", manifest["event_date"]
-    return "", ""
-
-
-def _load_registry_table(spark: SparkSession, path_str: str):
-    if DeltaTable.isDeltaTable(spark, path_str):
-        return spark.read.format("delta").load(path_str)
-    return None
-
-
 def _merge_to_delta(
     spark: SparkSession,
     df,
     target_path: str,
     merge_keys: list[str],
 ) -> None:
-    """Merge or overwrite a Delta table using stable business keys."""
+    """Merge or overwrite a Delta table using stable business keys.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        df: Source DataFrame, e.g. spark.read.parquet("s3a://...").
+        target_path: Delta table path, e.g. "s3a://ampere-bronze/bronze/source/orders".
+        merge_keys: Business keys, e.g. ["order_id"].
+    """
     if DeltaTable.isDeltaTable(spark, target_path):
         delta_table = DeltaTable.forPath(spark, target_path)
         conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
@@ -408,8 +395,34 @@ def _merge_to_delta(
         df.write.format("delta").mode("overwrite").save(target_path)
 
 
+def _apply_group_shuffle(
+    spark: SparkSession,
+    group_name: str,
+    shuffle_partitions: Optional[int],
+) -> None:
+    """Override spark.sql.shuffle.partitions for the current group when set.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        group_name: Group label, e.g. "snapshots" or "facts".
+        shuffle_partitions: Partition count, e.g. 1 or None to keep Spark default.
+    """
+    if not shuffle_partitions:
+        return
+    spark.conf.set("spark.sql.shuffle.partitions", str(shuffle_partitions))
+    logging.getLogger(APP_NAME).info(
+        "Set spark.sql.shuffle.partitions=%s for group=%s",
+        shuffle_partitions,
+        group_name,
+    )
+
+
 def main() -> None:
-    """Entry point for applying raw landing batches to Bronze."""
+    """Apply raw landing batches to bronze Delta tables.
+
+    The flow loads registry metadata, discovers candidate runs, validates manifests,
+    writes Delta data, and appends status rows into the registry.
+    """
     setup_logging()
     logger = logging.getLogger(APP_NAME)
 
@@ -417,7 +430,12 @@ def main() -> None:
     run_date_str = args.run_date or date.today().isoformat()
     run_date = date.fromisoformat(run_date_str)
 
-    groups_config = _parse_groups_config(args.groups_config)
+    default_shuffle_partitions = (
+        args.shuffle_partitions if args.shuffle_partitions > 0 else None
+    )
+    groups_config = _parse_groups_config(
+        args.groups_config, default_shuffle_partitions
+    )
     default_tables = None
     if groups_config:
         groups = groups_config
@@ -435,6 +453,7 @@ def main() -> None:
                 "lookback_days": args.lookback_days,
                 "tables": default_tables,
                 "table_config": table_config,
+                "shuffle_partitions": default_shuffle_partitions,
             }
         ]
 
@@ -478,7 +497,7 @@ def main() -> None:
     registry_schema = _load_registry_schema(schema_path)
     if not DeltaTable.isDeltaTable(spark, registry_path):
         raise ValueError("Registry table is missing; run bronze_registry_init first.")
-    registry_df = _load_registry_table(spark, registry_path)
+    registry_df = load_registry_table(spark, registry_path)
 
     for group in groups:
         group_name = group.get("group", "group")
@@ -486,6 +505,9 @@ def main() -> None:
         if not group_tables:
             logger.info("No tables configured for group %s", group_name)
             continue
+        _apply_group_shuffle(
+            spark, group_name, group.get("shuffle_partitions")
+        )
         table_config = group.get("table_config", {})
         partition_key = group.get("partition_key", "snapshot_date")
         lookback_days = group.get("lookback_days", 0)
@@ -606,8 +628,13 @@ def main() -> None:
             if not apply_queue:
                 logger.info("No new batches to apply for %s", table)
                 continue
-    
+
             def _apply_sort_key(batch: dict) -> tuple:
+                """Sort by partition, ingest timestamp, then run id.
+
+                Args:
+                    batch: Candidate batch dict, e.g. {"partition_value": "2026-01-24"}.
+                """
                 ingest_dt = parse_optional_datetime(
                     batch.get("ingest_ts_utc") or ""
                 )
@@ -623,7 +650,7 @@ def main() -> None:
                 manifest = batch["manifest"]
                 batch_apply_ts = datetime.now(timezone.utc).isoformat()
 
-                ok, reason = _manifest_ok(manifest)
+                ok, reason = manifest_ok(manifest)
                 if not ok:
                     logger.warning(
                         "Manifest validation failed for %s run_id=%s reason=%s",
@@ -737,7 +764,7 @@ def main() -> None:
                     )
                     continue
     
-                partition_kind, partition_value = _partition_info(manifest)
+                partition_kind, partition_value = partition_info(manifest)
                 if not partition_kind:
                     logger.warning(
                         "Missing partition info for %s run_id=%s",
