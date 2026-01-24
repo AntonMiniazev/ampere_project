@@ -278,6 +278,7 @@ def _search_start_date(
     state_last_ingest: Optional[datetime],
     run_date: date,
     lookback_days: int,
+    has_registry_rows: bool,
 ) -> Optional[date]:
     """Find the earliest date to consider for new batches.
 
@@ -287,6 +288,7 @@ def _search_start_date(
         state_last_ingest: Last ingest timestamp, e.g. datetime(2026, 1, 24, tzinfo=UTC).
         run_date: Run date, e.g. date(2026, 1, 24).
         lookback_days: Lookback window in days, e.g. 2.
+        has_registry_rows: Whether registry has any rows for the table, e.g. True.
     """
     registry_date = None
     if registry_df is not None:
@@ -302,6 +304,8 @@ def _search_start_date(
 
     if not candidates:
         if partition_key == "event_date":
+            if not has_registry_rows and state_last_ingest is None:
+                return None
             if lookback_days < 1:
                 lookback_days = 1
             return run_date - timedelta(days=lookback_days - 1)
@@ -571,6 +575,7 @@ def main() -> None:
                 if latest_row:
                     expected_schema_hash = latest_row[0].schema_hash
                     expected_contract_version = latest_row[0].contract_version
+            has_registry_rows = bool(latest_row) if registry_df is not None else False
     
             state_last_ingest = None
             if partition_key == "extract_date":
@@ -589,6 +594,7 @@ def main() -> None:
                 state_last_ingest,
                 run_date,
                 lookback_days,
+                has_registry_rows,
             )
 
             # Step 7: Discover candidate runs and validate manifests.
@@ -941,6 +947,7 @@ def main() -> None:
                         _merge_to_delta(spark, df, bronze_path, merge_keys)
                     else:
                         if merge_keys:
+                            df = df.dropDuplicates(merge_keys)
                             _merge_to_delta(spark, df, bronze_path, merge_keys)
                         else:
                             df.write.format("delta").mode("append").save(bronze_path)

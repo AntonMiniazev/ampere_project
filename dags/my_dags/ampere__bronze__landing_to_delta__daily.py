@@ -52,15 +52,17 @@ SOURCE_SYSTEM = Variable.get("raw_source_system", default_var="postgres-pre-raw"
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="250m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="512m")
-DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default_var="64m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="1g")
+DRIVER_MEMORY_OVERHEAD = Variable.get(
+    "spark_driver_memory_overhead", default_var="128m"
+)
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default_var="64m"
 )
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="2"))
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default_var="4"))
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(

@@ -299,30 +299,18 @@ def _read_bytes_hadoop(
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to stat JSON at %s: %s", path_str, exc)
     input_stream = fs.open(path)
-    head_bytes = None
-    if file_size and file_size > 0:
-        head_size = min(2048, int(file_size))
-        head_bytes = bytearray(head_size)
-        read_head = input_stream.read(head_bytes)
-        if read_head > 0:
-            head_bytes = head_bytes[:read_head]
-        else:
-            head_bytes = bytearray()
-        if head_bytes and _is_all_nulls(bytes(head_bytes)):
-            input_stream.close()
-            return bytes(head_bytes)
-    data = bytearray()
-    buffer = jvm.java.nio.ByteBuffer.allocate(8192)
-    while True:
-        read_bytes = input_stream.read(buffer.array())
-        if read_bytes <= 0:
-            break
-        chunk = buffer.array()[:read_bytes]
-        data.extend(chunk)
-    input_stream.close()
-    if head_bytes:
-        data = head_bytes + data
-    return bytes(data)
+    try:
+        output_stream = jvm.java.io.ByteArrayOutputStream()
+        jvm.org.apache.hadoop.io.IOUtils.copyBytes(
+            input_stream, output_stream, 4096, False
+        )
+        data = output_stream.toByteArray()
+        return bytes(bytearray(data))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Hadoop read failed at %s: %s", path_str, exc)
+        return None
+    finally:
+        input_stream.close()
 
 
 def _read_bytes_spark(
