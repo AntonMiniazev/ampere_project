@@ -2,40 +2,28 @@ import argparse
 import hashlib
 import json
 import logging
-import os
 import re
-import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from pyspark.sql import SparkSession, functions as F
 
+from etl_utils import (
+    configure_s3,
+    exists,
+    get_env,
+    parse_date,
+    parse_optional_datetime,
+    read_json,
+    setup_logging,
+    state_path,
+    table_base_path,
+    write_bytes,
+    write_marker,
+)
+
 APP_NAME = "source-to-raw-etl"
-
-
-def setup_logging(level: str = "INFO") -> None:
-    logging.basicConfig(
-        level=level,
-        format=("%(asctime)s | %(levelname)s | %(name)s | %(message)s"),
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ],
-        force=True,
-    )
-
-
-def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return value
-
-
-def _parse_date(value: str) -> str:
-    datetime.strptime(value, "%Y-%m-%d")
-    return value
 
 
 def _parse_args() -> argparse.Namespace:
@@ -54,7 +42,7 @@ def _parse_args() -> argparse.Namespace:
         help="JSON mapping of table-specific overrides",
     )
     parser.add_argument("--schema", default="source", help="Source schema name")
-    parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
+    parser.add_argument("--run-date", type=parse_date, help="YYYY-MM-DD")
     parser.add_argument(
         "--mode",
         choices=("snapshot", "incremental"),
@@ -115,41 +103,10 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _configure_s3(
-    spark: SparkSession,
-    endpoint: str,
-    access_key: str,
-    secret_key: str,
-) -> None:
-    hadoop_conf = spark._jsc.hadoopConfiguration()
-    hadoop_conf.set("fs.s3a.endpoint", endpoint)
-    hadoop_conf.set("fs.s3a.access.key", access_key)
-    hadoop_conf.set("fs.s3a.secret.key", secret_key)
-    hadoop_conf.set("fs.s3a.path.style.access", "true")
-    hadoop_conf.set(
-        "fs.s3a.connection.ssl.enabled",
-        "true" if endpoint.startswith("https://") else "false",
-    )
-    hadoop_conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-    hadoop_conf.set(
-        "fs.s3a.aws.credentials.provider",
-        "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
-    )
-
-
 def _sanitize_run_id(value: str) -> str:
     if not value:
         return value
     return re.sub(r"[^a-zA-Z0-9._-]", "_", value)
-
-
-def _build_output_base(
-    bucket: str, prefix: str, schema: str, table: str
-) -> str:
-    prefix = prefix.strip("/")
-    if prefix:
-        return f"s3a://{bucket}/{prefix}/{schema}/{table}"
-    return f"s3a://{bucket}/{schema}/{table}"
 
 
 def _date_range(run_date: date, lookback_days: int) -> tuple[date, date, list[date]]:
@@ -161,17 +118,6 @@ def _date_range(run_date: date, lookback_days: int) -> tuple[date, date, list[da
     return start_date, end_date, dates
 
 
-def _parse_optional_datetime(value: str) -> Optional[datetime]:
-    if not value:
-        return None
-    normalized = value.strip()
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
-    try:
-        return datetime.fromisoformat(normalized)
-    except ValueError:
-        datetime.strptime(normalized, "%Y-%m-%d")
-        return datetime.combine(date.fromisoformat(normalized), datetime.min.time())
 
 
 def _format_ts(value: datetime) -> str:
@@ -275,105 +221,6 @@ def _collect_file_details(
     return files
 
 
-def _write_marker(
-    spark: SparkSession, output_path: str, filename: str, content: bytes
-) -> None:
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(
-        output_path.rstrip("/") + "/" + filename
-    )
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    output_stream = fs.create(path, True)
-    output_stream.write(content)
-    output_stream.close()
-
-
-def _write_file(spark: SparkSession, path_str: str, content: bytes) -> None:
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    output_stream = fs.create(path, True)
-    output_stream.write(content)
-    output_stream.close()
-
-
-def _exists(spark: SparkSession, path_str: str) -> bool:
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    return fs.exists(path)
-
-
-def _read_state(spark: SparkSession, path_str: str) -> Optional[dict]:
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    if not fs.exists(path):
-        return None
-    input_stream = fs.open(path)
-    data = bytearray()
-    buffer = jvm.java.nio.ByteBuffer.allocate(8192)
-    while True:
-        read_bytes = input_stream.read(buffer.array())
-        if read_bytes <= 0:
-            break
-        data.extend(buffer.array()[:read_bytes])
-    input_stream.close()
-    return json.loads(data.decode("utf-8"))
-
-
-def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
-    logger = logging.getLogger(APP_NAME)
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    if not fs.exists(path):
-        return None
-    file_size = None
-    try:
-        file_size = fs.getFileStatus(path).getLen()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to stat JSON at %s: %s", path_str, exc)
-    input_stream = fs.open(path)
-    data = bytearray()
-    buffer = jvm.java.nio.ByteBuffer.allocate(8192)
-    while True:
-        read_bytes = input_stream.read(buffer.array())
-        if read_bytes <= 0:
-            break
-        data.extend(buffer.array()[:read_bytes])
-    input_stream.close()
-    if not data:
-        logger.warning("Empty JSON at %s (size=%s)", path_str, file_size)
-        return None
-    payload = data.decode("utf-8", errors="replace")
-    cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
-    if not cleaned:
-        logger.warning("JSON empty after cleanup at %s", path_str)
-        return None
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        preview = cleaned[:200].replace("\n", "\\n")
-        logger.warning(
-            "Invalid JSON at %s (size=%s): %s | preview=%s",
-            path_str,
-            file_size,
-            exc,
-            preview,
-        )
-        return None
-
-
-def _state_path(
-    bucket: str, source_system: str, schema: str, table: str
-) -> str:
-    return (
-        f"s3a://{bucket}/{source_system}/{schema}/_state/"
-        f"_state_{table}.json"
-    )
-
-
 def _collect_stats(df, base_columns: list[str]) -> tuple[dict, dict]:
     null_exprs = [
         F.sum(F.when(F.col(col_name).isNull(), 1).otherwise(0)).alias(
@@ -416,6 +263,12 @@ def _write_batch(
 
     null_counts, min_max = _collect_stats(df, base_columns)
 
+    logger.info(
+        "Batch stats row_count=%s file_count=%s output_path=%s",
+        row_count,
+        file_count,
+        output_path,
+    )
     manifest = {
         **manifest_context,
         "file_count": file_count,
@@ -437,8 +290,8 @@ def _write_batch(
     manifest_payload = json.dumps(manifest, indent=2, sort_keys=True).encode(
         "utf-8"
     )
-    _write_file(spark, manifest_path, manifest_payload)
-    if not _exists(spark, manifest_path):
+    write_bytes(spark, manifest_path, manifest_payload)
+    if not exists(spark, manifest_path):
         logger.error("Manifest write failed: %s", manifest_path)
         return {
             "success": False,
@@ -446,7 +299,7 @@ def _write_batch(
             "row_count": row_count,
             "file_count": file_count,
         }
-    if _read_json(spark, manifest_path) is None:
+    if read_json(spark, manifest_path, logger) is None:
         logger.error("Manifest invalid after write: %s", manifest_path)
         return {
             "success": False,
@@ -463,7 +316,7 @@ def _write_batch(
             "row_count": row_count,
             "file_count": file_count,
         }
-    _write_marker(spark, output_path, "_SUCCESS", b"")
+    write_marker(spark, output_path, "_SUCCESS", b"")
     return {
         "success": True,
         "manifest_path": manifest_path,
@@ -479,7 +332,7 @@ def main() -> None:
     args = _parse_args()
     run_date_str = (
         args.run_date
-        or _get_env("RUN_DATE")
+        or get_env("RUN_DATE")
         or date.today().isoformat()
     )
     run_date = date.fromisoformat(run_date_str)
@@ -488,23 +341,23 @@ def main() -> None:
     event_date_column = args.event_date_column.strip() or None
     watermark_column = args.watermark_column.strip() or None
     lookback_days = max(args.lookback_days, 0)
-    watermark_from = _parse_optional_datetime(args.watermark_from.strip())
-    watermark_to = _parse_optional_datetime(args.watermark_to.strip())
+    watermark_from = parse_optional_datetime(args.watermark_from.strip())
+    watermark_to = parse_optional_datetime(args.watermark_to.strip())
     snapshot_partitioned = _parse_bool(args.snapshot_partitioned)
 
-    pg_host = _get_env("PGHOST", "postgres-service")
-    pg_port = _get_env("PGPORT", "5432")
-    pg_db = _get_env("PGDATABASE", "ampere_db")
-    pg_user = _get_env("PGUSER")
-    pg_password = _get_env("PGPASSWORD")
+    pg_host = get_env("PGHOST", "postgres-service")
+    pg_port = get_env("PGPORT", "5432")
+    pg_db = get_env("PGDATABASE", "ampere_db")
+    pg_user = get_env("PGUSER")
+    pg_password = get_env("PGPASSWORD")
     if not pg_user or not pg_password:
         raise ValueError("Missing PGUSER/PGPASSWORD for source database access.")
 
-    minio_endpoint = _get_env(
+    minio_endpoint = get_env(
         "MINIO_S3_ENDPOINT", "http://minio.ampere.svc.cluster.local:9000"
     )
-    minio_access_key = _get_env("MINIO_ACCESS_KEY")
-    minio_secret_key = _get_env("MINIO_SECRET_KEY")
+    minio_access_key = get_env("MINIO_ACCESS_KEY")
+    minio_secret_key = get_env("MINIO_SECRET_KEY")
     if not minio_access_key or not minio_secret_key:
         raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
 
@@ -527,6 +380,13 @@ def main() -> None:
         args.mode,
     )
     logger.info(
+        "Run config run_id=%s partition_key=%s lookback_days=%s snapshot_partitioned=%s",
+        run_id,
+        args.partition_key,
+        lookback_days,
+        snapshot_partitioned,
+    )
+    logger.info(
         "Postgres target host=%s port=%s db=%s user=%s",
         pg_host,
         pg_port,
@@ -537,7 +397,7 @@ def main() -> None:
 
     spark = SparkSession.builder.appName(args.app_name).getOrCreate()
     spark.conf.set("spark.sql.session.timeZone", "UTC")
-    _configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
+    configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
 
     jdbc_url = f"jdbc:postgresql://{pg_host}:{pg_port}/{pg_db}"
     ingest_ts_utc = datetime.now(timezone.utc).isoformat()
@@ -547,7 +407,7 @@ def main() -> None:
         table_event_col = table_meta.get("event_date_column") or event_date_column
         table_watermark_col = table_meta.get("watermark_column") or watermark_column
 
-        state_path = None
+        state_path_value = None
         table_watermark_from = watermark_from
         table_watermark_to = watermark_to
         if args.mode == "incremental" and args.partition_key == "extract_date":
@@ -555,19 +415,27 @@ def main() -> None:
                 raise ValueError(
                     "watermark_column is required for extract_date batches."
                 )
-            state_path = _state_path(
+            state_path_value = state_path(
                 args.bucket, args.source_system, args.schema, table
             )
             if table_watermark_from is None:
-                state = _read_state(spark, state_path)
+                state = read_json(spark, state_path_value, logger)
                 if state and state.get("last_watermark"):
-                    table_watermark_from = _parse_optional_datetime(
+                    table_watermark_from = parse_optional_datetime(
                         state["last_watermark"]
                     )
             if table_watermark_to is None:
                 table_watermark_to = datetime.now(timezone.utc)
             if table_watermark_from is None:
                 table_watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
+            logger.info(
+                "Watermark for %s column=%s from=%s to=%s state_path=%s",
+                table,
+                table_watermark_col,
+                table_watermark_from,
+                table_watermark_to,
+                state_path_value,
+            )
 
         where_clause = _build_where_clause(
             args.mode,
@@ -581,7 +449,11 @@ def main() -> None:
         )
         dbtable = _build_dbtable(args.schema, table, where_clause)
 
-        logger.info("Reading %s via JDBC", dbtable)
+        logger.info(
+            "Reading %s via JDBC (where_clause=%s)",
+            dbtable,
+            where_clause or "full",
+        )
         df = (
             spark.read.format("jdbc")
             .option("url", jdbc_url)
@@ -612,7 +484,7 @@ def main() -> None:
             "_op", F.lit("snapshot" if args.mode == "snapshot" else "incremental")
         )
 
-        output_base = _build_output_base(
+        output_base = table_base_path(
             args.bucket, args.output_prefix, args.schema, table
         )
         schema_hash = _hash_schema(df.schema.json())
@@ -633,7 +505,7 @@ def main() -> None:
                 "tool": "spark",
                 "image": args.image or "unknown",
                 "app_name": args.app_name,
-                "git_sha": _get_env("GIT_SHA", "unknown"),
+                "git_sha": get_env("GIT_SHA", "unknown"),
             },
             "source_extract": {
                 "query": dbtable,
@@ -651,6 +523,11 @@ def main() -> None:
                 )
             else:
                 output_path = f"{output_base}/mode=snapshot/run_id={run_id}/"
+            logger.info(
+                "Writing snapshot batch for %s to %s",
+                table,
+                output_path,
+            )
             manifest_context = {
                 **manifest_base,
                 "snapshot_date": partition_value,
@@ -668,6 +545,11 @@ def main() -> None:
             output_path = (
                 f"{output_base}/mode=incremental/extract_date={partition_value}/"
                 f"run_id={run_id}/"
+            )
+            logger.info(
+                "Writing extract_date batch for %s to %s",
+                table,
+                output_path,
             )
             manifest_context = {
                 **manifest_base,
@@ -691,7 +573,7 @@ def main() -> None:
                 base_columns,
                 logger,
             )
-            if state_path and batch_result["success"]:
+            if state_path_value and batch_result["success"]:
                 state_payload = {
                     "source_system": args.source_system,
                     "source_schema": args.schema,
@@ -702,9 +584,9 @@ def main() -> None:
                     "last_successful_ingest_ts_utc": ingest_ts_utc,
                     "last_manifest_path": batch_result["manifest_path"],
                 }
-                _write_file(
+                write_bytes(
                     spark,
-                    state_path,
+                    state_path_value,
                     json.dumps(state_payload, indent=2, sort_keys=True).encode("utf-8"),
                 )
         else:
@@ -724,6 +606,12 @@ def main() -> None:
                 output_path = (
                     f"{output_base}/mode=incremental/event_date={event_date}/"
                     f"run_id={run_id}/"
+                )
+                logger.info(
+                    "Writing event_date batch for %s event_date=%s to %s",
+                    table,
+                    event_date,
+                    output_path,
                 )
                 manifest_context = {
                     **manifest_base,

@@ -1,8 +1,6 @@
 import argparse
 import json
 import logging
-import os
-import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +8,20 @@ from typing import Optional
 
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+
+from etl_utils import (
+    bronze_registry_path,
+    configure_s3,
+    exists,
+    get_env,
+    list_dirs,
+    parse_date,
+    parse_optional_datetime,
+    read_json,
+    setup_logging,
+    state_path,
+    table_base_path,
+)
 
 try:
     from delta.tables import DeltaTable
@@ -19,44 +31,6 @@ except ImportError as exc:
     ) from exc
 
 APP_NAME = "raw-to-bronze-etl"
-
-
-def setup_logging(level: str = "INFO") -> None:
-    logging.basicConfig(
-        level=level,
-        format=("%(asctime)s | %(levelname)s | %(name)s | %(message)s"),
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ],
-        force=True,
-    )
-
-
-def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    return value
-
-
-def _parse_date(value: str) -> str:
-    datetime.strptime(value, "%Y-%m-%d")
-    return value
-
-
-
-def _parse_optional_datetime(value: str) -> Optional[datetime]:
-    if not value:
-        return None
-    normalized = value.strip()
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
-    try:
-        return datetime.fromisoformat(normalized)
-    except ValueError:
-        datetime.strptime(normalized, "%Y-%m-%d")
-        return datetime.combine(date.fromisoformat(normalized), datetime.min.time())
 
 
 def _parse_args() -> argparse.Namespace:
@@ -79,7 +53,7 @@ def _parse_args() -> argparse.Namespace:
         help="JSON list with group settings for multi-group execution",
     )
     parser.add_argument("--schema", default="source", help="Source schema name")
-    parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
+    parser.add_argument("--run-date", type=parse_date, help="YYYY-MM-DD")
     parser.add_argument(
         "--mode",
         choices=("snapshot", "incremental"),
@@ -133,28 +107,6 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _configure_s3(
-    spark: SparkSession,
-    endpoint: str,
-    access_key: str,
-    secret_key: str,
-) -> None:
-    hadoop_conf = spark._jsc.hadoopConfiguration()
-    hadoop_conf.set("fs.s3a.endpoint", endpoint)
-    hadoop_conf.set("fs.s3a.access.key", access_key)
-    hadoop_conf.set("fs.s3a.secret.key", secret_key)
-    hadoop_conf.set("fs.s3a.path.style.access", "true")
-    hadoop_conf.set(
-        "fs.s3a.connection.ssl.enabled",
-        "true" if endpoint.startswith("https://") else "false",
-    )
-    hadoop_conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-    hadoop_conf.set(
-        "fs.s3a.aws.credentials.provider",
-        "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
-    )
-
-
 def _parse_table_list(raw: str) -> list[str]:
     return [t.strip() for t in raw.split(",") if t.strip()]
 
@@ -183,40 +135,6 @@ def _parse_groups_config(raw: str) -> list[dict]:
         }
         groups.append(group)
     return groups
-
-
-def _raw_table_base(
-    bucket: str, prefix: str, schema: str, table: str
-) -> str:
-    prefix = prefix.strip("/")
-    if prefix:
-        return f"s3a://{bucket}/{prefix}/{schema}/{table}"
-    return f"s3a://{bucket}/{schema}/{table}"
-
-
-def _bronze_table_path(
-    bucket: str, prefix: str, schema: str, table: str
-) -> str:
-    prefix = prefix.strip("/")
-    if prefix:
-        return f"s3a://{bucket}/{prefix}/{schema}/{table}"
-    return f"s3a://{bucket}/{schema}/{table}"
-
-
-def _raw_state_path(
-    bucket: str, source_system: str, schema: str, table: str
-) -> str:
-    return (
-        f"s3a://{bucket}/{source_system}/{schema}/_state/"
-        f"_state_{table}.json"
-    )
-
-
-def _bronze_registry_path(bucket: str, prefix: str) -> str:
-    prefix = prefix.strip("/")
-    if prefix:
-        return f"s3a://{bucket}/{prefix}/ops/bronze_apply_registry"
-    return f"s3a://{bucket}/ops/bronze_apply_registry"
 
 
 def _load_registry_schema(schema_path: str) -> StructType:
@@ -274,163 +192,6 @@ def _append_registry_row(
         raise last_exc
 
 
-def _list_dirs(spark: SparkSession, path_str: str) -> list[str]:
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    if not fs.exists(path):
-        return []
-    statuses = fs.listStatus(path)
-    return [status.getPath().getName() for status in statuses if status.isDirectory()]
-
-
-def _exists(spark: SparkSession, path_str: str) -> bool:
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    return fs.exists(path)
-
-
-def _read_json(spark: SparkSession, path_str: str) -> Optional[dict]:
-    logger = logging.getLogger(APP_NAME)
-    jvm = spark._jvm
-    path = jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
-    if not fs.exists(path):
-        return None
-    file_size = None
-    try:
-        file_size = fs.getFileStatus(path).getLen()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to stat manifest at %s: %s", path_str, exc)
-    def _read_via_spark() -> Optional[str]:
-        try:
-            rows = spark.read.text(path_str).collect()
-            return "\n".join(row.value for row in rows if row.value is not None)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Spark text read failed at %s: %s", path_str, exc)
-            return None
-    def _read_via_boto3() -> Optional[str]:
-        try:
-            import boto3
-            from botocore.client import Config
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("boto3 unavailable for manifest fallback: %s", exc)
-            return None
-        endpoint = _get_env(
-            "MINIO_S3_ENDPOINT",
-            "http://minio.ampere.svc.cluster.local:9000",
-        )
-        access_key = _get_env("MINIO_ACCESS_KEY")
-        secret_key = _get_env("MINIO_SECRET_KEY")
-        if not access_key or not secret_key:
-            logger.warning("Missing MinIO creds for boto3 manifest fallback.")
-            return None
-        if not path_str.startswith("s3a://"):
-            logger.warning(
-                "Unsupported manifest path for boto3 fallback: %s", path_str
-            )
-            return None
-        bucket_key = path_str[len("s3a://") :]
-        bucket, _, key = bucket_key.partition("/")
-        if not bucket or not key:
-            logger.warning("Invalid manifest path for boto3 fallback: %s", path_str)
-            return None
-        try:
-            client = boto3.client(
-                "s3",
-                endpoint_url=endpoint,
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key,
-                config=Config(signature_version="s3v4"),
-                region_name="us-east-1",
-            )
-            body = client.get_object(Bucket=bucket, Key=key)["Body"].read()
-            if not body:
-                logger.warning("Empty manifest via boto3 at %s", path_str)
-                return None
-            logger.warning("Using boto3 fallback for manifest at %s", path_str)
-            return body.decode("utf-8", errors="replace")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("boto3 manifest read failed at %s: %s", path_str, exc)
-            return None
-
-    input_stream = fs.open(path)
-    data = bytearray()
-    buffer = jvm.java.nio.ByteBuffer.allocate(8192)
-    while True:
-        read_bytes = input_stream.read(buffer.array())
-        if read_bytes < 0:
-            break
-        if read_bytes == 0:
-            break
-        data.extend(buffer.array()[:read_bytes])
-    input_stream.close()
-    if not data:
-        logger.warning(
-            "Empty manifest JSON at %s (size=%s)", path_str, file_size
-        )
-        payload = _read_via_spark()
-        if payload is None:
-            payload = _read_via_boto3()
-        if payload is None:
-            return None
-    else:
-        payload = data.decode("utf-8", errors="replace")
-    cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
-    if not cleaned:
-        logger.warning(
-            "Manifest JSON empty after cleanup at %s (size=%s)", path_str, file_size
-        )
-        payload = _read_via_spark()
-        if payload is None:
-            payload = _read_via_boto3()
-        if payload is None:
-            return None
-        cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
-        if not cleaned:
-            logger.warning(
-                "Manifest JSON still empty after fallbacks at %s (size=%s)",
-                path_str,
-                file_size,
-            )
-            return None
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        preview = cleaned[:200].replace("\n", "\\n")
-        logger.warning(
-            "Invalid manifest JSON at %s (size=%s): %s | preview=%s",
-            path_str,
-            file_size,
-            exc,
-            preview,
-        )
-        payload = _read_via_spark()
-        if payload is None:
-            payload = _read_via_boto3()
-        if payload is None:
-            return None
-        cleaned = payload.replace("\x00", "").lstrip("\ufeff").strip()
-        if not cleaned:
-            logger.warning(
-                "Manifest JSON empty after fallbacks at %s (size=%s)",
-                path_str,
-                file_size,
-            )
-            return None
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError as fallback_exc:
-            preview = cleaned[:200].replace("\n", "\\n")
-            logger.warning(
-                "Invalid manifest JSON after fallbacks at %s (size=%s): %s | preview=%s",
-                path_str,
-                file_size,
-                fallback_exc,
-                preview,
-            )
-            return None
 
 
 def _list_partitions(
@@ -441,7 +202,7 @@ def _list_partitions(
         if partition_key == "snapshot_date"
         else f"{base_path}/mode=incremental"
     )
-    partition_dirs = _list_dirs(spark, mode_path)
+    partition_dirs = list_dirs(spark, mode_path)
     dates = []
     prefix = f"{partition_key}="
     for entry in partition_dirs:
@@ -505,7 +266,7 @@ def _candidate_runs(
             partition_path = (
                 f"{base_path}/mode=incremental/{partition_key}={partition_date.isoformat()}"
             )
-        run_dirs = _list_dirs(spark, partition_path)
+        run_dirs = list_dirs(spark, partition_path)
         for run_dir in run_dirs:
             if not run_dir.startswith("run_id="):
                 continue
@@ -513,9 +274,9 @@ def _candidate_runs(
             run_path = f"{partition_path}/{run_dir}"
             success_path = f"{run_path}/_SUCCESS"
             manifest_path = f"{run_path}/_manifest.json"
-            if not _exists(spark, success_path):
+            if not exists(spark, success_path):
                 continue
-            if not _exists(spark, manifest_path):
+            if not exists(spark, manifest_path):
                 continue
             candidates.append(
                 {
@@ -667,13 +428,23 @@ def main() -> None:
             }
         ]
 
-    minio_endpoint = _get_env(
+    minio_endpoint = get_env(
         "MINIO_S3_ENDPOINT", "http://minio.ampere.svc.cluster.local:9000"
     )
-    minio_access_key = _get_env("MINIO_ACCESS_KEY")
-    minio_secret_key = _get_env("MINIO_SECRET_KEY")
+    minio_access_key = get_env("MINIO_ACCESS_KEY")
+    minio_secret_key = get_env("MINIO_SECRET_KEY")
     if not minio_access_key or not minio_secret_key:
         raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
+    logger.info(
+        "Config raw=%s/%s bronze=%s/%s schema=%s source_system=%s endpoint=%s",
+        args.raw_bucket,
+        args.raw_prefix,
+        args.bronze_bucket,
+        args.bronze_prefix,
+        args.schema,
+        args.source_system,
+        minio_endpoint,
+    )
 
     if groups_config:
         group_names = ",".join([g.get("group", "group") for g in groups])
@@ -696,14 +467,15 @@ def main() -> None:
         .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()
     )
-    _configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
+    configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
 
-    registry_path = _bronze_registry_path(args.bronze_bucket, args.bronze_prefix)
-    schema_path = _get_env(
+    registry_path = bronze_registry_path(args.bronze_bucket, args.bronze_prefix)
+    schema_path = get_env(
         "BRONZE_REGISTRY_SCHEMA_PATH",
         str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
     )
     registry_schema = _load_registry_schema(schema_path)
+    logger.info("Using registry table %s", registry_path)
     if not DeltaTable.isDeltaTable(spark, registry_path):
         raise ValueError("Registry table is missing; run bronze_registry_init first.")
     registry_df = _load_registry_table(spark, registry_path)
@@ -714,17 +486,32 @@ def main() -> None:
         if not group_tables:
             logger.info("No tables configured for group %s", group_name)
             continue
-        logger.info("Processing group %s (%s tables)", group_name, ",".join(group_tables))
         table_config = group.get("table_config", {})
         partition_key = group.get("partition_key", "snapshot_date")
         lookback_days = group.get("lookback_days", 0)
+        logger.info(
+            "Processing group %s (%s tables) partition_key=%s lookback_days=%s",
+            group_name,
+            ",".join(group_tables),
+            partition_key,
+            lookback_days,
+        )
 
         for table in group_tables:
             table_meta = table_config.get(table, {})
             merge_keys = table_meta.get("merge_keys", [])
-            raw_base = _raw_table_base(args.raw_bucket, args.raw_prefix, args.schema, table)
-            bronze_path = _bronze_table_path(
+            raw_base = table_base_path(
+                args.raw_bucket, args.raw_prefix, args.schema, table
+            )
+            bronze_path = table_base_path(
                 args.bronze_bucket, args.bronze_prefix, args.schema, table
+            )
+            logger.info(
+                "Table %s raw_base=%s bronze_path=%s merge_keys=%s",
+                table,
+                raw_base,
+                bronze_path,
+                ",".join(merge_keys) if merge_keys else "none",
             )
     
             table_registry = None
@@ -754,12 +541,12 @@ def main() -> None:
     
             state_last_ingest = None
             if partition_key == "extract_date":
-                state_path = _raw_state_path(
+                state_path_value = state_path(
                     args.raw_bucket, args.source_system, args.schema, table
                 )
-                state = _read_json(spark, state_path)
+                state = read_json(spark, state_path_value, logger)
                 if state and state.get("last_successful_ingest_ts_utc"):
-                    state_last_ingest = _parse_optional_datetime(
+                    state_last_ingest = parse_optional_datetime(
                         state["last_successful_ingest_ts_utc"]
                     )
     
@@ -770,21 +557,40 @@ def main() -> None:
                 run_date,
                 lookback_days,
             )
-    
+            logger.info(
+                "Search start for %s: %s (state_last_ingest=%s)",
+                table,
+                search_start,
+                state_last_ingest,
+            )
+
             candidates = _candidate_runs(
                 spark, raw_base, partition_key, search_start
             )
             if not candidates:
                 logger.info("No candidate batches for %s", table)
                 continue
+            candidate_ids = [candidate["run_id"] for candidate in candidates]
+            logger.info(
+                "Found %s candidate runs for %s (%s)",
+                len(candidates),
+                table,
+                ",".join(candidate_ids[:5]),
+            )
     
             apply_queue = []
             for candidate in candidates:
                 if candidate["run_id"] in applied_run_ids:
                     continue
-                manifest = _read_json(spark, candidate["manifest_path"])
+                manifest = read_json(spark, candidate["manifest_path"], logger)
                 if not manifest:
                     batch_apply_ts = datetime.now(timezone.utc).isoformat()
+                    logger.warning(
+                        "Manifest missing or invalid for %s run_id=%s path=%s",
+                        table,
+                        candidate["run_id"],
+                        candidate["manifest_path"],
+                    )
                     _append_registry_row(
                         spark,
                         registry_path,
@@ -820,9 +626,10 @@ def main() -> None:
             if not apply_queue:
                 logger.info("No new batches to apply for %s", table)
                 continue
+            logger.info("Applying %s new batches for %s", len(apply_queue), table)
     
             def _apply_sort_key(batch: dict) -> tuple:
-                ingest_dt = _parse_optional_datetime(
+                ingest_dt = parse_optional_datetime(
                     batch.get("ingest_ts_utc") or ""
                 )
                 if ingest_dt and ingest_dt.tzinfo is None:
@@ -839,6 +646,12 @@ def main() -> None:
 
                 ok, reason = _manifest_ok(manifest)
                 if not ok:
+                    logger.warning(
+                        "Manifest validation failed for %s run_id=%s reason=%s",
+                        table,
+                        manifest.get("run_id", batch["run_id"]),
+                        reason,
+                    )
                     _append_registry_row(
                         spark,
                         registry_path,
@@ -870,6 +683,13 @@ def main() -> None:
                     continue
     
                 if expected_schema_hash and manifest.get("schema_hash") != expected_schema_hash:
+                    logger.warning(
+                        "Schema hash mismatch for %s run_id=%s expected=%s actual=%s",
+                        table,
+                        manifest.get("run_id"),
+                        expected_schema_hash,
+                        manifest.get("schema_hash"),
+                    )
                     _append_registry_row(
                         spark,
                         registry_path,
@@ -901,6 +721,13 @@ def main() -> None:
                     continue
     
                 if expected_contract_version and manifest.get("contract_version") != expected_contract_version:
+                    logger.warning(
+                        "Contract version mismatch for %s run_id=%s expected=%s actual=%s",
+                        table,
+                        manifest.get("run_id"),
+                        expected_contract_version,
+                        manifest.get("contract_version"),
+                    )
                     _append_registry_row(
                         spark,
                         registry_path,
@@ -933,6 +760,11 @@ def main() -> None:
     
                 partition_kind, partition_value = _partition_info(manifest)
                 if not partition_kind:
+                    logger.warning(
+                        "Missing partition info for %s run_id=%s",
+                        table,
+                        manifest.get("run_id"),
+                    )
                     _append_registry_row(
                         spark,
                         registry_path,
@@ -965,6 +797,11 @@ def main() -> None:
     
                 file_paths = [f["path"] for f in manifest.get("files", []) if f.get("path")]
                 if not file_paths:
+                    logger.warning(
+                        "No file paths in manifest for %s run_id=%s",
+                        table,
+                        manifest.get("run_id"),
+                    )
                     _append_registry_row(
                         spark,
                         registry_path,
