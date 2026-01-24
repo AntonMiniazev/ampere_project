@@ -182,7 +182,7 @@ with DAG(
         }
         submit_tasks.append(
             SparkKubernetesOperator(
-                task_id=f"run__sparkapp__group_{group['group']}",
+                task_id=f"run__sparkapp__group_{group_name}",
                 namespace=SPARK_NAMESPACE,
                 application_file=SPARK_APP_TEMPLATE,
                 params=params,
