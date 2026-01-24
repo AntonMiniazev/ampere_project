@@ -45,12 +45,22 @@ BRONZE_PREFIX = Variable.get("bronze_output_prefix", default_var="bronze")
 SOURCE_SYSTEM = Variable.get("raw_source_system", default_var="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
-DRIVER_CORE_REQUEST = "500m"
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="768m")
+DRIVER_CORE_REQUEST = Variable.get(
+    "spark_driver_core_request", default_var="250m"
+)
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="320m")
+DRIVER_MEMORY_OVERHEAD = Variable.get(
+    "spark_driver_memory_overhead", default_var="128m"
+)
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
-EXECUTOR_CORE_REQUEST = "500m"
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="768m")
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="4"))
+EXECUTOR_CORE_REQUEST = Variable.get(
+    "spark_executor_core_request", default_var="250m"
+)
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="320m")
+EXECUTOR_MEMORY_OVERHEAD = Variable.get(
+    "spark_executor_memory_overhead", default_var="128m"
+)
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="2"))
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="4")
@@ -94,9 +104,11 @@ def _base_params() -> dict:
         "driver_cores": DRIVER_CORES,
         "driver_core_request": DRIVER_CORE_REQUEST,
         "driver_memory": DRIVER_MEMORY,
+        "driver_memory_overhead": DRIVER_MEMORY_OVERHEAD,
         "executor_cores": EXECUTOR_CORES,
         "executor_core_request": EXECUTOR_CORE_REQUEST,
         "executor_memory": EXECUTOR_MEMORY,
+        "executor_memory_overhead": EXECUTOR_MEMORY_OVERHEAD,
         "executor_instances": EXECUTOR_INSTANCES,
     }
 
@@ -156,7 +168,6 @@ with DAG(
     )
 
     submit_tasks = []
-    tasks_by_group = {}
     for group in stream_groups:
         params = {
             **base_params,
@@ -180,25 +191,6 @@ with DAG(
             do_xcom_push=False,
         )
         submit_tasks.append(task)
-        tasks_by_group[group["group"]] = task
 
-    snapshots_task = tasks_by_group.get("snapshots")
-    other_tasks = [
-        tasks_by_group.get("mutable_dims"),
-        tasks_by_group.get("facts"),
-        tasks_by_group.get("events"),
-    ]
-    other_tasks = [task for task in other_tasks if task is not None]
-
-    start_batch_task >> init_registry_task
-    if snapshots_task is not None:
-        init_registry_task >> snapshots_task
-        if other_tasks:
-            snapshots_task >> other_tasks
-            other_tasks >> done_task
-        else:
-            snapshots_task >> done_task
-    elif other_tasks:
-        init_registry_task >> other_tasks >> done_task
-    else:
-        init_registry_task >> done_task
+    start_batch_task >> init_registry_task >> submit_tasks
+    submit_tasks >> done_task

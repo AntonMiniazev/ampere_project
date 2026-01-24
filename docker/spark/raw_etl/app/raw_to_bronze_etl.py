@@ -435,16 +435,6 @@ def main() -> None:
     minio_secret_key = get_env("MINIO_SECRET_KEY")
     if not minio_access_key or not minio_secret_key:
         raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
-    logger.info(
-        "Config raw=%s/%s bronze=%s/%s schema=%s source_system=%s endpoint=%s",
-        args.raw_bucket,
-        args.raw_prefix,
-        args.bronze_bucket,
-        args.bronze_prefix,
-        args.schema,
-        args.source_system,
-        minio_endpoint,
-    )
 
     if groups_config:
         group_names = ",".join([g.get("group", "group") for g in groups])
@@ -475,7 +465,6 @@ def main() -> None:
         str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
     )
     registry_schema = _load_registry_schema(schema_path)
-    logger.info("Using registry table %s", registry_path)
     if not DeltaTable.isDeltaTable(spark, registry_path):
         raise ValueError("Registry table is missing; run bronze_registry_init first.")
     registry_df = _load_registry_table(spark, registry_path)
@@ -505,13 +494,6 @@ def main() -> None:
             )
             bronze_path = table_base_path(
                 args.bronze_bucket, args.bronze_prefix, args.schema, table
-            )
-            logger.info(
-                "Table %s raw_base=%s bronze_path=%s merge_keys=%s",
-                table,
-                raw_base,
-                bronze_path,
-                ",".join(merge_keys) if merge_keys else "none",
             )
     
             table_registry = None
@@ -557,12 +539,6 @@ def main() -> None:
                 run_date,
                 lookback_days,
             )
-            logger.info(
-                "Search start for %s: %s (state_last_ingest=%s)",
-                table,
-                search_start,
-                state_last_ingest,
-            )
 
             candidates = _candidate_runs(
                 spark, raw_base, partition_key, search_start
@@ -570,13 +546,6 @@ def main() -> None:
             if not candidates:
                 logger.info("No candidate batches for %s", table)
                 continue
-            candidate_ids = [candidate["run_id"] for candidate in candidates]
-            logger.info(
-                "Found %s candidate runs for %s (%s)",
-                len(candidates),
-                table,
-                ",".join(candidate_ids[:5]),
-            )
     
             apply_queue = []
             for candidate in candidates:
@@ -626,7 +595,6 @@ def main() -> None:
             if not apply_queue:
                 logger.info("No new batches to apply for %s", table)
                 continue
-            logger.info("Applying %s new batches for %s", len(apply_queue), table)
     
             def _apply_sort_key(batch: dict) -> tuple:
                 ingest_dt = parse_optional_datetime(

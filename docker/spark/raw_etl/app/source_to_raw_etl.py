@@ -263,12 +263,6 @@ def _write_batch(
 
     null_counts, min_max = _collect_stats(df, base_columns)
 
-    logger.info(
-        "Batch stats row_count=%s file_count=%s output_path=%s",
-        row_count,
-        file_count,
-        output_path,
-    )
     manifest = {
         **manifest_context,
         "file_count": file_count,
@@ -380,13 +374,6 @@ def main() -> None:
         args.mode,
     )
     logger.info(
-        "Run config run_id=%s partition_key=%s lookback_days=%s snapshot_partitioned=%s",
-        run_id,
-        args.partition_key,
-        lookback_days,
-        snapshot_partitioned,
-    )
-    logger.info(
         "Postgres target host=%s port=%s db=%s user=%s",
         pg_host,
         pg_port,
@@ -428,14 +415,6 @@ def main() -> None:
                 table_watermark_to = datetime.now(timezone.utc)
             if table_watermark_from is None:
                 table_watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
-            logger.info(
-                "Watermark for %s column=%s from=%s to=%s state_path=%s",
-                table,
-                table_watermark_col,
-                table_watermark_from,
-                table_watermark_to,
-                state_path_value,
-            )
 
         where_clause = _build_where_clause(
             args.mode,
@@ -449,11 +428,7 @@ def main() -> None:
         )
         dbtable = _build_dbtable(args.schema, table, where_clause)
 
-        logger.info(
-            "Reading %s via JDBC (where_clause=%s)",
-            dbtable,
-            where_clause or "full",
-        )
+        logger.info("Reading %s via JDBC", dbtable)
         df = (
             spark.read.format("jdbc")
             .option("url", jdbc_url)
@@ -523,11 +498,6 @@ def main() -> None:
                 )
             else:
                 output_path = f"{output_base}/mode=snapshot/run_id={run_id}/"
-            logger.info(
-                "Writing snapshot batch for %s to %s",
-                table,
-                output_path,
-            )
             manifest_context = {
                 **manifest_base,
                 "snapshot_date": partition_value,
@@ -545,11 +515,6 @@ def main() -> None:
             output_path = (
                 f"{output_base}/mode=incremental/extract_date={partition_value}/"
                 f"run_id={run_id}/"
-            )
-            logger.info(
-                "Writing extract_date batch for %s to %s",
-                table,
-                output_path,
             )
             manifest_context = {
                 **manifest_base,
@@ -606,12 +571,6 @@ def main() -> None:
                 output_path = (
                     f"{output_base}/mode=incremental/event_date={event_date}/"
                     f"run_id={run_id}/"
-                )
-                logger.info(
-                    "Writing event_date batch for %s event_date=%s to %s",
-                    table,
-                    event_date,
-                    output_path,
                 )
                 manifest_context = {
                     **manifest_base,
