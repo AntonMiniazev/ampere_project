@@ -414,8 +414,10 @@ def _apply_group_shuffle(
     if not shuffle_partitions:
         return
     spark.conf.set("spark.sql.shuffle.partitions", str(shuffle_partitions))
+    spark.conf.set("spark.default.parallelism", str(shuffle_partitions))
     logging.getLogger(APP_NAME).info(
-        "Set spark.sql.shuffle.partitions=%s for group=%s",
+        "Set spark.sql.shuffle.partitions=%s and spark.default.parallelism=%s for group=%s",
+        shuffle_partitions,
         shuffle_partitions,
         group_name,
     )

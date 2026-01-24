@@ -52,11 +52,15 @@ DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="512m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="1"))
-EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
-SHUFFLE_PARTITIONS = int(
-    Variable.get("spark_sql_shuffle_partitions", default_var="4")
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="4"))
+EXECUTOR_INSTANCES_SNAPSHOTS = int(
+    Variable.get("spark_executor_instances_snapshots", default_var="2")
 )
+EXECUTOR_INSTANCES_FACTS_EVENTS = int(
+    Variable.get("spark_executor_instances_facts_events", default_var="4")
+)
+EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
+SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default_var="4"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_source_to_raw_max_active_tasks", default_var="2")
 )
@@ -150,9 +154,7 @@ with DAG(
     stream_groups = build_raw_stream_groups(EVENT_LOOKBACK_DAYS)
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
-        group["shuffle_partitions"] = (
-            1 if name == "snapshots" else SHUFFLE_PARTITIONS
-        )
+        group["shuffle_partitions"] = 1 if name == "snapshots" else SHUFFLE_PARTITIONS
 
     group_pairs = [
         ("snapshots-mutable-dims", ["snapshots", "mutable_dims"]),
@@ -163,6 +165,11 @@ with DAG(
         if not groups_config:
             continue
         seed_group = groups_config[0]
+        executor_instances = (
+            EXECUTOR_INSTANCES_SNAPSHOTS
+            if group_name == "snapshots-mutable-dims"
+            else EXECUTOR_INSTANCES_FACTS_EVENTS
+        )
         params = {
             **base_params,
             "group": group_name,
@@ -179,6 +186,7 @@ with DAG(
             "lookback_days": seed_group.get("lookback_days", 0),
             "snapshot_partitioned": seed_group.get("snapshot_partitioned", "true"),
             "app_name": f"source-to-raw-{group_name}",
+            "executor_instances": executor_instances,
         }
         submit_tasks.append(
             SparkKubernetesOperator(

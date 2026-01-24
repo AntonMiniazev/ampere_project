@@ -54,15 +54,21 @@ DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="250m")
 DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="1g")
 DRIVER_MEMORY_OVERHEAD = Variable.get(
-    "spark_driver_memory_overhead", default_var="128m"
+    "spark_driver_memory_overhead", default_var="256m"
 )
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
-    "spark_executor_memory_overhead", default_var="64m"
+    "spark_executor_memory_overhead", default_var="256m"
 )
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="2"))
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
+EXECUTOR_INSTANCES_SNAPSHOTS = int(
+    Variable.get("spark_executor_instances_snapshots", default_var="2")
+)
+EXECUTOR_INSTANCES_FACTS_EVENTS = int(
+    Variable.get("spark_executor_instances_facts_events", default_var="5")
+)
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default_var="4"))
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
 MAX_ACTIVE_TASKS = int(
@@ -250,9 +256,17 @@ with DAG(
         ("snapshots-mutable-dims", ["snapshots", "mutable_dims"]),
         ("facts-events", ["facts", "events"]),
     ]
-    submit_tasks = []
+    snapshots_task = None
+    facts_events_task = None
     for group_name, group_keys in group_pairs:
         groups_config = [group_map[key] for key in group_keys if key in group_map]
+        if not groups_config:
+            continue
+        executor_instances = (
+            EXECUTOR_INSTANCES_SNAPSHOTS
+            if group_name == "snapshots-mutable-dims"
+            else EXECUTOR_INSTANCES_FACTS_EVENTS
+        )
         params = {
             **base_params,
             "group": group_name,
@@ -265,6 +279,7 @@ with DAG(
             "event_date_column": "",
             "lookback_days": EVENT_LOOKBACK_DAYS,
             "app_name": f"raw-to-bronze-{group_name}",
+            "executor_instances": executor_instances,
         }
         task = SparkKubernetesOperator(
             task_id=f"run__sparkapp__group_{group_name}",
@@ -274,10 +289,20 @@ with DAG(
             kubernetes_conn_id="kubernetes_default",
             do_xcom_push=False,
         )
-        submit_tasks.append(task)
+        if group_name == "snapshots-mutable-dims":
+            snapshots_task = task
+        else:
+            facts_events_task = task
 
     start_batch_task >> registry_check
     registry_check >> skip_registry_task >> registry_ready
     registry_check >> init_registry_task >> registry_ready
-    registry_ready >> submit_tasks
-    submit_tasks >> done_task
+    if snapshots_task and facts_events_task:
+        registry_ready >> snapshots_task
+        registry_ready >> facts_events_task
+        snapshots_task >> done_task
+        facts_events_task >> done_task
+    elif snapshots_task:
+        registry_ready >> snapshots_task >> done_task
+    elif facts_events_task:
+        registry_ready >> facts_events_task >> done_task
