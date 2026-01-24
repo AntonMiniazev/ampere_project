@@ -118,7 +118,7 @@ with DAG(
     dag_id=DAG_ID,
     default_args=default_args,
     schedule="0 4 * * *",
-    start_date=datetime.now() - timedelta(days=1),
+    start_date=datetime(2025, 8, 24),
     tags=[
         "layer:raw_landing",
         "system:postgres",
@@ -127,7 +127,6 @@ with DAG(
         "mode:daily",
     ],
     catchup=False,
-    max_active_runs=1,
     max_active_tasks=MAX_ACTIVE_TASKS,
     template_searchpath=SPARK_TEMPLATE_PATHS,
 ) as dag:

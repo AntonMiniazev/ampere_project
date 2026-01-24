@@ -11,7 +11,7 @@ DAG_ID = "ampere__pre_raw__generators__init"
 
 default_args = {
     "owner": "airflow",
-    "start_date": datetime(2025, 1, 1),
+    "start_date": datetime(2025, 8, 24),
     "retries": 0,
 }
 
