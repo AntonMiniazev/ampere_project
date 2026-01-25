@@ -56,7 +56,7 @@ DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1250m")
 DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="256m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="768m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default="256m"
 )
