@@ -14,10 +14,10 @@ from utils.stream_group_config import build_raw_stream_groups
 
 DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
 
-SPARK_NAMESPACE = Variable.get("spark_namespace", default_var="ampere")
+SPARK_NAMESPACE = Variable.get("spark_namespace", default="ampere")
 SERVICE_ACCOUNT = Variable.get(
     "spark_service_account",
-    default_var="spark-operator-spark",
+    default="spark-operator-spark",
 )
 DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 
@@ -30,39 +30,39 @@ def _resolve_image(value: str | None) -> str:
     return f"ghcr.io/antonminiazev/ampere-spark:{value}"
 
 
-IMAGE = _resolve_image(Variable.get("ampere-spark-image", default_var=None))
-IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default_var="IfNotPresent")
+IMAGE = _resolve_image(Variable.get("ampere-spark-image", default=None))
+IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default="IfNotPresent")
 
-PG_HOST = Variable.get("pg_host", default_var="postgres-service")
-PG_PORT = Variable.get("pg_port", default_var="5432")
-PG_DATABASE = Variable.get("pg_database", default_var="ampere_db")
-SCHEMA = Variable.get("pg_schema", default_var="source")
-SOURCE_SYSTEM = Variable.get("raw_source_system", default_var="postgres-pre-raw")
+PG_HOST = Variable.get("pg_host", default="postgres-service")
+PG_PORT = Variable.get("pg_port", default="5432")
+PG_DATABASE = Variable.get("pg_database", default="ampere_db")
+SCHEMA = Variable.get("pg_schema", default="source")
+SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
 MINIO_ENDPOINT = Variable.get(
     "minio_s3_endpoint",
-    default_var="http://minio.ampere.svc.cluster.local:9000",
+    default="http://minio.ampere.svc.cluster.local:9000",
 )
-MINIO_BUCKET = Variable.get("minio_raw_bucket", default_var="ampere-raw")
-OUTPUT_PREFIX = Variable.get("raw_output_prefix", default_var="postgres-pre-raw")
+MINIO_BUCKET = Variable.get("minio_raw_bucket", default="ampere-raw")
+OUTPUT_PREFIX = Variable.get("raw_output_prefix", default="postgres-pre-raw")
 
-DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="250m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="512m")
-EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="250m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="4"))
+DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="250m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default="512m")
+EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default="4"))
 EXECUTOR_INSTANCES_SNAPSHOTS = int(
-    Variable.get("spark_executor_instances_snapshots", default_var="2")
+    Variable.get("spark_executor_instances_snapshots", default="2")
 )
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default_var="4")
+    Variable.get("spark_executor_instances_facts_events", default="4")
 )
-EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
-SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default_var="4"))
+EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
+SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="4"))
 MAX_ACTIVE_TASKS = int(
-    Variable.get("spark_source_to_raw_max_active_tasks", default_var="2")
+    Variable.get("spark_source_to_raw_max_active_tasks", default="2")
 )
 
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"

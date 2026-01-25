@@ -11,18 +11,18 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 DAG_ID = "ampere__pre_raw__generators__daily"
 
 # Namespace where the pod runs; affects K8s placement and secret lookup.
-NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+NAMESPACE = Variable.get("cluster_namespace", default="ampere")
 # Target node hostname; controls scheduling affinity.
 NODE_SELECTOR = {
     "kubernetes.io/hostname": Variable.get(
-        "source_prep_node", default_var="ampere-k8s-node4"
+        "source_prep_node", default="ampere-k8s-node4"
     )
 }
 
 
 # Image map from Airflow variable; allows pinning tags per pipeline.
 def _load_image_map() -> dict:
-    raw_value = Variable.get("ghcr_images", default_var="{}")
+    raw_value = Variable.get("ghcr_images", default="{}")
     if isinstance(raw_value, str):
         try:
             return json.loads(raw_value)
@@ -36,7 +36,7 @@ GHCR_IMAGES = _load_image_map()
 IMAGE_TAG = GHCR_IMAGES.get("orders_clients_generation", "latest")
 IMAGE = f"ghcr.io/antonminiazev/order-data-generator:{IMAGE_TAG}"
 # Per-pod Postgres settings (libpq PGOPTIONS); raises work_mem for heavy sorts.
-PGOPTIONS = Variable.get("pg_work_mem", default_var="64MB")
+PGOPTIONS = Variable.get("pg_work_mem", default="64MB")
 
 pg_user = Secret(
     deploy_type="env",

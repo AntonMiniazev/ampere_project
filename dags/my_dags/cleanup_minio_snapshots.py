@@ -27,7 +27,7 @@ LOG_BUCKET = "ampere-prod-logs"
 LOG_PREFIX = "airflow/cleanup_raw_snapshots"
 
 DEFAULT_DRY_RUN = Variable.get(
-    "cleanup_raw_snapshots_dry_run", default_var="true").lower() == "true"
+    "cleanup_raw_snapshots_dry_run", default="true").lower() == "true"
 
 # Project tables
 TABLE_NAMES = list(table_queries.keys())

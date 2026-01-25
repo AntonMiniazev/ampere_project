@@ -19,10 +19,10 @@ from utils.stream_group_config import build_bronze_stream_groups
 
 DAG_ID = "ampere__bronze__landing_to_delta__daily"
 
-SPARK_NAMESPACE = Variable.get("spark_namespace", default_var="ampere")
+SPARK_NAMESPACE = Variable.get("spark_namespace", default="ampere")
 SERVICE_ACCOUNT = Variable.get(
     "spark_service_account",
-    default_var="spark-operator-spark",
+    default="spark-operator-spark",
 )
 DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 
@@ -35,44 +35,44 @@ def _resolve_image(value: str | None) -> str:
     return f"ghcr.io/antonminiazev/ampere-spark:{value}"
 
 
-IMAGE = _resolve_image(Variable.get("ampere-spark-image", default_var=None))
-IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default_var="IfNotPresent")
+IMAGE = _resolve_image(Variable.get("ampere-spark-image", default=None))
+IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default="IfNotPresent")
 
 MINIO_ENDPOINT = Variable.get(
     "minio_s3_endpoint",
-    default_var="http://minio.ampere.svc.cluster.local:9000",
+    default="http://minio.ampere.svc.cluster.local:9000",
 )
-MINIO_CONN_ID = Variable.get("minio_conn_id", default_var="minio_conn")
-SCHEMA = Variable.get("pg_schema", default_var="source")
-RAW_BUCKET = Variable.get("minio_raw_bucket", default_var="ampere-raw")
-RAW_PREFIX = Variable.get("raw_output_prefix", default_var="postgres-pre-raw")
-BRONZE_BUCKET = Variable.get("minio_bronze_bucket", default_var="ampere-bronze")
-BRONZE_PREFIX = Variable.get("bronze_output_prefix", default_var="bronze")
-SOURCE_SYSTEM = Variable.get("raw_source_system", default_var="postgres-pre-raw")
+MINIO_CONN_ID = Variable.get("minio_conn_id", default="minio_conn")
+SCHEMA = Variable.get("pg_schema", default="source")
+RAW_BUCKET = Variable.get("minio_raw_bucket", default="ampere-raw")
+RAW_PREFIX = Variable.get("raw_output_prefix", default="postgres-pre-raw")
+BRONZE_BUCKET = Variable.get("minio_bronze_bucket", default="ampere-bronze")
+BRONZE_PREFIX = Variable.get("bronze_output_prefix", default="bronze")
+SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
-DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="200m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="1g")
+DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="200m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1g")
 DRIVER_MEMORY_OVERHEAD = Variable.get(
-    "spark_driver_memory_overhead", default_var="256m"
+    "spark_driver_memory_overhead", default="256m"
 )
-EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="200m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
+EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="200m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
-    "spark_executor_memory_overhead", default_var="256m"
+    "spark_executor_memory_overhead", default="256m"
 )
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
+EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default="3"))
 EXECUTOR_INSTANCES_SNAPSHOTS = int(
-    Variable.get("spark_executor_instances_snapshots", default_var="2")
+    Variable.get("spark_executor_instances_snapshots", default="2")
 )
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default_var="5")
+    Variable.get("spark_executor_instances_facts_events", default="5")
 )
-SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default_var="5"))
-EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default_var="2"))
+SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="5"))
+EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
 MAX_ACTIVE_TASKS = int(
-    Variable.get("spark_raw_to_bronze_max_active_tasks", default_var="2")
+    Variable.get("spark_raw_to_bronze_max_active_tasks", default="2")
 )
 
 SPARK_APP_TEMPLATE = "raw_to_bronze_template.yaml"
@@ -118,10 +118,10 @@ def _registry_exists() -> bool:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Registry check via S3Hook failed: %s", exc)
 
-    access_key = Variable.get("minio_access_key", default_var=None) or os.getenv(
+    access_key = Variable.get("minio_access_key", default=None) or os.getenv(
         "MINIO_ACCESS_KEY"
     )
-    secret_key = Variable.get("minio_secret_key", default_var=None) or os.getenv(
+    secret_key = Variable.get("minio_secret_key", default=None) or os.getenv(
         "MINIO_SECRET_KEY"
     )
     if not access_key or not secret_key:

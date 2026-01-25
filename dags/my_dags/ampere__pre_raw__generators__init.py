@@ -16,18 +16,18 @@ default_args = {
 }
 
 # Namespace where the pod runs; affects K8s placement and secret lookup.
-NAMESPACE = Variable.get("cluster_namespace", default_var="ampere")
+NAMESPACE = Variable.get("cluster_namespace", default="ampere")
 # Target node hostname; controls scheduling affinity.
 NODE_SELECTOR = {
     "kubernetes.io/hostname": Variable.get(
-        "source_prep_node", default_var="ampere-k8s-node4"
+        "source_prep_node", default="ampere-k8s-node4"
     )
 }
 
 
 # Image map from Airflow variable; allows pinning tags per pipeline.
 def _load_image_map() -> dict:
-    raw_value = Variable.get("ghcr_images", default_var="{}")
+    raw_value = Variable.get("ghcr_images", default="{}")
     if isinstance(raw_value, str):
         try:
             return json.loads(raw_value)
@@ -43,7 +43,7 @@ IMAGE = f"ghcr.io/antonminiazev/init-source-preparation:{IMAGE_TAG}"
 
 
 def _get_optional_var(name: str) -> str | None:
-    value = Variable.get(name, default_var=None)
+    value = Variable.get(name, default=None)
     if value is None:
         return None
     value = str(value).strip()
