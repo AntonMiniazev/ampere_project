@@ -97,8 +97,10 @@ spec:
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
+{% if params.executor_node_selector %}
     nodeSelector:
-      kubernetes.io/hostname: ampere-k8s-node4
+      kubernetes.io/hostname: {{ params.executor_node_selector }}
+{% endif %}
     volumeMounts:
       - name: ivy-cache
         mountPath: /opt/spark/ivy

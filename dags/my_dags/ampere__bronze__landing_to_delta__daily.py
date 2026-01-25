@@ -51,14 +51,12 @@ BRONZE_PREFIX = Variable.get("bronze_output_prefix", default="bronze")
 SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="200m")
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="250m")
 DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1g")
-DRIVER_MEMORY_OVERHEAD = Variable.get(
-    "spark_driver_memory_overhead", default="256m"
-)
+DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="256m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="200m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="768m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default="256m"
 )
@@ -69,6 +67,7 @@ EXECUTOR_INSTANCES_SNAPSHOTS = int(
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
     Variable.get("spark_executor_instances_facts_events", default="5")
 )
+EXECUTOR_NODE_SELECTOR = Variable.get("spark_executor_node_selector", default="")
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="5"))
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
 MAX_ACTIVE_TASKS = int(
@@ -179,6 +178,7 @@ def _base_params() -> dict:
         "executor_memory": EXECUTOR_MEMORY,
         "executor_memory_overhead": EXECUTOR_MEMORY_OVERHEAD,
         "executor_instances": EXECUTOR_INSTANCES,
+        "executor_node_selector": EXECUTOR_NODE_SELECTOR,
         "shuffle_partitions": SHUFFLE_PARTITIONS,
     }
 
