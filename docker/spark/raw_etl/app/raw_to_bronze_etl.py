@@ -25,7 +25,7 @@ from etl_utils import (
     state_path,
     table_base_path,
 )
-from raw_to_bronze_apply_utils import append_registry_row, load_registry_schema
+from raw_to_bronze_apply_utils import load_registry_schema, write_registry_rows
 from raw_to_bronze_facts_events import apply_facts_events_batches
 from raw_to_bronze_mutable_dims import apply_mutable_dim_batches
 from raw_to_bronze_snapshots import apply_snapshot_batches
@@ -474,6 +474,7 @@ def main() -> None:
             # Step 6: Build per-table context from the registry and state files.
             # This determines the search window and expected schema/contract.
             # The expected outcome is a search_start date and applied batch set.
+            registry_rows = []
             table_meta = table_config.get(table, {})
             merge_keys = table_meta.get("merge_keys", [])
             raw_base = table_base_path(
@@ -551,10 +552,7 @@ def main() -> None:
                         candidate["run_id"],
                         candidate["manifest_path"],
                     )
-                    append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
+                    registry_rows.append(
                         {
                             "source_system": args.source_system,
                             "source_schema": args.schema,
@@ -577,7 +575,7 @@ def main() -> None:
                             "window_to": None,
                             "row_count": None,
                             "file_count": None,
-                        },
+                        }
                     )
                     continue
                 candidate["manifest"] = manifest
@@ -603,6 +601,12 @@ def main() -> None:
                 apply_queue.append(candidate)
             if not apply_queue:
                 logger.info("No new batches to apply for %s", table)
+                write_registry_rows(
+                    spark,
+                    registry_path,
+                    registry_schema,
+                    registry_rows,
+                )
                 continue
 
             def _apply_sort_key(batch: dict) -> tuple:
@@ -635,6 +639,7 @@ def main() -> None:
                     bronze_path=bronze_path,
                     registry_path=registry_path,
                     registry_schema=registry_schema,
+                    registry_rows=registry_rows,
                     source_system=args.source_system,
                     source_schema=args.schema,
                     sorted_batches=sorted_queue,
@@ -650,6 +655,7 @@ def main() -> None:
                     merge_keys=merge_keys,
                     registry_path=registry_path,
                     registry_schema=registry_schema,
+                    registry_rows=registry_rows,
                     source_system=args.source_system,
                     source_schema=args.schema,
                     sorted_batches=sorted_queue,
@@ -665,6 +671,7 @@ def main() -> None:
                     merge_keys=merge_keys,
                     registry_path=registry_path,
                     registry_schema=registry_schema,
+                    registry_rows=registry_rows,
                     source_system=args.source_system,
                     source_schema=args.schema,
                     sorted_batches=sorted_queue,
@@ -672,6 +679,12 @@ def main() -> None:
                     expected_contract_version=expected_contract_version,
                     logger=logger,
                 )
+            write_registry_rows(
+                spark,
+                registry_path,
+                registry_schema,
+                registry_rows,
+            )
             # Release cached data between tables to limit driver memory growth.
             spark.catalog.clearCache()
     

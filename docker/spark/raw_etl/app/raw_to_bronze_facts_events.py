@@ -9,11 +9,7 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
 
 from etl_utils import manifest_ok
-from raw_to_bronze_apply_utils import (
-    append_registry_row,
-    build_registry_payload,
-    merge_to_delta,
-)
+from raw_to_bronze_apply_utils import build_registry_payload, merge_to_delta
 
 
 def apply_facts_events_batches(
@@ -23,6 +19,7 @@ def apply_facts_events_batches(
     merge_keys: list[str],
     registry_path: str,
     registry_schema: StructType,
+    registry_rows: list[dict],
     source_system: str,
     source_schema: str,
     sorted_batches: list[dict],
@@ -42,6 +39,7 @@ def apply_facts_events_batches(
         merge_keys: Business keys, e.g. ["order_id"] or [] for pure append.
         registry_path: Registry Delta path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
         registry_schema: Registry schema StructType, e.g. StructType([...]).
+        registry_rows: Output list to collect registry rows for a single write.
         source_system: Source system id, e.g. "postgres-pre-raw".
         source_schema: Source schema name, e.g. "source".
         sorted_batches: Ordered batch list with manifest metadata.
@@ -57,6 +55,7 @@ def apply_facts_events_batches(
             merge_keys=["order_id"],
             registry_path="s3a://ampere-bronze/bronze/ops/bronze_apply_registry",
             registry_schema=registry_schema,
+            registry_rows=[],
             source_system="postgres-pre-raw",
             source_schema="source",
             sorted_batches=sorted_queue,
@@ -94,10 +93,7 @@ def apply_facts_events_batches(
                     partition_value,
                     reason,
                 )
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         batch,
@@ -107,7 +103,7 @@ def apply_facts_events_batches(
                         batch_apply_ts,
                         "failed",
                         reason,
-                    ),
+                    )
                 )
                 continue
 
@@ -127,10 +123,7 @@ def apply_facts_events_batches(
                 if manifest.get("watermark"):
                     watermark_from = manifest["watermark"].get("from")
                     watermark_to = manifest["watermark"].get("to")
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         batch,
@@ -142,7 +135,7 @@ def apply_facts_events_batches(
                         "empty batch",
                         watermark_from,
                         watermark_to,
-                    ),
+                    )
                 )
                 continue
 
@@ -157,10 +150,7 @@ def apply_facts_events_batches(
                     expected_schema_hash,
                     manifest.get("schema_hash"),
                 )
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         batch,
@@ -170,7 +160,7 @@ def apply_facts_events_batches(
                         batch_apply_ts,
                         "skipped",
                         "schema_hash mismatch",
-                    ),
+                    )
                 )
                 continue
 
@@ -185,10 +175,7 @@ def apply_facts_events_batches(
                     expected_contract_version,
                     manifest.get("contract_version"),
                 )
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         batch,
@@ -198,7 +185,7 @@ def apply_facts_events_batches(
                         batch_apply_ts,
                         "skipped",
                         "contract_version mismatch",
-                    ),
+                    )
                 )
                 continue
 
@@ -208,10 +195,7 @@ def apply_facts_events_batches(
                     table,
                     manifest.get("run_id"),
                 )
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         batch,
@@ -221,7 +205,7 @@ def apply_facts_events_batches(
                         batch_apply_ts,
                         "failed",
                         "missing partition info",
-                    ),
+                    )
                 )
                 continue
 
@@ -234,10 +218,7 @@ def apply_facts_events_batches(
                     table,
                     manifest.get("run_id"),
                 )
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         batch,
@@ -247,7 +228,7 @@ def apply_facts_events_batches(
                         batch_apply_ts,
                         "failed",
                         "no files in manifest",
-                    ),
+                    )
                 )
                 continue
 
@@ -304,10 +285,7 @@ def apply_facts_events_batches(
                     watermark_from = manifest["watermark"].get("from")
                     watermark_to = manifest["watermark"].get("to")
 
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         info["batch"],
@@ -319,7 +297,7 @@ def apply_facts_events_batches(
                         "ok",
                         watermark_from,
                         watermark_to,
-                    ),
+                    )
                 )
                 logger.info(
                     "Applied batch run_id=%s %s=%s for %s manifest=%s",
@@ -332,10 +310,7 @@ def apply_facts_events_batches(
         except Exception as exc:  # noqa: BLE001
             for info in valid_batches:
                 manifest = info["manifest"]
-                append_registry_row(
-                    spark,
-                    registry_path,
-                    registry_schema,
+                registry_rows.append(
                     build_registry_payload(
                         manifest,
                         info["batch"],
@@ -345,7 +320,7 @@ def apply_facts_events_batches(
                         info["apply_ts"],
                         "failed",
                         f"bronze apply failed: {exc}",
-                    ),
+                    )
                 )
             logger.exception(
                 "Failed applying batches %s=%s for %s",

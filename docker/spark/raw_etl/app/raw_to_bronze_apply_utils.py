@@ -49,22 +49,24 @@ def load_registry_schema(schema_path: str) -> StructType:
     return StructType(fields)
 
 
-def append_registry_row(
-    spark: SparkSession, path_str: str, schema: StructType, row: dict
+def write_registry_rows(
+    spark: SparkSession, path_str: str, schema: StructType, rows: list[dict]
 ) -> None:
-    """Append a single apply-registry row with retry on concurrent commits.
+    """Append a batch of apply-registry rows with retry on concurrent commits.
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         path_str: Registry table path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
         schema: Registry schema, e.g. StructType([...]).
-        row: Row data, e.g. {"source_table": "orders", "status": "applied"}.
+        rows: Row payloads, e.g. [{"source_table": "orders", "status": "applied"}].
 
     Examples:
-        append_registry_row(spark, registry_path, registry_schema, {"status": "applied"})
+        write_registry_rows(spark, registry_path, registry_schema, rows)
     """
     logger = logging.getLogger("raw-to-bronze-apply-utils")
-    df = spark.createDataFrame([row], schema=schema)
+    if not rows:
+        return
+    df = spark.createDataFrame(rows, schema=schema)
     retries = 5
     last_exc = None
     retry_tokens = (
@@ -180,4 +182,3 @@ def merge_to_delta(
         )
     else:
         df.write.format("delta").mode("overwrite").save(target_path)
-
