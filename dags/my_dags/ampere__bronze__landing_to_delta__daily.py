@@ -53,12 +53,12 @@ SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="300m")
 DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1250m")
-DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="256m")
+DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="128m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
-    "spark_executor_memory_overhead", default="256m"
+    "spark_executor_memory_overhead", default="128m"
 )
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default="3"))
 EXECUTOR_INSTANCES_SNAPSHOTS = int(
@@ -75,7 +75,7 @@ SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
     Variable.get("spark_sql_shuffle_partitions_facts_events", default="3")
 )
 SHUFFLE_PARTITIONS_MUTABLE_DIMS = int(
-    Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="3")
+    Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="2")
 )
 SPARK_MEMORY_FRACTION = Variable.get("spark_memory_fraction", default="0.5")
 SPARK_MEMORY_STORAGE_FRACTION = Variable.get(
