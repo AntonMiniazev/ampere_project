@@ -65,6 +65,12 @@ def apply_facts_events_batches(
             logger=logging.getLogger("raw-to-bronze-etl"),
         )
     """
+    # Avoid local-checkpoint materialization for Delta MERGE to reduce
+    # checkpoint block loss when executors churn under tight memory.
+    spark.conf.set("spark.databricks.delta.merge.materializeSource", "false")
+    logger.info(
+        "Set spark.databricks.delta.merge.materializeSource=false for facts/events."
+    )
     grouped_batches = {}
     for batch in sorted_batches:
         key = (batch.get("partition_kind"), batch.get("partition_value"))
@@ -347,4 +353,3 @@ def apply_facts_events_batches(
                 partition_value,
                 table,
             )
-
