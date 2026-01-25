@@ -614,12 +614,8 @@ def main() -> None:
                 continue
     
             apply_queue = []
+            seen_batches = set()
             for candidate in candidates:
-                if (
-                    candidate["run_id"],
-                    candidate["partition_value"],
-                ) in applied_batches:
-                    continue
                 manifest = read_json(spark, candidate["manifest_path"], logger)
                 if not manifest:
                     batch_apply_ts = datetime.now(timezone.utc).isoformat()
@@ -660,6 +656,24 @@ def main() -> None:
                     continue
                 candidate["manifest"] = manifest
                 candidate["ingest_ts_utc"] = manifest.get("ingest_ts_utc")
+                candidate["run_id"] = manifest.get("run_id", candidate["run_id"])
+                partition_kind, partition_value = partition_info(manifest)
+                if not partition_kind or not partition_value:
+                    partition_kind = candidate["partition_kind"]
+                    partition_value = candidate["partition_value"]
+                    logger.warning(
+                        "Manifest missing partition info for %s run_id=%s, using path %s=%s",
+                        table,
+                        candidate["run_id"],
+                        partition_kind,
+                        partition_value,
+                    )
+                candidate["partition_kind"] = partition_kind
+                candidate["partition_value"] = partition_value
+                batch_key = (candidate["run_id"], candidate["partition_value"])
+                if batch_key in applied_batches or batch_key in seen_batches:
+                    continue
+                seen_batches.add(batch_key)
                 apply_queue.append(candidate)
             if not apply_queue:
                 logger.info("No new batches to apply for %s", table)
@@ -689,12 +703,16 @@ def main() -> None:
                 manifest = batch["manifest"]
                 batch_apply_ts = datetime.now(timezone.utc).isoformat()
 
+                partition_kind = batch.get("partition_kind")
+                partition_value = batch.get("partition_value")
                 ok, reason = manifest_ok(manifest)
                 if not ok:
                     logger.warning(
-                        "Manifest validation failed for %s run_id=%s reason=%s",
+                        "Manifest validation failed for %s run_id=%s %s=%s reason=%s",
                         table,
                         manifest.get("run_id", batch["run_id"]),
+                        partition_kind,
+                        partition_value,
                         reason,
                     )
                     _append_registry_row(
@@ -729,9 +747,11 @@ def main() -> None:
 
                 if manifest.get("row_count", 0) == 0 or manifest.get("file_count", 0) == 0:
                     logger.info(
-                        "Skipping empty batch for %s run_id=%s",
+                        "Skipping empty batch for %s run_id=%s %s=%s",
                         table,
                         manifest.get("run_id", batch["run_id"]),
+                        partition_kind,
+                        partition_value,
                     )
                     watermark_from = None
                     watermark_to = None
@@ -844,8 +864,7 @@ def main() -> None:
                     )
                     continue
     
-                partition_kind, partition_value = partition_info(manifest)
-                if not partition_kind:
+                if not partition_kind or not partition_value:
                     logger.warning(
                         "Missing partition info for %s run_id=%s",
                         table,
@@ -993,7 +1012,12 @@ def main() -> None:
                         },
                     )
                     logger.info(
-                        "Applied batch %s for %s", manifest.get("run_id"), table
+                        "Applied batch run_id=%s %s=%s for %s manifest=%s",
+                        manifest.get("run_id"),
+                        partition_kind,
+                        partition_value,
+                        table,
+                        batch["manifest_path"],
                     )
                 except Exception as exc:  # noqa: BLE001
                     _append_registry_row(
@@ -1025,8 +1049,10 @@ def main() -> None:
                         },
                     )
                     logger.exception(
-                        "Failed applying batch %s for %s",
+                        "Failed applying batch run_id=%s %s=%s for %s",
                         manifest.get("run_id"),
+                        partition_kind,
+                        partition_value,
                         table,
                     )
     

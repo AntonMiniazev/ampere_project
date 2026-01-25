@@ -51,12 +51,12 @@ BRONZE_PREFIX = Variable.get("bronze_output_prefix", default="bronze")
 SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="250m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1g")
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="300m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default="768m")
 DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="256m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="768m")
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="300m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default="256m"
 )
