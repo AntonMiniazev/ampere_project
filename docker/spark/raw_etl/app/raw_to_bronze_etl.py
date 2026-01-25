@@ -3,13 +3,11 @@
 import argparse
 import json
 import logging
-import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from pyspark.sql import SparkSession, functions as F
-from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
 from etl_utils import (
     bronze_registry_path,
@@ -18,7 +16,6 @@ from etl_utils import (
     get_env,
     list_dirs,
     load_registry_table,
-    manifest_ok,
     parse_date,
     parse_optional_datetime,
     partition_info,
@@ -28,13 +25,10 @@ from etl_utils import (
     state_path,
     table_base_path,
 )
-
-try:
-    from delta.tables import DeltaTable
-except ImportError as exc:
-    raise ImportError(
-        "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
-    ) from exc
+from raw_to_bronze_apply_utils import append_registry_row, load_registry_schema
+from raw_to_bronze_facts_events import apply_facts_events_batches
+from raw_to_bronze_mutable_dims import apply_mutable_dim_batches
+from raw_to_bronze_snapshots import apply_snapshot_batches
 
 APP_NAME = "raw-to-bronze-etl"
 
@@ -42,7 +36,10 @@ APP_NAME = "raw-to-bronze-etl"
 def _parse_args() -> argparse.Namespace:
     """Parse CLI args for raw-to-bronze processing.
 
-    Example CLI inputs:
+    This defines the user-facing CLI contract and keeps defaults consistent
+    across local runs and SparkApplication execution.
+
+    Examples:
         --tables "orders,customers"
         --groups-config '[{"group":"snapshots","tables":["orders"],"shuffle_partitions":1}]'
         --shuffle-partitions 4
@@ -132,6 +129,9 @@ def _parse_table_list(raw: str) -> list[str]:
 
     Args:
         raw: Comma-separated names, e.g. "orders, customers".
+
+    Examples:
+        _parse_table_list("orders, customers") -> ["orders", "customers"]
     """
     return [t.strip() for t in raw.split(",") if t.strip()]
 
@@ -145,6 +145,9 @@ def _parse_groups_config(
     Args:
         raw: JSON list string, e.g. '[{"group":"snapshots","tables":["orders"]}]'.
         default_shuffle_partitions: Default override, e.g. 4 or None.
+
+    Examples:
+        _parse_groups_config('[{"group":"facts","tables":["orders"]}]', 4)
     """
     if not raw:
         return []
@@ -179,76 +182,6 @@ def _parse_groups_config(
     return groups
 
 
-def _load_registry_schema(schema_path: str) -> StructType:
-    """Load the registry schema JSON template into a Spark StructType.
-
-    Args:
-        schema_path: JSON schema path, e.g. "/opt/spark/app/bronze_apply_registry_schema.json".
-    """
-    data = json.loads(Path(schema_path).read_text())
-    type_map = {
-        "string": StringType(),
-        "int": IntegerType(),
-    }
-    fields = []
-    for field in data.get("fields", []):
-        field_type = type_map.get(field.get("type"))
-        if field_type is None:
-            raise ValueError(f"Unsupported registry field type: {field.get('type')}")
-        fields.append(
-            StructField(
-                field.get("name"),
-                field_type,
-                bool(field.get("nullable", True)),
-            )
-        )
-    if not fields:
-        raise ValueError("Registry schema template has no fields.")
-    return StructType(fields)
-
-
-def _append_registry_row(
-    spark: SparkSession, path_str: str, schema: StructType, row: dict
-) -> None:
-    """Append a single apply-registry row with retry on concurrent commit errors.
-
-    Args:
-        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: Registry table path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
-        schema: Registry schema, e.g. StructType([...]).
-        row: Row data, e.g. {"source_table": "orders", "status": "applied"}.
-    """
-    logger = logging.getLogger(APP_NAME)
-    df = spark.createDataFrame([row], schema=schema)
-    retries = 5
-    last_exc = None
-    retry_tokens = (
-        "ProtocolChangedException",
-        "ConcurrentAppendException",
-        "ConcurrentWriteException",
-        "CommitFailedException",
-    )
-    for attempt in range(retries):
-        try:
-            df.write.format("delta").mode("append").save(path_str)
-            return
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            if any(token in str(exc) for token in retry_tokens):
-                logger.warning(
-                    "Registry append conflict; retrying (%s/%s).",
-                    attempt + 1,
-                    retries,
-                )
-                time.sleep(1 + attempt)
-                continue
-            raise
-    if last_exc:
-        raise last_exc
-
-
-
-
 def _list_partitions(
     spark: SparkSession, base_path: str, partition_key: str
 ) -> list[date]:
@@ -258,6 +191,9 @@ def _list_partitions(
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
         partition_key: Partition type, e.g. "snapshot_date" or "event_date".
+
+    Examples:
+        _list_partitions(spark, "s3a://ampere-raw/.../orders", "event_date")
     """
     mode_path = (
         f"{base_path}/mode=snapshot"
@@ -290,6 +226,9 @@ def _search_start_date(
         run_date: Run date, e.g. date(2026, 1, 24).
         lookback_days: Lookback window in days, e.g. 2.
         has_registry_rows: Whether registry has any rows for the table, e.g. True.
+
+    Examples:
+        _search_start_date("event_date", registry_df, None, date(2026, 1, 24), 2, False)
     """
     registry_date = None
     if registry_df is not None:
@@ -336,6 +275,9 @@ def _candidate_runs(
         base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
         partition_key: Partition type, e.g. "snapshot_date".
         search_start: Earliest date to consider, e.g. date(2026, 1, 20) or None.
+
+    Examples:
+        _candidate_runs(spark, "s3a://ampere-raw/.../orders", "event_date", date(2026, 1, 20))
     """
     candidates = []
     partitions = _list_partitions(spark, base_path, partition_key)
@@ -374,34 +316,6 @@ def _candidate_runs(
     return candidates
 
 
-def _merge_to_delta(
-    spark: SparkSession,
-    df,
-    target_path: str,
-    merge_keys: list[str],
-) -> None:
-    """Merge or overwrite a Delta table using stable business keys.
-
-    Args:
-        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        df: Source DataFrame, e.g. spark.read.parquet("s3a://...").
-        target_path: Delta table path, e.g. "s3a://ampere-bronze/bronze/source/orders".
-        merge_keys: Business keys, e.g. ["order_id"].
-    """
-    if DeltaTable.isDeltaTable(spark, target_path):
-        delta_table = DeltaTable.forPath(spark, target_path)
-        conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
-        (
-            delta_table.alias("t")
-            .merge(df.alias("s"), conditions)
-            .whenMatchedUpdateAll()
-            .whenNotMatchedInsertAll()
-            .execute()
-        )
-    else:
-        df.write.format("delta").mode("overwrite").save(target_path)
-
-
 def _apply_group_shuffle(
     spark: SparkSession,
     group_name: str,
@@ -413,6 +327,9 @@ def _apply_group_shuffle(
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         group_name: Group label, e.g. "snapshots" or "facts".
         shuffle_partitions: Partition count, e.g. 1 or None to keep Spark default.
+
+    Examples:
+        _apply_group_shuffle(spark, "facts", 4)
     """
     if not shuffle_partitions:
         return
@@ -431,6 +348,9 @@ def main() -> None:
 
     The flow loads registry metadata, discovers candidate runs, validates manifests,
     writes Delta data, and appends status rows into the registry.
+
+    Examples:
+        python raw_to_bronze_etl.py --groups-config '[{"group":"facts","tables":["orders"]}]'
     """
     # Step 1: Initialize logging and parse CLI inputs.
     # This fixes the runtime configuration for tables, groups, and run date.
@@ -516,7 +436,13 @@ def main() -> None:
         "BRONZE_REGISTRY_SCHEMA_PATH",
         str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
     )
-    registry_schema = _load_registry_schema(schema_path)
+    registry_schema = load_registry_schema(schema_path)
+    try:
+        from delta.tables import DeltaTable
+    except ImportError as exc:
+        raise ImportError(
+            "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
+        ) from exc
     if not DeltaTable.isDeltaTable(spark, registry_path):
         raise ValueError("Registry table is missing; run bronze_registry_init first.")
     registry_df = load_registry_table(spark, registry_path)
@@ -603,9 +529,9 @@ def main() -> None:
                 has_registry_rows,
             )
 
-            # Step 7: Discover candidate runs and validate manifests.
-            # This filters to batches with _SUCCESS and required metadata.
-            # The expected outcome is an ordered apply queue of valid batches.
+            # Step 7: Discover candidate runs and load manifests.
+            # This filters to batches with _SUCCESS and builds the apply queue.
+            # The expected outcome is a list of candidate batches ready for validation.
             candidates = _candidate_runs(
                 spark, raw_base, partition_key, search_start
             )
@@ -625,7 +551,7 @@ def main() -> None:
                         candidate["run_id"],
                         candidate["manifest_path"],
                     )
-                    _append_registry_row(
+                    append_registry_row(
                         spark,
                         registry_path,
                         registry_schema,
@@ -684,6 +610,9 @@ def main() -> None:
 
                 Args:
                     batch: Candidate batch dict, e.g. {"partition_value": "2026-01-24"}.
+
+                Examples:
+                    _apply_sort_key({"partition_value": "2026-01-24", "run_id": "r1"})
                 """
                 ingest_dt = parse_optional_datetime(
                     batch.get("ingest_ts_utc") or ""
@@ -693,369 +622,56 @@ def main() -> None:
                 ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
                 return (batch["partition_value"], ingest_key, batch["run_id"])
 
+
+
             # Step 8: Apply batches to bronze and record outcomes in the registry.
-            # This writes Delta data and appends apply status for traceability.
-            # The expected outcome is applied or skipped registry rows for each batch.
-            for batch in sorted(
-                apply_queue,
-                key=_apply_sort_key,
-            ):
-                manifest = batch["manifest"]
-                batch_apply_ts = datetime.now(timezone.utc).isoformat()
-
-                partition_kind = batch.get("partition_kind")
-                partition_value = batch.get("partition_value")
-                ok, reason = manifest_ok(manifest)
-                if not ok:
-                    logger.warning(
-                        "Manifest validation failed for %s run_id=%s %s=%s reason=%s",
-                        table,
-                        manifest.get("run_id", batch["run_id"]),
-                        partition_kind,
-                        partition_value,
-                        reason,
-                    )
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system", args.source_system),
-                            "source_schema": manifest.get("source_schema", args.schema),
-                            "source_table": manifest.get("source_table", table),
-                            "run_id": manifest.get("run_id", batch["run_id"]),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": batch["partition_kind"],
-                            "partition_value": batch["partition_value"],
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "failed",
-                            "details": reason,
-                            "watermark_from": None,
-                            "watermark_to": None,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": None,
-                            "window_to": None,
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    continue
-
-                if manifest.get("row_count", 0) == 0 or manifest.get("file_count", 0) == 0:
-                    logger.info(
-                        "Skipping empty batch for %s run_id=%s %s=%s",
-                        table,
-                        manifest.get("run_id", batch["run_id"]),
-                        partition_kind,
-                        partition_value,
-                    )
-                    watermark_from = None
-                    watermark_to = None
-                    if manifest.get("watermark"):
-                        watermark_from = manifest["watermark"].get("from")
-                        watermark_to = manifest["watermark"].get("to")
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system", args.source_system),
-                            "source_schema": manifest.get("source_schema", args.schema),
-                            "source_table": manifest.get("source_table", table),
-                            "run_id": manifest.get("run_id", batch["run_id"]),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": batch["partition_kind"],
-                            "partition_value": batch["partition_value"],
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "skipped",
-                            "details": "empty batch",
-                            "watermark_from": watermark_from,
-                            "watermark_to": watermark_to,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": (manifest.get("window") or {}).get("from"),
-                            "window_to": (manifest.get("window") or {}).get("to"),
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    continue
-    
-                if expected_schema_hash and manifest.get("schema_hash") != expected_schema_hash:
-                    logger.warning(
-                        "Schema hash mismatch for %s run_id=%s expected=%s actual=%s",
-                        table,
-                        manifest.get("run_id"),
-                        expected_schema_hash,
-                        manifest.get("schema_hash"),
-                    )
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system"),
-                            "source_schema": manifest.get("source_schema"),
-                            "source_table": manifest.get("source_table"),
-                            "run_id": manifest.get("run_id"),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": batch["partition_kind"],
-                            "partition_value": batch["partition_value"],
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "skipped",
-                            "details": "schema_hash mismatch",
-                            "watermark_from": None,
-                            "watermark_to": None,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": None,
-                            "window_to": None,
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    continue
-    
-                if expected_contract_version and manifest.get("contract_version") != expected_contract_version:
-                    logger.warning(
-                        "Contract version mismatch for %s run_id=%s expected=%s actual=%s",
-                        table,
-                        manifest.get("run_id"),
-                        expected_contract_version,
-                        manifest.get("contract_version"),
-                    )
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system"),
-                            "source_schema": manifest.get("source_schema"),
-                            "source_table": manifest.get("source_table"),
-                            "run_id": manifest.get("run_id"),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": batch["partition_kind"],
-                            "partition_value": batch["partition_value"],
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "skipped",
-                            "details": "contract_version mismatch",
-                            "watermark_from": None,
-                            "watermark_to": None,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": None,
-                            "window_to": None,
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    continue
-    
-                if not partition_kind or not partition_value:
-                    logger.warning(
-                        "Missing partition info for %s run_id=%s",
-                        table,
-                        manifest.get("run_id"),
-                    )
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system"),
-                            "source_schema": manifest.get("source_schema"),
-                            "source_table": manifest.get("source_table"),
-                            "run_id": manifest.get("run_id"),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": batch["partition_kind"],
-                            "partition_value": batch["partition_value"],
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "failed",
-                            "details": "missing partition info",
-                            "watermark_from": None,
-                            "watermark_to": None,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": None,
-                            "window_to": None,
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    continue
-    
-                file_paths = [f["path"] for f in manifest.get("files", []) if f.get("path")]
-                if not file_paths:
-                    logger.warning(
-                        "No file paths in manifest for %s run_id=%s",
-                        table,
-                        manifest.get("run_id"),
-                    )
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system"),
-                            "source_schema": manifest.get("source_schema"),
-                            "source_table": manifest.get("source_table"),
-                            "run_id": manifest.get("run_id"),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": partition_kind,
-                            "partition_value": partition_value,
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "failed",
-                            "details": "no files in manifest",
-                            "watermark_from": None,
-                            "watermark_to": None,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": None,
-                            "window_to": None,
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    continue
-    
-                try:
-                    df = spark.read.parquet(*file_paths)
-                    df = df.withColumn("_bronze_last_run_id", F.lit(manifest.get("run_id")))
-                    df = df.withColumn("_bronze_last_apply_ts", F.lit(batch_apply_ts))
-                    df = df.withColumn(
-                        "_bronze_last_manifest_path", F.lit(batch["manifest_path"])
-                    )
-    
-                    if partition_kind == "snapshot_date":
-                        df = df.withColumn("snapshot_date", F.lit(partition_value))
-                        if DeltaTable.isDeltaTable(spark, bronze_path):
-                            (
-                                df.write.format("delta")
-                                .mode("overwrite")
-                                .option(
-                                    "replaceWhere",
-                                    f"snapshot_date = '{partition_value}'",
-                                )
-                                .save(bronze_path)
-                            )
-                        else:
-                            (
-                                df.write.format("delta")
-                                .mode("overwrite")
-                                .partitionBy("snapshot_date")
-                                .save(bronze_path)
-                            )
-                    elif partition_kind == "extract_date":
-                        if not merge_keys:
-                            raise ValueError(
-                                f"merge_keys are required for mutable dim {table}."
-                            )
-                        _merge_to_delta(spark, df, bronze_path, merge_keys)
-                    else:
-                        if merge_keys:
-                            df = df.dropDuplicates(merge_keys)
-                            _merge_to_delta(spark, df, bronze_path, merge_keys)
-                        else:
-                            df.write.format("delta").mode("append").save(bronze_path)
-    
-                    watermark_from = None
-                    watermark_to = None
-                    if manifest.get("watermark"):
-                        watermark_from = manifest["watermark"].get("from")
-                        watermark_to = manifest["watermark"].get("to")
-    
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system"),
-                            "source_schema": manifest.get("source_schema"),
-                            "source_table": manifest.get("source_table"),
-                            "run_id": manifest.get("run_id"),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": partition_kind,
-                            "partition_value": partition_value,
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "applied",
-                            "details": "ok",
-                            "watermark_from": watermark_from,
-                            "watermark_to": watermark_to,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": (manifest.get("window") or {}).get("from"),
-                            "window_to": (manifest.get("window") or {}).get("to"),
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    logger.info(
-                        "Applied batch run_id=%s %s=%s for %s manifest=%s",
-                        manifest.get("run_id"),
-                        partition_kind,
-                        partition_value,
-                        table,
-                        batch["manifest_path"],
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    _append_registry_row(
-                        spark,
-                        registry_path,
-                        registry_schema,
-                        {
-                            "source_system": manifest.get("source_system"),
-                            "source_schema": manifest.get("source_schema"),
-                            "source_table": manifest.get("source_table"),
-                            "run_id": manifest.get("run_id"),
-                            "manifest_path": batch["manifest_path"],
-                            "batch_type": manifest.get("batch_type"),
-                            "partition_kind": partition_kind,
-                            "partition_value": partition_value,
-                            "ingest_ts_utc": manifest.get("ingest_ts_utc"),
-                            "schema_hash": manifest.get("schema_hash"),
-                            "contract_version": manifest.get("contract_version"),
-                            "apply_ts_utc": batch_apply_ts,
-                            "status": "failed",
-                            "details": f"bronze apply failed: {exc}",
-                            "watermark_from": None,
-                            "watermark_to": None,
-                            "lookback_days": manifest.get("lookback_days"),
-                            "window_from": (manifest.get("window") or {}).get("from"),
-                            "window_to": (manifest.get("window") or {}).get("to"),
-                            "row_count": manifest.get("row_count"),
-                            "file_count": manifest.get("file_count"),
-                        },
-                    )
-                    logger.exception(
-                        "Failed applying batch run_id=%s %s=%s for %s",
-                        manifest.get("run_id"),
-                        partition_kind,
-                        partition_value,
-                        table,
-                    )
-
+            # The ETL delegates to per-table-type writers to keep logic easy to follow.
+            # The expected outcome is applied/skipped rows in the registry for each batch.
+            sorted_queue = sorted(apply_queue, key=_apply_sort_key)
+            if partition_key == "snapshot_date":
+                apply_snapshot_batches(
+                    spark=spark,
+                    table=table,
+                    bronze_path=bronze_path,
+                    registry_path=registry_path,
+                    registry_schema=registry_schema,
+                    source_system=args.source_system,
+                    source_schema=args.schema,
+                    sorted_batches=sorted_queue,
+                    expected_schema_hash=expected_schema_hash,
+                    expected_contract_version=expected_contract_version,
+                    logger=logger,
+                )
+            elif partition_key == "extract_date":
+                apply_mutable_dim_batches(
+                    spark=spark,
+                    table=table,
+                    bronze_path=bronze_path,
+                    merge_keys=merge_keys,
+                    registry_path=registry_path,
+                    registry_schema=registry_schema,
+                    source_system=args.source_system,
+                    source_schema=args.schema,
+                    sorted_batches=sorted_queue,
+                    expected_schema_hash=expected_schema_hash,
+                    expected_contract_version=expected_contract_version,
+                    logger=logger,
+                )
+            else:
+                apply_facts_events_batches(
+                    spark=spark,
+                    table=table,
+                    bronze_path=bronze_path,
+                    merge_keys=merge_keys,
+                    registry_path=registry_path,
+                    registry_schema=registry_schema,
+                    source_system=args.source_system,
+                    source_schema=args.schema,
+                    sorted_batches=sorted_queue,
+                    expected_schema_hash=expected_schema_hash,
+                    expected_contract_version=expected_contract_version,
+                    logger=logger,
+                )
             # Release cached data between tables to limit driver memory growth.
             spark.catalog.clearCache()
     
