@@ -67,7 +67,7 @@ def apply_facts_events_batches(
     """
     # Avoid local-checkpoint materialization for Delta MERGE to reduce
     # checkpoint block loss when executors churn under tight memory.
-    spark.conf.set("spark.databricks.delta.merge.materializeSource", "false")
+    spark.conf.set("spark.databricks.delta.merge.materializeSource", "none")
     logger.info(
         "Set spark.databricks.delta.merge.materializeSource=false for facts/events."
     )
