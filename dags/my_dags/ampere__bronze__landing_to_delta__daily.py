@@ -6,11 +6,11 @@ import os
 from pathlib import Path
 
 from airflow import DAG
-from airflow.models import Variable
+from airflow.sdk import Variable
 from airflow.providers.standard.operators.python import PythonOperator
-from airflow.operators.python import BranchPythonOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.providers.standard.operators.python import BranchPythonOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.task.trigger_rule import TriggerRule
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
@@ -54,13 +54,13 @@ DRIVER_CORES = int(Variable.get("spark_driver_cores", default_var="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default_var="200m")
 DRIVER_MEMORY = Variable.get("spark_driver_memory", default_var="1g")
 DRIVER_MEMORY_OVERHEAD = Variable.get(
-    "spark_driver_memory_overhead", default_var="128m"
+    "spark_driver_memory_overhead", default_var="256m"
 )
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default_var="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default_var="200m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default_var="512m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
-    "spark_executor_memory_overhead", default_var="128m"
+    "spark_executor_memory_overhead", default_var="256m"
 )
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default_var="3"))
 EXECUTOR_INSTANCES_SNAPSHOTS = int(

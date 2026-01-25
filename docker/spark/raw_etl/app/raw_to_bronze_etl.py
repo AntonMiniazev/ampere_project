@@ -300,7 +300,9 @@ def _search_start_date(
     candidates = []
     if registry_date:
         candidates.append(registry_date)
-    if state_last_ingest:
+    if state_last_ingest and not (
+        partition_key == "extract_date" and not has_registry_rows
+    ):
         candidates.append(state_last_ingest.date())
 
     if not candidates:

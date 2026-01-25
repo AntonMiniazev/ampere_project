@@ -10,8 +10,9 @@ import logging
 
 from airflow import DAG
 from airflow.decorators import task
-from airflow.models import Variable, TaskInstance
-from airflow.operators.python import get_current_context
+from airflow.models import TaskInstance
+from airflow.sdk import Variable
+from airflow.providers.standard.operators.python import get_current_context
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
 # --- Config ---
