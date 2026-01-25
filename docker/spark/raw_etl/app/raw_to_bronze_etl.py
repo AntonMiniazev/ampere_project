@@ -1055,6 +1055,9 @@ def main() -> None:
                         partition_value,
                         table,
                     )
+
+            # Release cached data between tables to limit driver memory growth.
+            spark.catalog.clearCache()
     
     spark.stop()
 

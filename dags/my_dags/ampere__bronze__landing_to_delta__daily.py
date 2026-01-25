@@ -52,11 +52,11 @@ SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="300m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default="768m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1536m")
 DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="256m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="300m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
+EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="768m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default="256m"
 )
@@ -65,12 +65,15 @@ EXECUTOR_INSTANCES_SNAPSHOTS = int(
     Variable.get("spark_executor_instances_snapshots", default="2")
 )
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default="5")
+    Variable.get("spark_executor_instances_facts_events", default="4")
 )
 EXECUTOR_NODE_SELECTOR = Variable.get("spark_executor_node_selector", default="")
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="5"))
 SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
-    Variable.get("spark_sql_shuffle_partitions_facts_events", default="3")
+    Variable.get("spark_sql_shuffle_partitions_facts_events", default="4")
+)
+SHUFFLE_PARTITIONS_MUTABLE_DIMS = int(
+    Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="3")
 )
 SPARK_MEMORY_FRACTION = Variable.get("spark_memory_fraction", default="0.5")
 SPARK_MEMORY_STORAGE_FRACTION = Variable.get(
@@ -235,6 +238,8 @@ with DAG(
             group["shuffle_partitions"] = 1
         elif name in {"facts", "events"}:
             group["shuffle_partitions"] = SHUFFLE_PARTITIONS_FACTS_EVENTS
+        elif name == "mutable_dims":
+            group["shuffle_partitions"] = SHUFFLE_PARTITIONS_MUTABLE_DIMS
         else:
             group["shuffle_partitions"] = SHUFFLE_PARTITIONS
 
