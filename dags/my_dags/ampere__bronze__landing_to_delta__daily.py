@@ -69,6 +69,13 @@ EXECUTOR_INSTANCES_FACTS_EVENTS = int(
 )
 EXECUTOR_NODE_SELECTOR = Variable.get("spark_executor_node_selector", default="")
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="5"))
+SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
+    Variable.get("spark_sql_shuffle_partitions_facts_events", default="3")
+)
+SPARK_MEMORY_FRACTION = Variable.get("spark_memory_fraction", default="0.5")
+SPARK_MEMORY_STORAGE_FRACTION = Variable.get(
+    "spark_memory_storage_fraction", default="0.2"
+)
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default="2")
@@ -180,6 +187,8 @@ def _base_params() -> dict:
         "executor_instances": EXECUTOR_INSTANCES,
         "executor_node_selector": EXECUTOR_NODE_SELECTOR,
         "shuffle_partitions": SHUFFLE_PARTITIONS,
+        "spark_memory_fraction": SPARK_MEMORY_FRACTION,
+        "spark_memory_storage_fraction": SPARK_MEMORY_STORAGE_FRACTION,
     }
 
 
@@ -222,7 +231,12 @@ with DAG(
     stream_groups = build_bronze_stream_groups(EVENT_LOOKBACK_DAYS)
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
-        group["shuffle_partitions"] = 1 if name == "snapshots" else SHUFFLE_PARTITIONS
+        if name == "snapshots":
+            group["shuffle_partitions"] = 1
+        elif name in {"facts", "events"}:
+            group["shuffle_partitions"] = SHUFFLE_PARTITIONS_FACTS_EVENTS
+        else:
+            group["shuffle_partitions"] = SHUFFLE_PARTITIONS
 
     registry_check = BranchPythonOperator(
         task_id="run__sparkapp__registry_check",
