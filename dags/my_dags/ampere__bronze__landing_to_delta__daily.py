@@ -52,7 +52,7 @@ SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
 DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="300m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1250m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default="800m")
 DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="128m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
 EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
