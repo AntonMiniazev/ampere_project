@@ -65,9 +65,11 @@ EXECUTOR_INSTANCES_SNAPSHOTS = int(
     Variable.get("spark_executor_instances_snapshots", default="2")
 )
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default="4")
+    Variable.get("spark_executor_instances_facts_events", default="3")
 )
-EXECUTOR_NODE_SELECTOR = Variable.get("spark_executor_node_selector", default="")
+EXECUTOR_NODE_SELECTOR = Variable.get(
+    "spark_executor_node_selector", default="ampere-k8s-node4"
+)
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="5"))
 SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
     Variable.get("spark_sql_shuffle_partitions_facts_events", default="4")
