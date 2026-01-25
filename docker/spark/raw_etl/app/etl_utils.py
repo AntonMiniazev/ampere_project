@@ -32,6 +32,22 @@ def setup_logging(level: str | None = None) -> None:
     )
 
 
+def set_spark_log_level(
+    spark: SparkSession, level: Optional[str] = None
+) -> None:
+    """Reduce noisy JVM logs by setting Spark's log level.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        level: Optional log level (defaults to SPARK_LOG_LEVEL or WARN).
+    """
+    resolved = (level or os.getenv("SPARK_LOG_LEVEL", "WARN")).upper()
+    if resolved == "WARNING":
+        resolved = "WARN"
+    spark.sparkContext.setLogLevel(resolved)
+    logging.getLogger("py4j").setLevel(resolved)
+
+
 def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
     """Return an environment variable or fallback when missing.
 

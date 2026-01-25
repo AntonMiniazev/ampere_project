@@ -18,6 +18,7 @@ from etl_utils import (
     parse_date,
     parse_optional_datetime,
     read_json,
+    set_spark_log_level,
     setup_logging,
     state_path,
     table_base_path,
@@ -644,6 +645,7 @@ def main() -> None:
     spark = SparkSession.builder.appName(args.app_name).getOrCreate()
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
+    set_spark_log_level(spark)
 
     jdbc_url = f"jdbc:postgresql://{pg_host}:{pg_port}/{pg_db}"
     ingest_ts_utc = datetime.now(timezone.utc).isoformat()

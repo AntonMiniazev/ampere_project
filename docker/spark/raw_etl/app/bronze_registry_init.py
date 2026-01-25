@@ -13,6 +13,7 @@ from etl_utils import (
     bronze_registry_path,
     configure_s3,
     get_env,
+    set_spark_log_level,
     setup_logging,
 )
 
@@ -269,6 +270,7 @@ def main() -> None:
         .getOrCreate()
     )
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
+    set_spark_log_level(spark)
 
     if DeltaTable.isDeltaTable(spark, registry_path):
         logger.info("Registry table already exists: %s", registry_path)

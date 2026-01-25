@@ -23,6 +23,7 @@ from etl_utils import (
     parse_optional_datetime,
     partition_info,
     read_json,
+    set_spark_log_level,
     setup_logging,
     state_path,
     table_base_path,
@@ -502,6 +503,7 @@ def main() -> None:
         .getOrCreate()
     )
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
+    set_spark_log_level(spark)
 
     # Step 4: Load the registry table to track applied batches.
     # This drives idempotency and prevents duplicate loads per partition.
