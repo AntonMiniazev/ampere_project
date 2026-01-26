@@ -72,13 +72,13 @@ EXECUTOR_NODE_SELECTOR = Variable.get(
 )
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="1"))
 SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
-    Variable.get("spark_sql_shuffle_partitions_facts_events", default="4")
+    Variable.get("spark_sql_shuffle_partitions_facts_events", default="6")
 )
 SHUFFLE_PARTITIONS_MUTABLE_DIMS = int(
     Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="1")
 )
 FILES_MAX_PARTITION_BYTES_FACTS_EVENTS = Variable.get(
-    "spark_sql_files_max_partition_bytes_facts_events", default="32m"
+    "spark_sql_files_max_partition_bytes_facts_events", default="16m"
 )
 FILES_OPEN_COST_BYTES_FACTS_EVENTS = Variable.get(
     "spark_sql_files_open_cost_bytes_facts_events", default="4m"
