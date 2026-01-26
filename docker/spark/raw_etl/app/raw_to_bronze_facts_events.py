@@ -23,6 +23,8 @@ def apply_facts_events_batches(
     source_system: str,
     source_schema: str,
     sorted_batches: list[dict],
+    lookback_days: int,
+    append_only_override: bool | None,
     expected_schema_hash: str | None,
     expected_contract_version: str | None,
     logger: logging.Logger,
@@ -43,6 +45,8 @@ def apply_facts_events_batches(
         source_system: Source system id, e.g. "postgres-pre-raw".
         source_schema: Source schema name, e.g. "source".
         sorted_batches: Ordered batch list with manifest metadata.
+        lookback_days: Lookback window for events, e.g. 0 for append-only facts.
+        append_only_override: Optional flag to force append-only writes.
         expected_schema_hash: Schema hash to enforce, e.g. "abc123" or None.
         expected_contract_version: Contract version to enforce, e.g. "v2" or None.
         logger: Logger for run output, e.g. logging.getLogger("raw-to-bronze-etl").
@@ -59,6 +63,8 @@ def apply_facts_events_batches(
             source_system="postgres-pre-raw",
             source_schema="source",
             sorted_batches=sorted_queue,
+            lookback_days=0,
+            append_only_override=None,
             expected_schema_hash=None,
             expected_contract_version=None,
             logger=logging.getLogger("raw-to-bronze-etl"),
@@ -70,6 +76,16 @@ def apply_facts_events_batches(
     logger.info(
         "Set spark.databricks.delta.merge.materializeSource=false for facts/events."
     )
+    append_only = append_only_override
+    if append_only is None:
+        append_only = lookback_days <= 0
+    if append_only:
+        logger.info(
+            "Using append-only writes for %s (lookback_days=%s).",
+            table,
+            lookback_days,
+        )
+
     grouped_batches = {}
     for batch in sorted_batches:
         key = (batch.get("partition_kind"), batch.get("partition_value"))
@@ -268,10 +284,19 @@ def apply_facts_events_batches(
             for extra in dfs[1:]:
                 df = df.unionByName(extra, allowMissingColumns=True)
 
-            if merge_keys:
+            if merge_keys and not append_only:
                 df = df.dropDuplicates(merge_keys)
-                merge_to_delta(spark, df, bronze_path, merge_keys)
+                merge_to_delta(
+                    spark,
+                    df,
+                    bronze_path,
+                    merge_keys,
+                    partition_column=partition_kind,
+                    partition_value=partition_value,
+                )
             else:
+                if merge_keys:
+                    df = df.dropDuplicates(merge_keys)
                 df.write.format("delta").mode("append").save(bronze_path)
 
             # Step C: Emit registry rows for every batch in the partition.

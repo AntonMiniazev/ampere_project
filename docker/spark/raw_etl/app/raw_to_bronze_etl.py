@@ -730,6 +730,8 @@ def main() -> None:
                     source_system=args.source_system,
                     source_schema=args.schema,
                     sorted_batches=sorted_queue,
+                    lookback_days=lookback_days,
+                    append_only_override=table_meta.get("append_only"),
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,

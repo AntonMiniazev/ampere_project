@@ -150,7 +150,12 @@ def build_registry_payload(
 
 
 def merge_to_delta(
-    spark: SparkSession, df, target_path: str, merge_keys: list[str]
+    spark: SparkSession,
+    df,
+    target_path: str,
+    merge_keys: list[str],
+    partition_column: str | None = None,
+    partition_value: str | None = None,
 ) -> None:
     """Merge or overwrite a Delta table using stable business keys.
 
@@ -159,9 +164,18 @@ def merge_to_delta(
         df: Source DataFrame, e.g. spark.read.parquet("s3a://...").
         target_path: Delta table path, e.g. "s3a://ampere-bronze/bronze/source/orders".
         merge_keys: Business keys, e.g. ["order_id"].
+        partition_column: Optional partition column for pruning, e.g. "event_date".
+        partition_value: Optional partition value for pruning, e.g. "2026-01-24".
 
     Examples:
-        merge_to_delta(spark, df, "s3a://ampere-bronze/bronze/source/orders", ["order_id"])
+        merge_to_delta(
+            spark,
+            df,
+            "s3a://ampere-bronze/bronze/source/orders",
+            ["order_id"],
+            partition_column="event_date",
+            partition_value="2026-01-24",
+        )
     """
     try:
         from delta.tables import DeltaTable
@@ -170,9 +184,14 @@ def merge_to_delta(
             "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
         ) from exc
 
+    if partition_column and partition_value and partition_column in df.columns:
+        df = df.filter(df[partition_column] == partition_value)
+
     if DeltaTable.isDeltaTable(spark, target_path):
         delta_table = DeltaTable.forPath(spark, target_path)
         conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
+        if partition_column and partition_column in df.columns:
+            conditions = f"t.{partition_column} = s.{partition_column} AND {conditions}"
         (
             delta_table.alias("t")
             .merge(df.alias("s"), conditions)
