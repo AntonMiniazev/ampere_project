@@ -62,7 +62,7 @@ EXECUTOR_MEMORY_OVERHEAD = Variable.get(
 )
 EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default="3"))
 EXECUTOR_INSTANCES_SNAPSHOTS = int(
-    Variable.get("spark_executor_instances_snapshots", default="1")
+    Variable.get("spark_executor_instances_snapshots", default="2")
 )
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
     Variable.get("spark_executor_instances_facts_events", default="2")
