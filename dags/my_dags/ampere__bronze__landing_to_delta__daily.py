@@ -51,11 +51,11 @@ BRONZE_PREFIX = Variable.get("bronze_output_prefix", default="bronze")
 SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
 
 DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="300m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default="1536m")
-DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="256m")
+DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="400m")
+DRIVER_MEMORY = Variable.get("spark_driver_memory", default="2000m")
+DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="384m")
 EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
+EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="300m")
 EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="1024m")
 EXECUTOR_MEMORY_OVERHEAD = Variable.get(
     "spark_executor_memory_overhead", default="256m"
@@ -72,13 +72,13 @@ EXECUTOR_NODE_SELECTOR = Variable.get(
 )
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="1"))
 SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
-    Variable.get("spark_sql_shuffle_partitions_facts_events", default="6")
+    Variable.get("spark_sql_shuffle_partitions_facts_events", default="8")
 )
 SHUFFLE_PARTITIONS_MUTABLE_DIMS = int(
     Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="1")
 )
 FILES_MAX_PARTITION_BYTES_FACTS_EVENTS = Variable.get(
-    "spark_sql_files_max_partition_bytes_facts_events", default="16m"
+    "spark_sql_files_max_partition_bytes_facts_events", default="8m"
 )
 FILES_OPEN_COST_BYTES_FACTS_EVENTS = Variable.get(
     "spark_sql_files_open_cost_bytes_facts_events", default="4m"
