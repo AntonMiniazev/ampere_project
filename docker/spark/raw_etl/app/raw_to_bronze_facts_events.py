@@ -31,8 +31,8 @@ def apply_facts_events_batches(
 ) -> None:
     """Apply fact/event batches grouped by event_date.
 
-    Each partition_value is written once per run while keeping one registry
-    row per run_id to preserve traceability.
+    All eligible batches are combined into one write per table to reduce
+    per-batch scheduling and memory pressure on small files.
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
@@ -86,270 +86,279 @@ def apply_facts_events_batches(
             lookback_days,
         )
 
-    grouped_batches = {}
+    valid_batches = []
     for batch in sorted_batches:
-        key = (batch.get("partition_kind"), batch.get("partition_value"))
-        grouped_batches.setdefault(key, []).append(batch)
-
-    for (partition_kind, partition_value), batches in grouped_batches.items():
-        valid_batches = []
-        for batch in batches:
-            # Step A: Validate each manifest and build a per-batch apply plan.
-            # This keeps registry rows accurate even when a batch is skipped.
-            # The expected outcome is a list of validated batches for this date.
-            manifest = batch["manifest"]
-            batch_apply_ts = datetime.now(timezone.utc).isoformat()
-            ok, reason = manifest_ok(manifest)
-            if not ok:
-                logger.warning(
-                    "Manifest validation failed for %s run_id=%s %s=%s reason=%s",
+        # Step A: Validate each manifest and build a per-batch apply plan.
+        # This keeps registry rows accurate even when a batch is skipped.
+        # The expected outcome is a list of validated batches for this table.
+        manifest = batch["manifest"]
+        batch_apply_ts = datetime.now(timezone.utc).isoformat()
+        partition_kind = batch.get("partition_kind")
+        partition_value = batch.get("partition_value")
+        ok, reason = manifest_ok(manifest)
+        if not ok:
+            logger.warning(
+                "Manifest validation failed for %s run_id=%s %s=%s reason=%s",
+                table,
+                manifest.get("run_id", batch.get("run_id")),
+                partition_kind,
+                partition_value,
+                reason,
+            )
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    batch,
+                    source_system,
+                    source_schema,
                     table,
-                    manifest.get("run_id", batch.get("run_id")),
-                    partition_kind,
-                    partition_value,
+                    batch_apply_ts,
+                    "failed",
                     reason,
                 )
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        batch,
-                        source_system,
-                        source_schema,
-                        table,
-                        batch_apply_ts,
-                        "failed",
-                        reason,
-                    )
-                )
-                continue
+            )
+            continue
 
-            if (
-                manifest.get("row_count", 0) == 0
-                or manifest.get("file_count", 0) == 0
-            ):
-                logger.info(
-                    "Skipping empty batch for %s run_id=%s %s=%s",
+        if manifest.get("row_count", 0) == 0 or manifest.get("file_count", 0) == 0:
+            logger.info(
+                "Skipping empty batch for %s run_id=%s %s=%s",
+                table,
+                manifest.get("run_id", batch.get("run_id")),
+                partition_kind,
+                partition_value,
+            )
+            watermark_from = None
+            watermark_to = None
+            if manifest.get("watermark"):
+                watermark_from = manifest["watermark"].get("from")
+                watermark_to = manifest["watermark"].get("to")
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    batch,
+                    source_system,
+                    source_schema,
                     table,
-                    manifest.get("run_id", batch.get("run_id")),
-                    partition_kind,
-                    partition_value,
+                    batch_apply_ts,
+                    "skipped",
+                    "empty batch",
+                    watermark_from,
+                    watermark_to,
                 )
-                watermark_from = None
-                watermark_to = None
-                if manifest.get("watermark"):
-                    watermark_from = manifest["watermark"].get("from")
-                    watermark_to = manifest["watermark"].get("to")
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        batch,
-                        source_system,
-                        source_schema,
-                        table,
-                        batch_apply_ts,
-                        "skipped",
-                        "empty batch",
-                        watermark_from,
-                        watermark_to,
-                    )
-                )
-                continue
+            )
+            continue
 
-            if (
-                expected_schema_hash
-                and manifest.get("schema_hash") != expected_schema_hash
-            ):
-                logger.warning(
-                    "Schema hash mismatch for %s run_id=%s expected=%s actual=%s",
+        if expected_schema_hash and manifest.get("schema_hash") != expected_schema_hash:
+            logger.warning(
+                "Schema hash mismatch for %s run_id=%s expected=%s actual=%s",
+                table,
+                manifest.get("run_id"),
+                expected_schema_hash,
+                manifest.get("schema_hash"),
+            )
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    batch,
+                    source_system,
+                    source_schema,
                     table,
-                    manifest.get("run_id"),
-                    expected_schema_hash,
-                    manifest.get("schema_hash"),
+                    batch_apply_ts,
+                    "skipped",
+                    "schema_hash mismatch",
                 )
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        batch,
-                        source_system,
-                        source_schema,
-                        table,
-                        batch_apply_ts,
-                        "skipped",
-                        "schema_hash mismatch",
-                    )
-                )
-                continue
+            )
+            continue
 
-            if (
-                expected_contract_version
-                and manifest.get("contract_version") != expected_contract_version
-            ):
-                logger.warning(
-                    "Contract version mismatch for %s run_id=%s expected=%s actual=%s",
+        if (
+            expected_contract_version
+            and manifest.get("contract_version") != expected_contract_version
+        ):
+            logger.warning(
+                "Contract version mismatch for %s run_id=%s expected=%s actual=%s",
+                table,
+                manifest.get("run_id"),
+                expected_contract_version,
+                manifest.get("contract_version"),
+            )
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    batch,
+                    source_system,
+                    source_schema,
                     table,
-                    manifest.get("run_id"),
-                    expected_contract_version,
-                    manifest.get("contract_version"),
+                    batch_apply_ts,
+                    "skipped",
+                    "contract_version mismatch",
                 )
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        batch,
-                        source_system,
-                        source_schema,
-                        table,
-                        batch_apply_ts,
-                        "skipped",
-                        "contract_version mismatch",
-                    )
-                )
-                continue
+            )
+            continue
 
-            if not partition_kind or not partition_value:
-                logger.warning(
-                    "Missing partition info for %s run_id=%s",
+        if not partition_kind or not partition_value:
+            logger.warning(
+                "Missing partition info for %s run_id=%s",
+                table,
+                manifest.get("run_id"),
+            )
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    batch,
+                    source_system,
+                    source_schema,
                     table,
-                    manifest.get("run_id"),
+                    batch_apply_ts,
+                    "failed",
+                    "missing partition info",
                 )
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        batch,
-                        source_system,
-                        source_schema,
-                        table,
-                        batch_apply_ts,
-                        "failed",
-                        "missing partition info",
-                    )
-                )
-                continue
+            )
+            continue
 
-            file_paths = [
-                f["path"] for f in manifest.get("files", []) if f.get("path")
-            ]
-            if not file_paths:
-                logger.warning(
-                    "No file paths in manifest for %s run_id=%s",
+        file_paths = [f["path"] for f in manifest.get("files", []) if f.get("path")]
+        if not file_paths:
+            logger.warning(
+                "No file paths in manifest for %s run_id=%s",
+                table,
+                manifest.get("run_id"),
+            )
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    batch,
+                    source_system,
+                    source_schema,
                     table,
-                    manifest.get("run_id"),
+                    batch_apply_ts,
+                    "failed",
+                    "no files in manifest",
                 )
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        batch,
-                        source_system,
-                        source_schema,
-                        table,
-                        batch_apply_ts,
-                        "failed",
-                        "no files in manifest",
-                    )
-                )
-                continue
+            )
+            continue
 
-            valid_batches.append(
+        valid_batches.append(
+            {
+                "batch": batch,
+                "manifest": manifest,
+                "apply_ts": batch_apply_ts,
+                "file_paths": file_paths,
+            }
+        )
+
+    if not valid_batches:
+        return
+
+    partition_kinds = {
+        info["batch"].get("partition_kind") for info in valid_batches
+    }
+    partition_kind = partition_kinds.pop() if len(partition_kinds) == 1 else "event_date"
+    if partition_kinds:
+        logger.warning(
+            "Mixed partition kinds for %s; defaulting to %s",
+            table,
+            partition_kind,
+        )
+
+    file_meta_rows = []
+    all_paths = []
+    for info in valid_batches:
+        batch = info["batch"]
+        manifest = info["manifest"]
+        for path in info["file_paths"]:
+            all_paths.append(path)
+            file_meta_rows.append(
                 {
-                    "batch": batch,
-                    "manifest": manifest,
-                    "apply_ts": batch_apply_ts,
-                    "file_paths": file_paths,
+                    "file_path": path,
+                    "run_id": manifest.get("run_id"),
+                    "apply_ts": info["apply_ts"],
+                    "manifest_path": batch.get("manifest_path"),
+                    "partition_value": batch.get("partition_value"),
                 }
             )
 
-        if not valid_batches:
-            continue
+    meta_df = spark.createDataFrame(file_meta_rows)
+    do_merge = bool(merge_keys) and not append_only
 
-        # Step B: Read all batch files for the partition and write once.
-        # This reduces per-batch scheduling overhead while preserving lineage.
-        # The expected outcome is one write per event_date partition.
-        try:
-            dfs = []
-            for info in valid_batches:
-                manifest = info["manifest"]
-                df_part = spark.read.parquet(*info["file_paths"])
-                df_part = df_part.withColumn(
-                    "_bronze_last_run_id", F.lit(manifest.get("run_id"))
-                )
-                df_part = df_part.withColumn(
-                    "_bronze_last_apply_ts", F.lit(info["apply_ts"])
-                )
-                df_part = df_part.withColumn(
-                    "_bronze_last_manifest_path",
-                    F.lit(info["batch"]["manifest_path"]),
-                )
-                dfs.append(df_part)
+    # Step B: Read all batch files once and write in a single job.
+    # This reduces per-batch scheduling overhead while preserving lineage.
+    # The expected outcome is one write per table per run.
+    try:
+        df = spark.read.parquet(*all_paths)
+        df = df.withColumn("_input_file", F.input_file_name())
+        df = df.join(
+            meta_df,
+            df["_input_file"] == meta_df["file_path"],
+            "inner",
+        )
+        df = df.drop("_input_file", "file_path")
+        df = df.withColumn("_bronze_last_run_id", F.col("run_id"))
+        df = df.withColumn("_bronze_last_apply_ts", F.col("apply_ts"))
+        df = df.withColumn(
+            "_bronze_last_manifest_path", F.col("manifest_path")
+        )
+        df = df.withColumn(partition_kind, F.col("partition_value"))
+        df = df.drop("run_id", "apply_ts", "manifest_path", "partition_value")
 
-            df = dfs[0]
-            for extra in dfs[1:]:
-                df = df.unionByName(extra, allowMissingColumns=True)
+        if merge_keys:
+            df = df.dropDuplicates(merge_keys)
 
-            if merge_keys and not append_only:
-                df = df.dropDuplicates(merge_keys)
-                merge_to_delta(
-                    spark,
-                    df,
-                    bronze_path,
-                    merge_keys,
-                    partition_column=partition_kind,
-                    partition_value=partition_value,
-                )
-            else:
-                if merge_keys:
-                    df = df.dropDuplicates(merge_keys)
-                df.write.format("delta").mode("append").save(bronze_path)
-
-            # Step C: Emit registry rows for every batch in the partition.
-            # This keeps the registry granular while the write is consolidated.
-            # The expected outcome is one applied row per run_id.
-            for info in valid_batches:
-                manifest = info["manifest"]
-                watermark_from = None
-                watermark_to = None
-                if manifest.get("watermark"):
-                    watermark_from = manifest["watermark"].get("from")
-                    watermark_to = manifest["watermark"].get("to")
-
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        info["batch"],
-                        source_system,
-                        source_schema,
-                        table,
-                        info["apply_ts"],
-                        "applied",
-                        "ok",
-                        watermark_from,
-                        watermark_to,
-                    )
-                )
-                logger.info(
-                    "Applied batch run_id=%s %s=%s for %s manifest=%s",
-                    manifest.get("run_id"),
-                    partition_kind,
-                    partition_value,
-                    table,
-                    info["batch"]["manifest_path"],
-                )
-        except Exception as exc:  # noqa: BLE001
-            for info in valid_batches:
-                manifest = info["manifest"]
-                registry_rows.append(
-                    build_registry_payload(
-                        manifest,
-                        info["batch"],
-                        source_system,
-                        source_schema,
-                        table,
-                        info["apply_ts"],
-                        "failed",
-                        f"bronze apply failed: {exc}",
-                    )
-                )
-            logger.exception(
-                "Failed applying batches %s=%s for %s",
-                partition_kind,
-                partition_value,
-                table,
+        if do_merge:
+            merge_to_delta(
+                spark,
+                df,
+                bronze_path,
+                merge_keys,
+                partition_column=partition_kind,
+                partition_value=None,
             )
+        else:
+            df.write.format("delta").mode("append").save(bronze_path)
+
+        # Step C: Emit registry rows for every batch we included.
+        # This keeps the registry granular while the write is consolidated.
+        # The expected outcome is one applied row per run_id+partition.
+        for info in valid_batches:
+            manifest = info["manifest"]
+            watermark_from = None
+            watermark_to = None
+            if manifest.get("watermark"):
+                watermark_from = manifest["watermark"].get("from")
+                watermark_to = manifest["watermark"].get("to")
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    info["batch"],
+                    source_system,
+                    source_schema,
+                    table,
+                    info["apply_ts"],
+                    "applied",
+                    "ok",
+                    watermark_from,
+                    watermark_to,
+                )
+            )
+            logger.info(
+                "Applied batch run_id=%s %s=%s for %s manifest=%s",
+                manifest.get("run_id"),
+                info["batch"].get("partition_kind"),
+                info["batch"].get("partition_value"),
+                table,
+                info["batch"]["manifest_path"],
+            )
+    except Exception as exc:  # noqa: BLE001
+        for info in valid_batches:
+            manifest = info["manifest"]
+            registry_rows.append(
+                build_registry_payload(
+                    manifest,
+                    info["batch"],
+                    source_system,
+                    source_schema,
+                    table,
+                    info["apply_ts"],
+                    "failed",
+                    f"bronze apply failed: {exc}",
+                )
+            )
+        logger.exception("Failed applying batches for %s", table)

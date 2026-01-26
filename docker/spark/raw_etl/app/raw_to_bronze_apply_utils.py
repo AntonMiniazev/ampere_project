@@ -191,7 +191,11 @@ def merge_to_delta(
         delta_table = DeltaTable.forPath(spark, target_path)
         conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
         if partition_column and partition_column in df.columns:
-            conditions = f"t.{partition_column} = s.{partition_column} AND {conditions}"
+            target_columns = set(delta_table.toDF().columns)
+            if partition_column in target_columns:
+                conditions = (
+                    f"t.{partition_column} = s.{partition_column} AND {conditions}"
+                )
         (
             delta_table.alias("t")
             .merge(df.alias("s"), conditions)

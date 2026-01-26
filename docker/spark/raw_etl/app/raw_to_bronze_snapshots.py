@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
 
-from etl_utils import manifest_ok
+from etl_utils import manifest_ok, parse_optional_datetime
 from raw_to_bronze_apply_utils import build_registry_payload
 
 
@@ -68,7 +68,62 @@ def apply_snapshot_batches(
             "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
         ) from exc
 
-    for batch in sorted_batches:
+    if not sorted_batches:
+        logger.info("No snapshot batches to apply for %s", table)
+        return
+
+    partition_values = [
+        batch.get("partition_value")
+        for batch in sorted_batches
+        if batch.get("partition_value")
+    ]
+    if not partition_values:
+        logger.warning("Missing snapshot partition values for %s", table)
+        return
+
+    latest_partition_value = max(partition_values)
+    latest_batches = [
+        batch
+        for batch in sorted_batches
+        if batch.get("partition_value") == latest_partition_value
+    ]
+    if not latest_batches:
+        logger.warning("No snapshot batch found for %s at %s", table, latest_partition_value)
+        return
+
+    def _latest_batch_key(batch: dict) -> tuple:
+        ingest_dt = parse_optional_datetime(batch.get("ingest_ts_utc") or "")
+        if ingest_dt and ingest_dt.tzinfo is None:
+            ingest_dt = ingest_dt.replace(tzinfo=timezone.utc)
+        ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
+        return (ingest_key, batch.get("run_id", ""))
+
+    latest_batch = max(latest_batches, key=_latest_batch_key)
+    superseded_batches = [batch for batch in sorted_batches if batch is not latest_batch]
+    for batch in superseded_batches:
+        manifest = batch["manifest"]
+        batch_apply_ts = datetime.now(timezone.utc).isoformat()
+        registry_rows.append(
+            build_registry_payload(
+                manifest,
+                batch,
+                source_system,
+                source_schema,
+                table,
+                batch_apply_ts,
+                "skipped",
+                "superseded by latest snapshot",
+            )
+        )
+        logger.info(
+            "Skipping superseded snapshot run_id=%s %s=%s for %s",
+            manifest.get("run_id", batch.get("run_id")),
+            batch.get("partition_kind"),
+            batch.get("partition_value"),
+            table,
+        )
+
+    for batch in [latest_batch]:
         # Step A: Validate the manifest and decide whether to apply or skip.
         # This ensures only complete, compatible batches are written.
         # The expected outcome is either a write attempt or a registry skip row.
