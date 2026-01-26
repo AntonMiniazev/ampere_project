@@ -56,8 +56,6 @@ spec:
     spark.default.parallelism: "{{ params.shuffle_partitions }}"
     spark.sql.adaptive.enabled: "true"
     spark.sql.adaptive.coalescePartitions.enabled: "true"
-    spark.memory.fraction: "{{ params.spark_memory_fraction }}"
-    spark.memory.storageFraction: "{{ params.spark_memory_storage_fraction }}"
     spark.kubernetes.driver.memoryOverhead: "{{ params.driver_memory_overhead }}"
     spark.kubernetes.executor.memoryOverhead: "{{ params.executor_memory_overhead }}"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
