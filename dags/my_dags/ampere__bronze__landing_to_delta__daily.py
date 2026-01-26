@@ -65,17 +65,26 @@ EXECUTOR_INSTANCES_SNAPSHOTS = int(
     Variable.get("spark_executor_instances_snapshots", default="1")
 )
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default="1")
+    Variable.get("spark_executor_instances_facts_events", default="2")
 )
 EXECUTOR_NODE_SELECTOR = Variable.get(
     "spark_executor_node_selector", default="ampere-k8s-node4"
 )
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="1"))
 SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
-    Variable.get("spark_sql_shuffle_partitions_facts_events", default="1")
+    Variable.get("spark_sql_shuffle_partitions_facts_events", default="4")
 )
 SHUFFLE_PARTITIONS_MUTABLE_DIMS = int(
     Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="1")
+)
+FILES_MAX_PARTITION_BYTES_FACTS_EVENTS = Variable.get(
+    "spark_sql_files_max_partition_bytes_facts_events", default="32m"
+)
+FILES_OPEN_COST_BYTES_FACTS_EVENTS = Variable.get(
+    "spark_sql_files_open_cost_bytes_facts_events", default="4m"
+)
+ADAPTIVE_COALESCE_FACTS_EVENTS = Variable.get(
+    "spark_sql_adaptive_coalesce_facts_events", default="false"
 )
 EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
 MAX_ACTIVE_TASKS = int(
@@ -234,6 +243,9 @@ with DAG(
             group["shuffle_partitions"] = 1
         elif name in {"facts", "events"}:
             group["shuffle_partitions"] = SHUFFLE_PARTITIONS_FACTS_EVENTS
+            group["files_max_partition_bytes"] = FILES_MAX_PARTITION_BYTES_FACTS_EVENTS
+            group["files_open_cost_bytes"] = FILES_OPEN_COST_BYTES_FACTS_EVENTS
+            group["adaptive_coalesce"] = ADAPTIVE_COALESCE_FACTS_EVENTS
         elif name == "mutable_dims":
             group["shuffle_partitions"] = SHUFFLE_PARTITIONS_MUTABLE_DIMS
         else:
@@ -313,10 +325,7 @@ with DAG(
     registry_check >> skip_registry_task >> registry_ready
     registry_check >> init_registry_task >> registry_ready
     if snapshots_task and facts_events_task:
-        registry_ready >> snapshots_task
-        registry_ready >> facts_events_task
-        snapshots_task >> done_task
-        facts_events_task >> done_task
+        registry_ready >> snapshots_task >> facts_events_task >> done_task
     elif snapshots_task:
         registry_ready >> snapshots_task >> done_task
     elif facts_events_task:

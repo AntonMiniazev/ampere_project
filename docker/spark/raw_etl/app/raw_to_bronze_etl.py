@@ -168,6 +168,25 @@ def _parse_groups_config(
             shuffle_partitions = int(shuffle_partitions)
             if shuffle_partitions <= 0:
                 shuffle_partitions = None
+        max_partition_bytes = item.get("files_max_partition_bytes")
+        if max_partition_bytes in ("", None):
+            max_partition_bytes = None
+        else:
+            max_partition_bytes = str(max_partition_bytes)
+        open_cost_bytes = item.get("files_open_cost_bytes")
+        if open_cost_bytes in ("", None):
+            open_cost_bytes = None
+        else:
+            open_cost_bytes = str(open_cost_bytes)
+        adaptive_coalesce = item.get("adaptive_coalesce")
+        if isinstance(adaptive_coalesce, str):
+            adaptive_coalesce = adaptive_coalesce.strip().lower()
+            if adaptive_coalesce in ("true", "1", "yes"):
+                adaptive_coalesce = True
+            elif adaptive_coalesce in ("false", "0", "no"):
+                adaptive_coalesce = False
+            else:
+                adaptive_coalesce = None
         group = {
             "group": item.get("group", "group"),
             "mode": item.get("mode", "snapshot"),
@@ -177,6 +196,9 @@ def _parse_groups_config(
             "tables": tables,
             "table_config": item.get("table_config", {}) or {},
             "shuffle_partitions": shuffle_partitions,
+            "files_max_partition_bytes": max_partition_bytes,
+            "files_open_cost_bytes": open_cost_bytes,
+            "adaptive_coalesce": adaptive_coalesce,
         }
         groups.append(group)
     return groups
@@ -320,6 +342,9 @@ def _apply_group_shuffle(
     spark: SparkSession,
     group_name: str,
     shuffle_partitions: Optional[int],
+    files_max_partition_bytes: Optional[str],
+    files_open_cost_bytes: Optional[str],
+    adaptive_coalesce: Optional[bool],
 ) -> None:
     """Override spark.sql.shuffle.partitions for the current group when set.
 
@@ -331,16 +356,41 @@ def _apply_group_shuffle(
     Examples:
         _apply_group_shuffle(spark, "facts", 4)
     """
-    if not shuffle_partitions:
-        return
-    spark.conf.set("spark.sql.shuffle.partitions", str(shuffle_partitions))
-    spark.conf.set("spark.default.parallelism", str(shuffle_partitions))
-    logging.getLogger(APP_NAME).info(
-        "Set spark.sql.shuffle.partitions=%s and spark.default.parallelism=%s for group=%s",
-        shuffle_partitions,
-        shuffle_partitions,
-        group_name,
-    )
+    if shuffle_partitions:
+        spark.conf.set("spark.sql.shuffle.partitions", str(shuffle_partitions))
+        spark.conf.set("spark.default.parallelism", str(shuffle_partitions))
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.shuffle.partitions=%s and spark.default.parallelism=%s for group=%s",
+            shuffle_partitions,
+            shuffle_partitions,
+            group_name,
+        )
+    if files_max_partition_bytes:
+        spark.conf.set(
+            "spark.sql.files.maxPartitionBytes", files_max_partition_bytes
+        )
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.files.maxPartitionBytes=%s for group=%s",
+            files_max_partition_bytes,
+            group_name,
+        )
+    if files_open_cost_bytes:
+        spark.conf.set("spark.sql.files.openCostInBytes", files_open_cost_bytes)
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.files.openCostInBytes=%s for group=%s",
+            files_open_cost_bytes,
+            group_name,
+        )
+    if adaptive_coalesce is not None:
+        spark.conf.set(
+            "spark.sql.adaptive.coalescePartitions.enabled",
+            "true" if adaptive_coalesce else "false",
+        )
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.adaptive.coalescePartitions.enabled=%s for group=%s",
+            "true" if adaptive_coalesce else "false",
+            group_name,
+        )
 
 
 def main() -> None:
@@ -457,7 +507,12 @@ def main() -> None:
             logger.info("No tables configured for group %s", group_name)
             continue
         _apply_group_shuffle(
-            spark, group_name, group.get("shuffle_partitions")
+            spark,
+            group_name,
+            group.get("shuffle_partitions"),
+            group.get("files_max_partition_bytes"),
+            group.get("files_open_cost_bytes"),
+            group.get("adaptive_coalesce"),
         )
         table_config = group.get("table_config", {})
         partition_key = group.get("partition_key", "snapshot_date")
