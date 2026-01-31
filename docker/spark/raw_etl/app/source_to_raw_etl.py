@@ -684,6 +684,7 @@ def main() -> None:
             state_path_value = None
             table_watermark_from = watermark_from
             table_watermark_to = watermark_to
+            bootstrap_full_extract = False
             if group_mode == "incremental" and group_partition_key == "extract_date":
                 if not table_watermark_col:
                     raise ValueError(
@@ -698,9 +699,11 @@ def main() -> None:
                         table_watermark_from = parse_optional_datetime(
                             state["last_watermark"]
                         )
+                    else:
+                        bootstrap_full_extract = True
                 if table_watermark_to is None:
                     table_watermark_to = datetime.now(timezone.utc)
-                if table_watermark_from is None:
+                if table_watermark_from is None and not bootstrap_full_extract:
                     table_watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
 
             output_base = table_base_path(
@@ -719,7 +722,7 @@ def main() -> None:
             # This ensures we only read the required slice when incrementing.
             # The expected outcome is a DataFrame covering the intended window.
             where_clause = None
-            if not initial_event_load:
+            if not initial_event_load and not bootstrap_full_extract:
                 where_clause = _build_where_clause(
                     group_mode,
                     group_partition_key,
@@ -729,6 +732,11 @@ def main() -> None:
                     group_lookback_days,
                     table_watermark_from,
                     table_watermark_to,
+                )
+            if bootstrap_full_extract:
+                logger.info(
+                    "Bootstrap extract for %s: no state watermark; extracting full table.",
+                    table,
                 )
             dbtable = _build_dbtable(args.schema, table, where_clause)
 
@@ -830,7 +838,10 @@ def main() -> None:
                     "extract_date": partition_value,
                 }
                 upper = table_watermark_to or datetime.now(timezone.utc)
-                lower = table_watermark_from or (upper - timedelta(days=1))
+                if bootstrap_full_extract:
+                    lower = datetime(1900, 1, 1, tzinfo=timezone.utc)
+                else:
+                    lower = table_watermark_from or (upper - timedelta(days=1))
                 if table_watermark_col:
                     window_from = _format_ts(lower)
                     window_to = _format_ts(upper)

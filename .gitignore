@@ -49,6 +49,7 @@ kube-cluster copy/
 .$*
 internal_docs/
 ampere_db/
+test/
 
 # =========================
 # dbt
