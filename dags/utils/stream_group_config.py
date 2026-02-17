@@ -39,14 +39,16 @@ def build_raw_stream_groups(event_lookback_days: int) -> list[dict]:
             if name == "mutable_dims":
                 table_config = {
                     table: {
-                        "watermark_column": table_map[table].get("watermark_column", "")
+                        "watermark_column": table_map[table].get("watermark_column", ""),
+                        "created_column": table_map[table].get("created_column", ""),
                     }
                     for table in tables_list
                 }
             else:
                 table_config = {
                     table: {
-                        "event_date_column": table_map[table].get("event_date_column", "")
+                        "event_date_column": table_map[table].get("event_date_column", ""),
+                        "lookback_days": table_map[table].get("lookback_days", None),
                     }
                     for table in tables_list
                 }

@@ -31,6 +31,7 @@
     },
     "payments": {
       "event_date_column": "payment_date",
+      "lookback_days": 1,
       "merge_keys": [
         "order_id",
         "payment_date"
@@ -42,7 +43,8 @@
       "merge_keys": [
         "id"
       ],
-      "watermark_column": "updated_at"
+      "watermark_column": "updated_at",
+      "created_column": "registered_at"
     },
     "costing": {
       "merge_keys": [
@@ -50,20 +52,23 @@
         "store_id",
         "valid_from"
       ],
-      "watermark_column": "valid_from"
+      "watermark_column": "valid_to",
+      "created_column": "valid_from"
     },
     "delivery_resource": {
       "merge_keys": [
         "id"
       ],
-      "watermark_column": "updated_at"
+      "watermark_column": "updated_at",
+      "created_column": "created_at"
     },
     "products": {
       "merge_keys": [
         "id",
         "valid_from"
       ],
-      "watermark_column": "valid_from"
+      "watermark_column": "valid_to",
+      "created_column": "valid_from"
     }
   },
   "snapshots": [

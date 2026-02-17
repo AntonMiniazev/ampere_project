@@ -246,8 +246,10 @@ def _build_where_clause(
     run_date: date,
     event_date_column: str | None,
     watermark_column: str | None,
+    created_column: str | None,
     lookback_days: int,
     watermark_from: Optional[datetime],
+    created_from: Optional[datetime],
     watermark_to: Optional[datetime],
 ) -> Optional[str]:
     """Build a WHERE clause for incremental pulls based on partition strategy.
@@ -272,6 +274,18 @@ def _build_where_clause(
             upper = datetime.combine(run_date, datetime.min.time(), tzinfo=timezone.utc)
         if lower is None:
             lower = upper - timedelta(days=1)
+        if created_column:
+            created_lower = created_from
+            if created_lower is None:
+                created_lower = lower
+            return (
+                f"(({watermark_column} IS NOT NULL AND "
+                f"{watermark_column} > TIMESTAMPTZ '{_format_ts(lower)}' AND "
+                f"{watermark_column} <= TIMESTAMPTZ '{_format_ts(upper)}') "
+                f"OR ({watermark_column} IS NULL AND "
+                f"{created_column} > TIMESTAMPTZ '{_format_ts(created_lower)}' AND "
+                f"{created_column} <= TIMESTAMPTZ '{_format_ts(upper)}'))"
+            )
         return (
             f"{watermark_column} > TIMESTAMPTZ '{_format_ts(lower)}' "
             f"AND {watermark_column} <= TIMESTAMPTZ '{_format_ts(upper)}'"
@@ -679,10 +693,15 @@ def main() -> None:
             # The expected outcome is a clear per-table extraction strategy before reading.
             table_meta = table_config.get(table, {})
             table_event_col = table_meta.get("event_date_column") or group_event_col
+            table_lookback_days = table_meta.get("lookback_days")
+            if table_lookback_days is None:
+                table_lookback_days = group_lookback_days
             table_watermark_col = table_meta.get("watermark_column") or group_watermark_col
+            table_created_col = table_meta.get("created_column") or None
 
             state_path_value = None
             table_watermark_from = watermark_from
+            table_created_from = None
             table_watermark_to = watermark_to
             bootstrap_full_extract = False
             if group_mode == "incremental" and group_partition_key == "extract_date":
@@ -695,16 +714,27 @@ def main() -> None:
                 )
                 if table_watermark_from is None:
                     state = read_json(spark, state_path_value, logger)
-                    if state and state.get("last_watermark"):
-                        table_watermark_from = parse_optional_datetime(
-                            state["last_watermark"]
-                        )
+                    if state:
+                        if state.get("last_updated_at"):
+                            table_watermark_from = parse_optional_datetime(
+                                state["last_updated_at"]
+                            )
+                        elif state.get("last_watermark"):
+                            table_watermark_from = parse_optional_datetime(
+                                state["last_watermark"]
+                            )
+                        if state.get("last_created_at"):
+                            table_created_from = parse_optional_datetime(
+                                state["last_created_at"]
+                            )
                     else:
                         bootstrap_full_extract = True
                 if table_watermark_to is None:
                     table_watermark_to = datetime.now(timezone.utc)
                 if table_watermark_from is None and not bootstrap_full_extract:
                     table_watermark_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
+                if table_created_from is None and not bootstrap_full_extract:
+                    table_created_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
 
             output_base = table_base_path(
                 args.bucket, args.output_prefix, args.schema, table
@@ -729,8 +759,10 @@ def main() -> None:
                     run_date,
                     table_event_col,
                     table_watermark_col,
-                    group_lookback_days,
+                    table_created_col,
+                    table_lookback_days,
                     table_watermark_from,
+                    table_created_from,
                     table_watermark_to,
                 )
             if bootstrap_full_extract:
@@ -864,7 +896,10 @@ def main() -> None:
                         "source_schema": args.schema,
                         "source_table": table,
                         "watermark_column": table_watermark_col,
+                        "created_column": table_created_col,
                         "last_watermark": _format_ts(upper),
+                        "last_updated_at": _format_ts(upper),
+                        "last_created_at": _format_ts(upper),
                         "last_successful_run_id": run_id,
                         "last_successful_ingest_ts_utc": ingest_ts_utc,
                         "last_manifest_path": batch_result["manifest_path"],
@@ -884,7 +919,7 @@ def main() -> None:
                 if initial_event_load:
                     event_date_strings = _collect_event_dates(df, event_col)
                 else:
-                    _, _, event_dates = _date_range(run_date, group_lookback_days)
+                    _, _, event_dates = _date_range(run_date, table_lookback_days)
                     event_date_strings = [d.isoformat() for d in event_dates]
 
                 df_with_event_date = df.withColumn(
@@ -907,11 +942,11 @@ def main() -> None:
                         **manifest_base,
                         "event_date": event_date,
                     }
-                    if not initial_event_load and group_lookback_days > 1:
+                    if not initial_event_load and table_lookback_days > 1:
                         start_date, end_date, _ = _date_range(
-                            run_date, group_lookback_days
+                            run_date, table_lookback_days
                         )
-                        manifest_context["lookback_days"] = group_lookback_days
+                        manifest_context["lookback_days"] = table_lookback_days
                         window_from, window_to = _format_date_window(
                             start_date, end_date
                         )
