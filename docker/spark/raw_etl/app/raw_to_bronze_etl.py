@@ -532,6 +532,15 @@ def main() -> None:
             registry_rows = []
             table_meta = table_config.get(table, {})
             merge_keys = table_meta.get("merge_keys", [])
+            table_lookback_days = table_meta.get("lookback_days")
+            if table_lookback_days is None:
+                table_lookback_days = lookback_days
+            table_lookback_days = int(table_lookback_days or 0)
+            logger.info(
+                "Table %s uses lookback_days=%s",
+                table,
+                table_lookback_days,
+            )
             raw_base = table_base_path(
                 args.raw_bucket, args.raw_prefix, args.schema, table
             )
@@ -581,7 +590,7 @@ def main() -> None:
                 table_registry,
                 state_last_ingest,
                 run_date,
-                lookback_days,
+                table_lookback_days,
                 has_registry_rows,
             )
 
@@ -730,7 +739,7 @@ def main() -> None:
                     source_system=args.source_system,
                     source_schema=args.schema,
                     sorted_batches=sorted_queue,
-                    lookback_days=lookback_days,
+                    lookback_days=table_lookback_days,
                     append_only_override=table_meta.get("append_only"),
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,

@@ -77,7 +77,10 @@ def build_bronze_stream_groups(event_lookback_days: int) -> list[dict]:
             table_map = tables[name]
             tables_list = list(table_map.keys())
             table_config = {
-                table: {"merge_keys": table_map[table].get("merge_keys", [])}
+                table: {
+                    "merge_keys": table_map[table].get("merge_keys", []),
+                    "lookback_days": table_map[table].get("lookback_days", None),
+                }
                 for table in tables_list
             }
         stream_groups.append(
