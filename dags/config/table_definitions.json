@@ -44,7 +44,7 @@
         "id"
       ],
       "watermark_column": "updated_at",
-      "created_column": "registered_at"
+      "created_column": "registration_date"
     },
     "costing": {
       "merge_keys": [
