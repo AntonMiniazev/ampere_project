@@ -31,7 +31,7 @@
     },
     "payments": {
       "event_date_column": "payment_date",
-      "lookback_days": 1,
+      "lookback_days": 5,
       "merge_keys": [
         "order_id",
         "payment_date"
