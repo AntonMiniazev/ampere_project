@@ -1,6 +1,6 @@
 # Ampere Project Overview
 
-Ampere is a homelab data platform that generates synthetic operational data, lands it in Postgres, moves it into a lakehouse (MinIO + Spark + Delta), and publishes curated marts for BI. The end state is a data engineering stack running on a small K8s cluster.
+Ampere is a homelab data platform that generates synthetic operational data, lands it in Postgres, moves it into a Delta Lake (MinIO + Spark + Delta), and publishes curated marts for BI. The end state is a data engineering stack running on a small K8s cluster.
 
 Combination of services based on **_practice-first_** focus rather than actual project need.
 
@@ -44,11 +44,11 @@ Deployment reference: follow the completed infra runbook from https://github.com
 - [ ] Operational tuning (resources, retries, SLA)
 
 ### 3) Raw -> Bronze Delta
-- [ ] Spark jobs for deduplication, type normalization, and schema evolution
 - [x] Delta Lake tables in MinIO
 - [x] Airflow DAG for bronze load and backfill
 
 ### 4) Bronze -> Silver Delta
+- [ ] Spark jobs for deduplication, type normalization, and schema evolution
 - [ ] Conformed dimensions + SCD handling
 - [ ] Airflow DAG for silver load and backfill
 
