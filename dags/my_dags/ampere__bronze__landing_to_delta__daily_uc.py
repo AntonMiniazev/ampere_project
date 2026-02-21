@@ -232,7 +232,7 @@ with DAG(
         "max_active_runs": 1,
         "retries": 0,
     },
-    schedule="0 6 * * *",
+    schedule="0 7 * * *",
     start_date=datetime(2025, 8, 24),
     tags=[
         "layer:bronze",
