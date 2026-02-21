@@ -75,9 +75,8 @@ spec:
     spark.sql.catalog.{{ params.uc_catalog }}: "{{ params.uc_catalog_impl }}"
     spark.sql.catalog.{{ params.uc_catalog }}.uri: "{{ params.uc_api_uri }}"
     spark.sql.defaultCatalog: "{{ params.uc_catalog }}"
-{% if params.uc_token %}
-    spark.sql.catalog.{{ params.uc_catalog }}.token: "{{ params.uc_token }}"
-{% endif %}
+    spark.sql.catalog.{{ params.uc_catalog }}.auth.type: "{{ params.uc_auth_type }}"
+    spark.sql.catalog.{{ params.uc_catalog }}.auth.token: "{{ params.uc_token }}"
 {% endif %}
   volumes:
     - name: ivy-cache

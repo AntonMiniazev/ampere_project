@@ -98,7 +98,8 @@ UC_API_URI = Variable.get(
     "spark_uc_api_uri",
     default="http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080",
 )
-UC_TOKEN = Variable.get("spark_uc_token", default="")
+UC_TOKEN = Variable.get("spark_uc_token", default="local-dev-token")
+UC_AUTH_TYPE = Variable.get("spark_uc_auth_type", default="static")
 UC_CATALOG_IMPL = Variable.get(
     "spark_uc_catalog_impl",
     default="io.unitycatalog.spark.UCSingleCatalog",
@@ -216,6 +217,7 @@ def _base_params() -> dict:
         "uc_ops_schema": UC_OPS_SCHEMA,
         "uc_api_uri": UC_API_URI,
         "uc_token": UC_TOKEN,
+        "uc_auth_type": UC_AUTH_TYPE,
         "uc_catalog_impl": UC_CATALOG_IMPL,
     }
 
