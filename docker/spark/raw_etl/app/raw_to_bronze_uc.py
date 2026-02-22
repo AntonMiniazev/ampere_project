@@ -104,8 +104,10 @@ def sync_external_delta_table(
     The `CREATE TABLE IF NOT EXISTS ... USING DELTA LOCATION ...` command is
     metadata-only for existing Delta tables, so it is cheap and idempotent.
     """
-    # UC server storage mappings in this setup are configured for s3:// URLs.
-    # ETL paths are built as s3a:// for Spark/Hadoop IO, so normalize here.
+    # Spark/Delta on Hadoop resolves MinIO via `s3a://`, while UC REST/storage
+    # mappings are typically configured for `s3://`. Spark SQL executes the Delta
+    # table create path locally, so it must use the Spark-readable URI.
+    spark_location = location
     uc_location = location.replace("s3a://", "s3://", 1)
     fq_table = uc_table_name(catalog, schema, table)
     table_exists = spark.catalog.tableExists(f"{catalog}.{schema}.{table}")
@@ -113,12 +115,12 @@ def sync_external_delta_table(
         delta_schema = spark.read.format("delta").load(location).schema
         spark.sql(
             f"CREATE TABLE IF NOT EXISTS {fq_table} ({_columns_ddl(delta_schema)}) "
-            f"USING DELTA LOCATION '{uc_location}'"
+            f"USING DELTA LOCATION '{spark_location}'"
         )
     else:
         # Keep existing metadata when table is already registered.
         spark.sql(
-            f"CREATE TABLE IF NOT EXISTS {fq_table} USING DELTA LOCATION '{uc_location}'"
+            f"CREATE TABLE IF NOT EXISTS {fq_table} USING DELTA LOCATION '{spark_location}'"
         )
         if not _table_has_columns(spark, fq_table):
             logger.warning(
