@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Callable
 
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
@@ -28,6 +29,7 @@ def apply_facts_events_batches(
     expected_schema_hash: str | None,
     expected_contract_version: str | None,
     logger: logging.Logger,
+    align_to_target_schema: Callable | None = None,
 ) -> None:
     """Apply fact/event batches grouped by event_date.
 
@@ -302,6 +304,8 @@ def apply_facts_events_batches(
         if merge_keys:
             df = df.dropDuplicates(merge_keys)
 
+        if align_to_target_schema is not None:
+            df = align_to_target_schema(table, df)
         if do_merge:
             merge_to_delta(
                 spark,

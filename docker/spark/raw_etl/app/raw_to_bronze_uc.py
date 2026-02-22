@@ -11,7 +11,7 @@ import logging
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.types import (
     ArrayType,
     BinaryType,
@@ -237,6 +237,113 @@ def _uc_get_table(
     )
 
 
+def get_uc_table_payload(
+    spark: SparkSession,
+    catalog: str,
+    schema: str,
+    table: str,
+    logger: logging.Logger,
+) -> dict:
+    """Fetch UC table metadata and fail clearly when table is missing."""
+    status, payload = _uc_get_table(
+        spark=spark,
+        catalog=catalog,
+        schema=schema,
+        table=table,
+        logger=logger,
+    )
+    if status != 200:
+        raise RuntimeError(
+            f"UC-first schema check failed: table {catalog}.{schema}.{table} is not "
+            f"available in Unity Catalog (HTTP {status}). Pre-create it in UC first."
+        )
+    return payload
+
+
+def align_df_to_uc_schema(
+    spark: SparkSession,
+    df: DataFrame,
+    catalog: str,
+    schema: str,
+    table: str,
+    logger: logging.Logger,
+) -> DataFrame:
+    """Align a Spark DataFrame to UC table schema (UC-first contract enforcement).
+
+    The function reads UC table metadata via REST and:
+    - reorders columns to UC order,
+    - casts present columns to UC types,
+    - fills missing nullable columns with nulls,
+    - drops extra DF columns not present in UC (with warning).
+
+    Args:
+        spark: Active SparkSession.
+        df: DataFrame to align before bronze write/merge.
+        catalog: UC catalog, e.g. "ampere".
+        schema: UC schema, e.g. "bronze".
+        table: Table name, e.g. "orders".
+        logger: Run logger.
+    Examples:
+        df = align_df_to_uc_schema(spark, df, "ampere", "bronze", "orders", logger)
+    """
+    payload = get_uc_table_payload(spark, catalog, schema, table, logger)
+    uc_columns = payload.get("columns") or []
+    if not uc_columns:
+        raise RuntimeError(
+            f"UC-first schema check failed: {catalog}.{schema}.{table} has no columns[] "
+            "metadata. Recreate the UC table with explicit columns."
+        )
+    uc_columns = sorted(
+        uc_columns,
+        key=lambda c: (
+            c.get("position") is None,
+            c.get("position") or 0,
+            c.get("name") or "",
+        ),
+    )
+    uc_names = [str(col["name"]) for col in uc_columns if col.get("name")]
+    uc_map = {str(col["name"]): col for col in uc_columns if col.get("name")}
+    df_names = list(df.columns)
+    df_set = set(df_names)
+    uc_set = set(uc_names)
+
+    extra_columns = [name for name in df_names if name not in uc_set]
+    if extra_columns:
+        logger.warning(
+            "UC-first dropping %s extra columns for %s.%s.%s: %s",
+            len(extra_columns),
+            catalog,
+            schema,
+            table,
+            extra_columns,
+        )
+
+    missing_required = []
+    missing_nullable = []
+    for name in uc_names:
+        if name in df_set:
+            continue
+        if bool(uc_map[name].get("nullable", True)):
+            missing_nullable.append(name)
+        else:
+            missing_required.append(name)
+    if missing_required:
+        raise ValueError(
+            f"UC schema mismatch for {catalog}.{schema}.{table}: missing non-nullable "
+            f"columns in DataFrame: {missing_required}"
+        )
+
+    aligned = df
+    for name in missing_nullable:
+        type_text = str(uc_map[name].get("type_text") or "string")
+        aligned = aligned.withColumn(name, F.lit(None).cast(type_text))
+    select_exprs = []
+    for name in uc_names:
+        type_text = str(uc_map[name].get("type_text") or "string")
+        select_exprs.append(F.col(name).cast(type_text).alias(name))
+    return aligned.select(*select_exprs)
+
+
 def _uc_create_external_delta_table(
     spark: SparkSession,
     catalog: str,
@@ -284,13 +391,13 @@ def sync_external_delta_table(
 ) -> None:
     """Register or keep UC external table pointing to Delta path.
 
-    The `CREATE TABLE IF NOT EXISTS ... USING DELTA LOCATION ...` command is
-    metadata-only for existing Delta tables, so it is cheap and idempotent.
+    Registration is done through the UC REST API (not Spark SQL catalog create)
+    so Spark can keep using `s3a://` paths while UC receives `s3://` locations
+    for its temporary-credentials API.
     """
     # Spark/Delta on Hadoop resolves MinIO via `s3a://`, while UC REST/storage
     # mappings and temporary-credentials API use `s3://`.
     uc_location = location.replace("s3a://", "s3://", 1)
-    fq_table = uc_table_name(catalog, schema, table)
     delta_schema = spark.read.format("delta").load(location).schema
     status, table_payload = _uc_get_table(
         spark=spark,

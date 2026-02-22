@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Callable
 
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
@@ -25,6 +26,7 @@ def apply_snapshot_batches(
     expected_schema_hash: str | None,
     expected_contract_version: str | None,
     logger: logging.Logger,
+    align_to_target_schema: Callable | None = None,
 ) -> None:
     """Apply snapshot batches sequentially into a partitioned Delta table.
 
@@ -287,6 +289,8 @@ def apply_snapshot_batches(
             )
 
             df = df.withColumn("snapshot_date", F.lit(partition_value))
+            if align_to_target_schema is not None:
+                df = align_to_target_schema(table, df)
             if DeltaTable.isDeltaTable(spark, bronze_path):
                 (
                     df.write.format("delta")

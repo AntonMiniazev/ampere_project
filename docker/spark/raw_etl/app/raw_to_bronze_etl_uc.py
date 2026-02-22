@@ -30,6 +30,7 @@ from raw_to_bronze_facts_events import apply_facts_events_batches
 from raw_to_bronze_mutable_dims import apply_mutable_dim_batches
 from raw_to_bronze_snapshots import apply_snapshot_batches
 from raw_to_bronze_uc import (
+    align_df_to_uc_schema,
     ensure_uc_schema,
     parse_bool_flag,
     sync_external_delta_table,
@@ -511,6 +512,7 @@ def main() -> None:
         # Create UC schemas up-front to avoid per-table schema checks later.
         ensure_uc_schema(spark, uc_catalog, uc_bronze_schema, logger)
         ensure_uc_schema(spark, uc_catalog, uc_ops_schema, logger)
+        logger.info("UC-first schema handling enabled: drop extra DF columns, align to UC schema.")
 
     # Step 4: Load the registry table to track applied batches.
     # This drives idempotency and prevents duplicate loads per partition.
@@ -538,6 +540,18 @@ def main() -> None:
             schema=uc_ops_schema,
             table="bronze_apply_registry",
             location=registry_path,
+            logger=logger,
+        )
+    def _align_to_uc_bronze_schema(table_name: str, df):
+        """Align a table DataFrame to UC schema before bronze write/merge."""
+        if not uc_enabled:
+            return df
+        return align_df_to_uc_schema(
+            spark=spark,
+            df=df,
+            catalog=uc_catalog,
+            schema=uc_bronze_schema,
+            table=table_name,
             logger=logger,
         )
 
@@ -754,6 +768,7 @@ def main() -> None:
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,
+                    align_to_target_schema=_align_to_uc_bronze_schema if uc_enabled else None,
                 )
             elif partition_key == "extract_date":
                 apply_mutable_dim_batches(
@@ -770,6 +785,7 @@ def main() -> None:
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,
+                    align_to_target_schema=_align_to_uc_bronze_schema if uc_enabled else None,
                 )
             else:
                 apply_facts_events_batches(
@@ -788,6 +804,7 @@ def main() -> None:
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,
+                    align_to_target_schema=_align_to_uc_bronze_schema if uc_enabled else None,
                 )
             write_registry_rows(
                 spark,

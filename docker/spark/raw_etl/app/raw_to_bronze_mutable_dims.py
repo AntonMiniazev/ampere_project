@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Callable
 
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
@@ -26,6 +27,7 @@ def apply_mutable_dim_batches(
     expected_schema_hash: str | None,
     expected_contract_version: str | None,
     logger: logging.Logger,
+    align_to_target_schema: Callable | None = None,
 ) -> None:
     """Apply mutable-dimension batches grouped by extract_date.
 
@@ -265,6 +267,8 @@ def apply_mutable_dim_batches(
             for extra in dfs[1:]:
                 df = df.unionByName(extra, allowMissingColumns=True)
 
+            if align_to_target_schema is not None:
+                df = align_to_target_schema(table, df)
             merge_to_delta(spark, df, bronze_path, merge_keys)
 
             # Step C: Emit registry rows for every batch in the partition.
