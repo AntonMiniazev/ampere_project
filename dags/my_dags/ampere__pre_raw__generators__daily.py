@@ -54,7 +54,7 @@ pg_pass = Secret(
 
 with DAG(
     dag_id=DAG_ID,
-    schedule="0 3 * * *",
+    schedule="15 4 * * *",
     start_date=datetime(2025, 8, 24),
     tags=["layer:pre_raw", "system:postgres", "mode:daily"],
     catchup=False,
@@ -82,11 +82,15 @@ with DAG(
         is_delete_operator_pod=True,
     )
 
-    # trigger_source_to_minio = TriggerDagRunOperator(
-    #    task_id="trigger_source_to_minio",
-    #    trigger_dag_id="source_to_minio",
-    #    logical_date="{{ logical_date }}",
-    # )
+    trigger_raw_landing = TriggerDagRunOperator(
+        task_id="trigger__raw_landing__postgres_to_landing__daily",
+        trigger_dag_id="ampere__raw_landing__postgres_to_landing__daily",
+        logical_date="{{ logical_date }}",
+        reset_dag_run=True,
+        wait_for_completion=True,
+        allowed_states=["success"],
+        failed_states=["failed", "upstream_failed"],
+        poke_interval=60,
+    )
 
-    generate_data
-    # generate_data >> trigger_source_to_minio
+    generate_data >> trigger_raw_landing

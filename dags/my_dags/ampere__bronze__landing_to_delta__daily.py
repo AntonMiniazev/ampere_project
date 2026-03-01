@@ -90,9 +90,23 @@ EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2")
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default="2")
 )
+UC_ENABLED = Variable.get("spark_uc_enabled", default="true").strip().lower()
+UC_CATALOG = Variable.get("spark_uc_catalog", default="ampere")
+UC_BRONZE_SCHEMA = Variable.get("spark_uc_bronze_schema", default="bronze")
+UC_OPS_SCHEMA = Variable.get("spark_uc_ops_schema", default="ops")
+UC_API_URI = Variable.get(
+    "spark_uc_api_uri",
+    default="http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080",
+)
+UC_TOKEN = Variable.get("spark_uc_token", default="local-dev-token")
+UC_AUTH_TYPE = Variable.get("spark_uc_auth_type", default="static")
+UC_CATALOG_IMPL = Variable.get(
+    "spark_uc_catalog_impl",
+    default="io.unitycatalog.spark.UCSingleCatalog",
+)
 
-SPARK_APP_TEMPLATE = "raw_to_bronze_template.yaml"
-REGISTRY_INIT_TEMPLATE = "bronze_registry_init.yaml"
+SPARK_APP_TEMPLATE = "raw_to_bronze_template_uc.yaml"
+REGISTRY_INIT_TEMPLATE = "bronze_registry_init_uc.yaml"
 SPARK_TEMPLATE_PATHS = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[1] / "sparkapplications"),
@@ -197,6 +211,14 @@ def _base_params() -> dict:
         "executor_instances": EXECUTOR_INSTANCES,
         "executor_node_selector": EXECUTOR_NODE_SELECTOR,
         "shuffle_partitions": SHUFFLE_PARTITIONS,
+        "uc_enabled": UC_ENABLED,
+        "uc_catalog": UC_CATALOG,
+        "uc_bronze_schema": UC_BRONZE_SCHEMA,
+        "uc_ops_schema": UC_OPS_SCHEMA,
+        "uc_api_uri": UC_API_URI,
+        "uc_token": UC_TOKEN,
+        "uc_auth_type": UC_AUTH_TYPE,
+        "uc_catalog_impl": UC_CATALOG_IMPL,
     }
 
 
@@ -212,12 +234,13 @@ with DAG(
         "max_active_runs": 1,
         "retries": 0,
     },
-    schedule="0 6 * * *",
+    schedule="0 7 * * *",
     start_date=datetime(2025, 8, 24),
     tags=[
         "layer:bronze",
         "system:spark",
         "system:minio",
+        "catalog:unity",
         "mode:daily",
     ],
     catchup=False,

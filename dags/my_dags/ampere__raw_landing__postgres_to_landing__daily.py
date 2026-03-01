@@ -6,6 +6,7 @@ from pathlib import Path
 from airflow import DAG
 from airflow.sdk import Variable
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
@@ -148,6 +149,17 @@ with DAG(
         python_callable=done,
     )
 
+    trigger_bronze = TriggerDagRunOperator(
+        task_id="trigger__bronze__landing_to_delta__daily",
+        trigger_dag_id="ampere__bronze__landing_to_delta__daily",
+        logical_date="{{ logical_date }}",
+        reset_dag_run=True,
+        wait_for_completion=True,
+        allowed_states=["success"],
+        failed_states=["failed", "upstream_failed"],
+        poke_interval=60,
+    )
+
     submit_tasks = []
     base_params = _base_params()
 
@@ -199,4 +211,4 @@ with DAG(
             )
         )
 
-    start_batch_task >> submit_tasks >> done_task
+    start_batch_task >> submit_tasks >> done_task >> trigger_bronze
