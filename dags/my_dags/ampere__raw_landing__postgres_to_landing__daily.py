@@ -126,7 +126,7 @@ def _base_params() -> dict:
 with DAG(
     dag_id=DAG_ID,
     default_args=default_args,
-    schedule="0 4 * * *",
+    schedule=None,
     start_date=datetime(2025, 8, 24),
     tags=[
         "layer:raw_landing",
@@ -154,10 +154,7 @@ with DAG(
         trigger_dag_id="ampere__bronze__landing_to_delta__daily",
         logical_date="{{ logical_date }}",
         reset_dag_run=True,
-        wait_for_completion=True,
-        allowed_states=["success"],
-        failed_states=["failed"],
-        poke_interval=60,
+        wait_for_completion=False,
     )
 
     submit_tasks = []

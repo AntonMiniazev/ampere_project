@@ -87,10 +87,7 @@ with DAG(
         trigger_dag_id="ampere__raw_landing__postgres_to_landing__daily",
         logical_date="{{ logical_date }}",
         reset_dag_run=True,
-        wait_for_completion=True,
-        allowed_states=["success"],
-        failed_states=["failed"],
-        poke_interval=60,
+        wait_for_completion=False,
     )
 
     generate_data >> trigger_raw_landing
