@@ -89,7 +89,7 @@ with DAG(
         reset_dag_run=True,
         wait_for_completion=True,
         allowed_states=["success"],
-        failed_states=["failed", "upstream_failed"],
+        failed_states=["failed"],
         poke_interval=60,
     )
 
