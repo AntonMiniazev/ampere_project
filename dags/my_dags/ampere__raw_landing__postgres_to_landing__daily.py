@@ -152,7 +152,7 @@ with DAG(
     trigger_bronze = TriggerDagRunOperator(
         task_id="trigger__bronze__landing_to_delta__daily",
         trigger_dag_id="ampere__bronze__landing_to_delta__daily",
-        logical_date="{{ logical_date }}",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
         wait_for_completion=False,
     )

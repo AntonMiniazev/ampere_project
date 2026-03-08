@@ -73,7 +73,7 @@ with DAG(
     trigger_business_logic_stage = TriggerDagRunOperator(
         task_id="trigger_dbt_business_logic_stage",
         trigger_dag_id="dbt_business_logic_stage",
-        logical_date="{{ logical_date }}",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
     )
 
     dbt_processing >> trigger_business_logic_stage

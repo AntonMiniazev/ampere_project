@@ -81,7 +81,7 @@ with DAG(
     trigger_processing = TriggerDagRunOperator(
         task_id="trigger_dbt_processing",
         trigger_dag_id="dbt_processing",
-        logical_date="{{ logical_date }}",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
     )
 
     prev_export_task >> trigger_processing
