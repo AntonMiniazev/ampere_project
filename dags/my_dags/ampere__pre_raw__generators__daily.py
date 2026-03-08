@@ -72,8 +72,11 @@ with DAG(
         secrets=[pg_user, pg_pass],
         env_vars={"PGOPTIONS": f"-c work_mem={PGOPTIONS}"},
         cmds=["python", "-m", "order_data_generator"],
-        # Use logical date as "today" for order generation.
-        arguments=["--run-date", "{{ ds }}"],
+        # Use logical date when available; fallback to run_after for manual runs.
+        arguments=[
+            "--run-date",
+            "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+        ],
         container_resources=V1ResourceRequirements(
             requests={"cpu": "250m", "memory": "1Gi"},
             limits={"cpu": "2", "memory": "3Gi"},
