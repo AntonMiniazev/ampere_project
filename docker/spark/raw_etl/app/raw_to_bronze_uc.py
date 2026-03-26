@@ -227,6 +227,14 @@ def _uc_get_table(
     table: str,
     logger: logging.Logger,
 ) -> tuple[int, dict]:
+    """Fetch a single UC table payload through the REST API.
+
+    The Bronze pipeline uses this helper when it needs authoritative catalog
+    metadata, for example to validate that a target table exists or to inspect
+    its column contract. Returning the raw HTTP status together with the JSON
+    body lets callers decide whether absence is acceptable or should fail the
+    current Spark job.
+    """
     fq = f"{catalog}.{schema}.{table}"
     return _uc_http_json(
         spark=spark,

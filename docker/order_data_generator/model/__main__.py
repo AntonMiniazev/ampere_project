@@ -10,10 +10,23 @@ from order_data_generator.main import run_generation, set_seed
 
 
 def _parse_date(value: str):
+    """Parse the CLI run date into a Python date object.
+
+    Airflow passes the logical run date to this container as a string argument.
+    Converting it at the CLI boundary keeps the rest of the generator code free
+    from parsing concerns and makes debugging bad input much easier.
+    """
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
 def parse_args():
+    """Build the command-line interface for the daily source generator.
+
+    The generator can be driven by Airflow with default settings or by a
+    developer who wants to override volumes, churn rates, or random seeds during
+    local experiments. Centralizing the CLI contract here makes it clear which
+    parts of the synthetic workload are configurable from outside the code.
+    """
     parser = argparse.ArgumentParser(description="Run daily source data generator")
     # Sets "today" for generation; affects order_date, statuses, and payments.
     parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
@@ -52,6 +65,13 @@ def parse_args():
 
 
 def main() -> None:
+    """Run the daily synthetic data generator from the container entrypoint.
+
+    This function translates Airflow/container inputs into a final
+    `GeneratorConfig`, applies optional overrides, and then launches the actual
+    generation workflow. In pipeline terms, this is the step that mutates the
+    `source` schema every day before Spark extracts it into raw landing.
+    """
     setup_logging()
     logger = logging.getLogger(APP_NAME)
     logger.info("Starting order data generator")
@@ -72,7 +92,9 @@ def main() -> None:
         "max_weight": args.max_weight,
     }
 
-    effective_overrides = {key: value for key, value in overrides.items() if value is not None}
+    effective_overrides = {
+        key: value for key, value in overrides.items() if value is not None
+    }
 
     if args.new_clients_rate_min is not None or args.new_clients_rate_max is not None:
         new_min = (

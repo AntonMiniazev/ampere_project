@@ -13,6 +13,8 @@ spec:
     - ghcr-pull
   mainApplicationFile: local:///opt/spark/app/bronze_registry_init_uc.py
   arguments:
+    # These CLI arguments are rendered by Airflow and then consumed by
+    # bronze_registry_init_uc.py inside the Spark image.
     - --bronze-bucket
     - {{ params.bronze_bucket }}
     - --bronze-prefix
@@ -26,9 +28,9 @@ spec:
     - --app-name
     - {{ params.app_name }}
   sparkConf:
-    spark.driver.extraClassPath: "/opt/spark/ivy/*:/opt/spark/ivy/jars/*"
-    spark.executor.extraClassPath: "/opt/spark/ivy/*:/opt/spark/ivy/jars/*"
-    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.2.jar,local:///opt/spark/ivy/hadoop-common-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-runtime-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-api-3.4.2.jar,local:///opt/spark/ivy/bundle-2.40.16.jar,local:///opt/spark/ivy/delta-spark_2.13-4.0.1.jar,local:///opt/spark/ivy/delta-storage-4.0.1.jar,local:///opt/spark/ivy/unitycatalog-spark_2.13-0.3.1.jar,local:///opt/spark/ivy/jars/io.unitycatalog_unitycatalog-client-0.3.1.jar"
+    # Registry init uses the same Delta/UC/MinIO stack as the main Bronze job,
+    # so keep the jar set aligned and avoid wildcard Ivy classpaths here too.
+    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.1.jar,local:///opt/spark/ivy/bundle-2.24.6.jar,local:///opt/spark/ivy/delta-spark_2.13-4.0.1.jar,local:///opt/spark/ivy/delta-storage-4.0.1.jar,local:///opt/spark/ivy/unitycatalog-spark_2.13-0.3.1.jar,local:///opt/spark/ivy/unitycatalog-client-0.3.1.jar"
     spark.ui.enabled: "false"
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
@@ -36,6 +38,12 @@ spec:
     spark.hadoop.fs.s3a.path.style.access: "true"
     spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
     spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    spark.hadoop.fs.s3a.aws.credentials.provider: "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
+    spark.hadoop.fs.s3.endpoint: "{{ params.minio_endpoint }}"
+    spark.hadoop.fs.s3.path.style.access: "true"
+    spark.hadoop.fs.s3.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
+    spark.hadoop.fs.s3.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    spark.hadoop.fs.AbstractFileSystem.s3.impl: "org.apache.hadoop.fs.s3a.S3A"
 {% if params.uc_enabled == "true" %}
     spark.sql.catalog.{{ params.uc_catalog }}: "{{ params.uc_catalog_impl }}"
     spark.sql.catalog.{{ params.uc_catalog }}.uri: "{{ params.uc_api_uri }}"
@@ -50,6 +58,7 @@ spec:
   restartPolicy:
     type: Never
   driver:
+    # The driver performs the fast existence check and the fallback Spark-based creation path.
     cores: {{ params.driver_cores }}
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
@@ -73,6 +82,8 @@ spec:
             name: minio-creds
             key: MINIO_SECRET_KEY
   executor:
+    # Executors are kept for symmetry with the SparkApplication spec, even though
+    # registry initialization is mostly driver-centric work.
     instances: {{ params.executor_instances }}
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"

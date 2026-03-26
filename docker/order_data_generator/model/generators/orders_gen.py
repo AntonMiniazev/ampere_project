@@ -22,12 +22,24 @@ logger = logging.getLogger(APP_NAME)
 
 
 def _normalize_date(value) -> date:
+    """Convert datetime-like values to a plain date for branching logic.
+
+    Source tables sometimes provide `date` objects and sometimes timestamp-like
+    objects depending on how they were loaded or joined. Normalizing them here
+    prevents subtle type mismatches later in the order-status and payment rules.
+    """
     if isinstance(value, datetime):
         return value.date()
     return value
 
 
 def _clamp_times_to_date(base_date: date, times: list[datetime]) -> list[datetime]:
+    """Shift a list of timestamps back so they stay inside one calendar day.
+
+    Several generator steps create status timelines by adding random durations.
+    This helper preserves the intended order while making sure the synthetic
+    lifecycle does not accidentally spill into the next day.
+    """
     end_of_day = datetime.combine(
         base_date, datetime.max.time()).replace(microsecond=0)
     latest = max(times)
@@ -44,6 +56,13 @@ def generate_products_in_order(
     store_orders: list[dict],
     config: GeneratorConfig,
 ) -> list[dict]:
+    """Create order-line rows for the orders of one store.
+
+    This function turns a store-level assortment into concrete product choices,
+    quantities, and prices for each generated order. It is the bridge between
+    the catalog side of the source system and the transactional `order_product`
+    fact table that downstream Spark jobs ingest.
+    """
     prod_in_orders: list[dict] = []
 
     store_assortment = assortment.filter(pl.col("store_id") == store_id)
@@ -124,6 +143,13 @@ def clients_to_orders(
     packing_status_id: int,
     delivered_status_id: int,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Generate the base order rows and order-product rows for the business day.
+
+    The function works store by store so client preferences, courier pools, and
+    assortment availability stay locally consistent. Its output is the core fact
+    data of the source system: the `orders` table plus the associated
+    `order_product` lines that later drive raw landing and bronze ingestion.
+    """
     orders: list[dict] = []
     products_in_orders: list[dict] = []
     order_key = 0
@@ -236,6 +262,13 @@ def generate_order_status_history(
     status_map: dict[str, int],
     config: GeneratorConfig,
 ) -> pl.DataFrame:
+    """Create the operational status timeline for each order.
+
+    This function simulates how couriers and order statuses evolve over time,
+    including partial orders from yesterday that should finish today. The result
+    feeds both source-system realism and the downstream event-style tables that
+    Spark later ingests into raw landing and bronze.
+    """
     records: list[dict] = []
 
     created_id = status_map["created"]
@@ -448,6 +481,13 @@ def generate_payments(
     delivered_status_id: int,
     config: GeneratorConfig,
 ) -> pl.DataFrame:
+    """Generate payment facts based on order state and payment timing rules.
+
+    Payments are not assigned blindly: this function looks at the latest known
+    delivery status and then decides whether a payment should be pre-paid,
+    same-day, or postponed. That makes the source `payments` table depend on the
+    operational lifecycle instead of looking like unrelated random data.
+    """
     # Use latest status to decide prepayment vs after-payment behavior.
     payments_query = f'''
         WITH latest_order_status AS (
@@ -527,6 +567,13 @@ def generate_payments(
 def generate_delivery_tracking(
     delivery_tracking_input: pl.DataFrame, config: GeneratorConfig
 ) -> pl.DataFrame:
+    """Create courier tracking events from the delivery-oriented order timeline.
+
+    The source system stores delivery tracking separately from order statuses, so
+    this function derives "pick up" and "delivery" events from the already
+    computed order-status timings. Those rows later become part of the raw
+    events stream and are merged into bronze like other operational events.
+    """
     records: list[dict] = []
 
     for row in delivery_tracking_input.iter_rows(named=True):
@@ -568,6 +615,13 @@ def generate_delivery_tracking(
 def prepare_raw_data(
     yesterday: date, config: GeneratorConfig, delivered_status_id: int
 ) -> tuple[pl.DataFrame, int, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Load all source-side inputs needed to generate today's operational rows.
+
+    Before the generator can create new orders, it must know the active client
+    base, the number of stores, available couriers, active assortment, and any
+    unfinished orders from yesterday. This function collects that working set in
+    one place so the main generation flow reads like a clear pipeline stage.
+    """
     # Pull required source data and yesterday's unfinished orders for further processing.
     client_query = f'''
         SELECT id, fullname, preferred_store_id, registration_date, churned
@@ -642,6 +696,13 @@ def prepare_raw_data(
 def prepare_orders_statuses(
     today: date, yesterday: date, config: GeneratorConfig
 ) -> None:
+    """Run the order-side generation pipeline and write all derived source tables.
+
+    This is the high-level orchestration function for the daily operational part
+    of the source system. It validates dictionary prerequisites, loads required
+    base data, generates orders and all dependent tables, and then persists the
+    results into PostgreSQL so the Spark raw landing job can extract them.
+    """
     logger.info(
         "Preparing order pipeline for today=%s yesterday=%s", today, yesterday)
     status_map = fetch_order_status_map(config.schema)

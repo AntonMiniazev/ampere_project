@@ -24,6 +24,13 @@ DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 
 
 def _resolve_image(value: str | None) -> str:
+    """Resolve a Spark image reference from an Airflow variable.
+
+    The DAG accepts either a full registry path or just a tag value. That keeps
+    Airflow configuration convenient for day-to-day operations while still
+    allowing explicit image pinning when you need to test or roll back a Spark
+    application version.
+    """
     if not value:
         return DEFAULT_IMAGE
     if "/" in value:
@@ -86,18 +93,43 @@ default_args = {
 
 
 def startBatch() -> None:
+    """Emit a simple log marker for the start of the raw landing DAG.
+
+    This helper does not transform data by itself, but it gives new readers an
+    easy "pipeline started here" anchor in the Airflow graph and task logs. It
+    is also a convenient place to explain that the next tasks are Spark jobs,
+    not regular Python code inside the scheduler.
+    """
     print("##### startBatch #####")
 
 
 def done() -> None:
+    """Emit a simple log marker for the end of the raw landing DAG.
+
+    In Airflow, explicit boundary tasks make the graph easier to read than
+    having only opaque Spark submit tasks. For a junior reader this helps
+    separate orchestration bookkeeping from the actual extraction work.
+    """
     print("##### done #####")
 
 
 def _minio_ssl_enabled(endpoint: str) -> str:
+    """Translate the object-store endpoint into Spark's expected SSL flag.
+
+    SparkApplication YAML needs a plain `"true"` or `"false"` string, while the
+    Airflow config stores the full endpoint URL. This helper hides that small
+    impedance mismatch from the rest of the DAG.
+    """
     return "true" if endpoint.startswith("https://") else "false"
 
 
 def _base_params() -> dict:
+    """Assemble the common parameter set shared by every source-to-raw Spark app.
+
+    The raw landing DAG submits multiple SparkApplication objects, but they all
+    share the same cluster, Postgres, and MinIO settings. Building the base
+    parameter dictionary once makes the per-group differences easier to spot.
+    """
     return {
         "namespace": SPARK_NAMESPACE,
         "image": IMAGE,
@@ -139,16 +171,20 @@ with DAG(
     max_active_tasks=MAX_ACTIVE_TASKS,
     template_searchpath=SPARK_TEMPLATE_PATHS,
 ) as dag:
+    # Boundary marker before submitting Spark workloads.
     start_batch_task = PythonOperator(
         task_id="run__sparkapp__start",
         python_callable=startBatch,
     )
 
+    # Boundary marker after all raw batches have been extracted.
     done_task = PythonOperator(
         task_id="run__sparkapp__done",
         python_callable=done,
     )
 
+    # After raw landing is written successfully, Airflow hands control to the
+    # bronze DAG that converts validated raw batches into Delta tables.
     trigger_bronze = TriggerDagRunOperator(
         task_id="trigger__bronze__landing_to_delta__daily",
         trigger_dag_id="ampere__bronze__landing_to_delta__daily",
@@ -160,6 +196,8 @@ with DAG(
     submit_tasks = []
     base_params = _base_params()
 
+    # Convert JSON config into two execution bundles so related table families
+    # can be extracted together with matching Spark sizing.
     stream_groups = build_raw_stream_groups(EVENT_LOOKBACK_DAYS)
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():

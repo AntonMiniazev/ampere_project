@@ -3,6 +3,13 @@ from datetime import date
 
 
 def _get_int(name: str, default: int) -> int:
+    """Read an integer setting from the environment with a safe fallback.
+
+    Bootstrap containers are configured through environment variables injected
+    by Kubernetes/Airflow. This helper keeps that wiring simple by converting
+    blank or missing values into a predictable default instead of letting the
+    rest of the code worry about parsing edge cases.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -10,6 +17,12 @@ def _get_int(name: str, default: int) -> int:
 
 
 def _get_str(name: str, default: str) -> str:
+    """Read a string setting from the environment with a safe fallback.
+
+    The init pipeline uses this for schema names, hostnames, and dates. Treating
+    empty strings as "not set" keeps local runs and Kubernetes runs consistent,
+    which makes the config easier to explain and reason about.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return default

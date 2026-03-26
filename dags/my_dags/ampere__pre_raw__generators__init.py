@@ -27,6 +27,13 @@ NODE_SELECTOR = {
 
 # Image map from Airflow variable; allows pinning tags per pipeline.
 def _load_image_map() -> dict:
+    """Read the shared GHCR image map from Airflow Variables.
+
+    This DAG is manual and infrequent, so pinning its image through a variable
+    avoids hardcoding versions in the DAG source. The helper also tolerates bad
+    JSON input by falling back to an empty mapping, which keeps the DAG import
+    resilient.
+    """
     raw_value = Variable.get("ghcr_images", default="{}")
     if isinstance(raw_value, str):
         try:
@@ -43,6 +50,13 @@ IMAGE = f"ghcr.io/antonminiazev/init-source-preparation:{IMAGE_TAG}"
 
 
 def _get_optional_var(name: str) -> str | None:
+    """Read an optional Airflow Variable and normalize blanks to None.
+
+    The init DAG supports a few developer-facing knobs, such as initial client
+    count, but it should not pass empty strings into the container as if they
+    were real values. Normalizing here keeps the environment contract clean for
+    the bootstrap application.
+    """
     value = Variable.get(name, default=None)
     if value is None:
         return None
@@ -77,8 +91,8 @@ with DAG(
     tags=["layer:pre_raw", "system:postgres", "mode:init"],
 ) as dag:
     env_vars = {
-        # Use logical date as base for generated registrations.
-        "PROJECT_START_DATE": "{{ ds }}",
+        # Use the DAG logical date as the anchor for initial registration dates.
+        "PROJECT_START_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
     }
     init_client_num = _get_optional_var("init_client_num")
     if init_client_num is not None:
@@ -87,6 +101,9 @@ with DAG(
     if init_delivery_resource is not None:
         env_vars["N_DELIVERY_RESOURCE"] = init_delivery_resource
 
+    # The init pod creates the source schema, dictionary tables, starter client
+    # base, courier pool, and assortment. It is the one-time setup step that
+    # makes the daily generator and downstream Spark DAGs possible.
     init_data_task = KubernetesPodOperator(
         task_id="run__pre_raw__init",
         name="init-source-preparation",

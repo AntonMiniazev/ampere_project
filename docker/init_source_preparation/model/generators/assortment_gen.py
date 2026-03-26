@@ -5,6 +5,13 @@ import polars as pl
 
 
 def generate_assortment() -> pl.DataFrame:
+    """Build the store-to-product assortment matrix for bootstrap.
+
+    Assortment determines which products each store is allowed to sell, so it is
+    a key bridge between static dictionaries and later order generation. The
+    result is intentionally derived from the product and store dictionaries so
+    the source schema remains internally consistent from day one.
+    """
     dictionaries = files("init_source_preparation.dictionaries")
 
     with (
@@ -20,6 +27,9 @@ def generate_assortment() -> pl.DataFrame:
     assortment_frames = []
 
     for store_id in store_ids:
+        # Keep some but not all products from each category in each store so the
+        # synthetic catalog differs slightly by store, which makes downstream
+        # analytics and bronze merges more interesting.
         for category_id in category_ids:
             category_products = df_products.filter(
                 pl.col("category_id") == category_id

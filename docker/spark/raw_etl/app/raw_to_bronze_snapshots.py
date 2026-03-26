@@ -94,6 +94,13 @@ def apply_snapshot_batches(
         return
 
     def _latest_batch_key(batch: dict) -> tuple:
+        """Build an ordering key so the newest snapshot batch wins deterministically.
+
+        Snapshot groups may contain multiple raw runs for the same business date
+        when reruns happen. Comparing ingest timestamp first and run id second
+        gives Bronze a stable rule for deciding which batch overwrites the
+        snapshot partition and which ones are marked as superseded.
+        """
         ingest_dt = parse_optional_datetime(batch.get("ingest_ts_utc") or "")
         if ingest_dt and ingest_dt.tzinfo is None:
             ingest_dt = ingest_dt.replace(tzinfo=timezone.utc)

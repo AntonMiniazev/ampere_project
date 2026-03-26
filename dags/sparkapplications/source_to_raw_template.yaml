@@ -13,6 +13,8 @@ spec:
     - ghcr-pull
   mainApplicationFile: local:///opt/spark/app/source_to_raw_etl.py
   arguments:
+    # Airflow renders these arguments before the SparkApplication is submitted.
+    # The values become the CLI contract for source_to_raw_etl.py inside the Spark image.
     - --tables
     - "{{ params.tables }}"
     - --table-config
@@ -22,7 +24,7 @@ spec:
     - --schema
     - {{ params.schema }}
     - --run-date
-    - "{{ ds }}"
+    - "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}"
     - --run-id
     - "{{ run_id }}-{{ ti.try_number }}"
     - --mode
@@ -54,14 +56,21 @@ spec:
     - --image
     - {{ params.image }}
   sparkConf:
-    spark.driver.extraClassPath: "/opt/spark/ivy/*"
-    spark.executor.extraClassPath: "/opt/spark/ivy/*"
-    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.2.jar,local:///opt/spark/ivy/hadoop-common-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-runtime-3.4.2.jar,local:///opt/spark/ivy/hadoop-client-api-3.4.2.jar,local:///opt/spark/ivy/bundle-2.40.16.jar,local:///opt/spark/ivy/postgresql-42.7.3.jar"
+    # Keep Spark on the image's built-in Hadoop runtime and add only the jars
+    # this job actually needs. Avoid wildcard Ivy classpaths because old cached
+    # jars can shadow Spark's bundled Hadoop classes after restarts/redeploys.
+    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.1.jar,local:///opt/spark/ivy/bundle-2.24.6.jar,local:///opt/spark/ivy/postgresql-42.7.3.jar"
     spark.ui.enabled: "false"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"
     spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
     spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    spark.hadoop.fs.s3a.aws.credentials.provider: "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
+    spark.hadoop.fs.s3.endpoint: "{{ params.minio_endpoint }}"
+    spark.hadoop.fs.s3.path.style.access: "true"
+    spark.hadoop.fs.s3.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
+    spark.hadoop.fs.s3.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    spark.hadoop.fs.AbstractFileSystem.s3.impl: "org.apache.hadoop.fs.s3a.S3A"
   volumes:
     - name: ivy-cache
       persistentVolumeClaim:
@@ -69,6 +78,7 @@ spec:
   restartPolicy:
     type: Never
   driver:
+    # Driver env vars provide database and MinIO credentials to the Python app.
     cores: {{ params.driver_cores }}
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
@@ -108,6 +118,8 @@ spec:
             name: minio-creds
             key: MINIO_SECRET_KEY
   executor:
+    # Executors need the same connection inputs because Spark may perform IO
+    # from executors as well as from the driver.
     instances: {{ params.executor_instances }}
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"

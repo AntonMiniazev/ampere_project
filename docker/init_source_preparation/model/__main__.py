@@ -13,6 +13,14 @@ from init_source_preparation.logging_utils import APP_NAME, setup_logging
 
 
 def main() -> None:
+    """Run the one-time source bootstrap container entrypoint.
+
+    This function is intentionally small: it prepares logging, reports which
+    schema/database will be touched, and then hands control to the real
+    initialization workflow. In the overall pipeline this is the very first
+    executable step, because it creates the source tables and seeds the initial
+    rows that later daily generators and Spark jobs depend on.
+    """
     setup_logging()
     logger = logging.getLogger(APP_NAME)
     logger.info(

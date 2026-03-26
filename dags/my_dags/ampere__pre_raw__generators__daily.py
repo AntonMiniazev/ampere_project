@@ -22,6 +22,13 @@ NODE_SELECTOR = {
 
 # Image map from Airflow variable; allows pinning tags per pipeline.
 def _load_image_map() -> dict:
+    """Read the shared GHCR image map from Airflow Variables.
+
+    The project stores container tags in one JSON variable so DAGs can stay
+    stable while image versions change independently. Returning a dictionary here
+    keeps the rest of the DAG focused on orchestration logic instead of JSON
+    parsing details.
+    """
     raw_value = Variable.get("ghcr_images", default="{}")
     if isinstance(raw_value, str):
         try:
@@ -60,6 +67,9 @@ with DAG(
     catchup=False,
     max_active_runs=1,
 ) as dag:
+    # Step 1: run the daily Python generator in Kubernetes. This mutates the
+    # PostgreSQL source schema by applying churn, adding new clients, and
+    # creating fresh operational rows for the current logical date.
     generate_data = KubernetesPodOperator(
         task_id="run__pre_raw__daily",
         name="order-data-generator",
@@ -72,7 +82,8 @@ with DAG(
         secrets=[pg_user, pg_pass],
         env_vars={"PGOPTIONS": f"-c work_mem={PGOPTIONS}"},
         cmds=["python", "-m", "order_data_generator"],
-        # Use logical date when available; fallback to run_after for manual runs.
+        # Use Airflow's logical date as the business date for synthetic data.
+        # Manual runs still work because `run_after` is used as a fallback.
         arguments=[
             "--run-date",
             "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
@@ -85,6 +96,8 @@ with DAG(
         is_delete_operator_pod=True,
     )
 
+    # Step 2: once PostgreSQL has been updated, trigger the Spark extraction DAG
+    # that reads the source schema and writes raw landing batches to object storage.
     trigger_raw_landing = TriggerDagRunOperator(
         task_id="trigger__raw_landing__postgres_to_landing__daily",
         trigger_dag_id="ampere__raw_landing__postgres_to_landing__daily",

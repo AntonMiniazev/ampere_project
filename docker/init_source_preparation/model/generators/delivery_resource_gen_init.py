@@ -12,10 +12,19 @@ def generate_delivery_resource(
     store_id_range: tuple[int, int] = (1, 5),
     project_start_date: str | None = None,
 ) -> pl.DataFrame:
+    """Generate the initial courier fleet used by the order pipeline.
+
+    Delivery resources are the operational actors that later get assigned to
+    orders, status history, and delivery tracking events. Creating them during
+    bootstrap ensures the daily generator has a stable pool of couriers before
+    it starts synthesizing order activity.
+    """
     if project_start_date is None:
         project_start_date = date.today().isoformat()
     start_date = datetime.strptime(project_start_date, "%Y-%m-%d").date()
 
+    # Weight delivery types so common courier modes appear more often than rare
+    # modes, which makes the synthetic source data look less uniform.
     delivery_type_choices = [1, 2, 3]
     delivery_type_weights = [0.5, 0.35, 0.15]
 

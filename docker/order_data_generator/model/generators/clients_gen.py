@@ -16,6 +16,12 @@ logger = logging.getLogger(APP_NAME)
 
 
 def update_churned(ids: list[int], schema: str, today: date) -> None:
+    """Mark a selected set of clients as churned in the source database.
+
+    Churn is one of the daily mutations that makes the source system evolve over
+    time instead of staying static. This helper applies the change in one bulk
+    SQL statement so the pipeline stays simple and efficient even with many IDs.
+    """
     if not ids:
         logger.info("No clients marked for churn update.")
         return
@@ -33,6 +39,12 @@ def update_churned(ids: list[int], schema: str, today: date) -> None:
 
 
 def generate_clients(n: int, store_id: int, today: date) -> list[dict]:
+    """Create new client rows for one preferred store on one logical date.
+
+    These rows represent newly registered customers that enter the operational
+    system before order generation runs. The function returns plain dictionaries
+    because they are easy to combine across stores and then upload in bulk.
+    """
     clients = []
     for _ in range(n):
         # Use Faker to create realistic names and register them today.
@@ -52,6 +64,13 @@ def generate_clients(n: int, store_id: int, today: date) -> list[dict]:
 def prepare_clients_update_and_generation(
     today: date, config: GeneratorConfig
 ) -> tuple[list[int], list[dict]]:
+    """Decide which active clients churn today and how many new ones to create.
+
+    The function reads the current client base, works store by store, samples a
+    churn subset, and then creates replacement/new customers according to the
+    configured acquisition rates. In the pipeline story this is the "dimension
+    maintenance" step that happens before new orders are generated.
+    """
     client_query = f'''
         SELECT id, fullname, preferred_store_id, registration_date, churned
         FROM "{config.schema}"."clients"

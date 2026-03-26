@@ -6,6 +6,12 @@ from typing import Iterable
 
 
 def _get_int(name: str, default: int) -> int:
+    """Read an integer generator setting from the environment.
+
+    Airflow and local container runs both configure the generator through
+    environment variables. Treating blank values as missing makes the config
+    layer predictable and keeps the business logic focused on generation rules.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -13,6 +19,12 @@ def _get_int(name: str, default: int) -> int:
 
 
 def _get_float(name: str, default: float) -> float:
+    """Read a float generator setting from the environment.
+
+    Many synthetic volume knobs, such as churn rates and average order counts,
+    are fractional. Parsing them here keeps the rest of the code clean and makes
+    it obvious which values are externalized configuration rather than logic.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -20,6 +32,12 @@ def _get_float(name: str, default: float) -> float:
 
 
 def _get_str(name: str, default: str) -> str:
+    """Read a string generator setting from the environment.
+
+    This helper is used for things like schema names and project dates. It
+    mirrors the integer/float readers so all config values follow the same
+    "blank means default" semantics.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return default
@@ -29,6 +47,13 @@ def _get_str(name: str, default: str) -> str:
 def _get_list(
     name: str, default: Iterable[float], cast: type[float] | type[int] = float
 ) -> tuple:
+    """Parse comma-separated numeric ranges from the environment.
+
+    The generator uses many min/max or probability tuples, and storing them as
+    comma-separated environment variables keeps container configuration simple.
+    Returning tuples makes the downstream code explicit about which values are
+    fixed pairs or small probability vectors.
+    """
     value = os.getenv(name)
     if value is None or value == "":
         return tuple(default)
@@ -37,6 +62,13 @@ def _get_list(
 
 @dataclass(frozen=True)
 class GeneratorConfig:
+    """Immutable bundle of all knobs that control daily synthetic generation.
+
+    Keeping the configuration in one frozen dataclass makes each run easier to
+    reason about and log. It also helps a junior reader see which parts of the
+    generator are "inputs" versus the actual business rules implemented by the
+    generator functions.
+    """
     schema: str
     source_db_name: str
     source_db_host: str
@@ -71,6 +103,13 @@ class GeneratorConfig:
 
 
 def load_config() -> GeneratorConfig:
+    """Load the generator configuration from environment variables.
+
+    This is the main boundary between orchestration and application logic. The
+    returned dataclass becomes the single source of truth for probabilities,
+    counts, connection parameters, and timing assumptions used across the daily
+    source generation pipeline.
+    """
     return GeneratorConfig(
         # Target schema for generated tables.
         schema=_get_str("SCHEMA_INIT", "source"),
@@ -130,6 +169,13 @@ def load_config() -> GeneratorConfig:
 
 
 def apply_overrides(config: GeneratorConfig, **overrides) -> GeneratorConfig:
+    """Return a new config object with only the provided override values applied.
+
+    Airflow usually runs with defaults, but local testing often needs targeted
+    overrides like smaller volumes or deterministic probability ranges. Using
+    dataclass replacement preserves immutability while still allowing those
+    selective scenario tweaks.
+    """
     clean_overrides = {
         key: value for key, value in overrides.items() if value is not None
     }

@@ -28,6 +28,14 @@ DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 
 
 def _resolve_image(value: str | None) -> str:
+    """Resolve a Spark image reference for bronze ingestion jobs.
+
+    Bronze processing is packaged as Spark applications, not ordinary Airflow
+    Python callables, so the image choice matters for every downstream helper
+    library on the driver and executors. Supporting both full image names and
+    short tags keeps operational changes simple without hiding where the image is
+    injected.
+    """
     if not value:
         return DEFAULT_IMAGE
     if "/" in value:
@@ -114,19 +122,45 @@ SPARK_TEMPLATE_PATHS = [
 
 
 def _minio_ssl_enabled(endpoint: str) -> str:
+    """Convert the MinIO endpoint URL into Spark's boolean-like SSL flag.
+
+    Airflow variables store a full URL because humans reason about endpoints
+    that way, while SparkApplication YAML needs a `"true"` or `"false"` string.
+    This helper keeps that translation obvious and localized.
+    """
     return "true" if endpoint.startswith("https://") else "false"
 
 
 def startBatch() -> None:
+    """Emit a start marker for the bronze DAG.
+
+    This helper is intentionally simple, but it makes the DAG graph easier to
+    read and gives a junior developer a natural point where the bronze phase
+    begins. Everything after this task is Spark-driven Delta work rather than
+    plain Airflow Python logic.
+    """
     print("##### startBatch #####")
 
 
 def done() -> None:
+    """Emit an end marker for the bronze DAG.
+
+    The bronze DAG groups a lot of Spark work behind a few tasks. Having an
+    explicit closing marker makes the orchestration easier to scan in Airflow and
+    clarifies where the raw-to-bronze phase finishes.
+    """
     print("##### done #####")
 
 
 def _registry_exists() -> bool:
-    """Check for the registry Delta log in MinIO via Airflow or env credentials."""
+    """Check whether the bronze apply registry Delta table already exists.
+
+    The bronze pipeline uses the registry as its idempotency and bookkeeping
+    table, so the DAG decides up front whether it needs to run the registry-init
+    Spark app. The function first tries Airflow's S3Hook and then falls back to
+    raw MinIO credentials so the existence check still works in lighter runtime
+    environments.
+    """
     logger = logging.getLogger(DAG_ID)
     prefix = BRONZE_PREFIX.strip("/")
     delta_prefix = "ops/bronze_apply_registry/_delta_log/"
@@ -179,6 +213,13 @@ def _registry_exists() -> bool:
 
 
 def _select_registry_path() -> str:
+    """Choose the Airflow branch target for registry initialization.
+
+    Airflow branching is easier to understand when the decision is expressed as
+    a tiny helper that returns a downstream task ID. In pipeline terms this is
+    the control point that decides whether bronze can start writing immediately
+    or must bootstrap its registry table first.
+    """
     return (
         "skip__sparkapp__registry_init"
         if _registry_exists()
@@ -187,6 +228,13 @@ def _select_registry_path() -> str:
 
 
 def _base_params() -> dict:
+    """Assemble the parameter block shared by all bronze Spark applications.
+
+    Registry init and the group-based bronze loaders use the same cluster, image,
+    source bucket, bronze bucket, and Unity Catalog settings. Centralizing these
+    values makes the DAG easier to review because the per-task differences are
+    then mostly about group behavior and executor sizing.
+    """
     return {
         "namespace": SPARK_NAMESPACE,
         "image": IMAGE,
@@ -247,11 +295,13 @@ with DAG(
     max_active_tasks=MAX_ACTIVE_TASKS,
     template_searchpath=SPARK_TEMPLATE_PATHS,
 ) as dag:
+    # Boundary marker before any bronze Spark job is submitted.
     start_batch_task = PythonOperator(
         task_id="run__sparkapp__start",
         python_callable=startBatch,
     )
 
+    # Boundary marker after bronze processing has finished.
     done_task = PythonOperator(
         task_id="run__sparkapp__done",
         python_callable=done,
@@ -259,6 +309,7 @@ with DAG(
 
     base_params = _base_params()
 
+    # Expand the shared JSON config into the logical groups processed by bronze.
     stream_groups = build_bronze_stream_groups(EVENT_LOOKBACK_DAYS)
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
