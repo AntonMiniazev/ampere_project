@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
@@ -29,22 +30,66 @@ def load_table_definitions() -> dict:
     return _load_json(TABLES_PATH)
 
 
-def load_stream_groups(event_lookback_days: int) -> list[dict]:
-    """Load the logical execution groups and inject the current event lookback.
+def _normalize_lookback_overrides(
+    lookback_overrides: Mapping[str, int | None] | None,
+) -> dict[str, int]:
+    """Normalize optional per-group lookback overrides into safe integers.
 
-    The events group has a configurable lookback window that Airflow can control
-    through variables. Updating that value at load time keeps the JSON mostly
-    static while still allowing the DAG to tune how much recent history is
-    rescanned on each run.
+    Airflow variables are optional and human-edited, so the DAG utilities treat
+    missing values as "no override" and clamp provided values to non-negative
+    integers. Keeping that normalization in one helper prevents the raw and
+    bronze builders from drifting apart.
+    """
+    if not lookback_overrides:
+        return {}
+
+    normalized: dict[str, int] = {}
+    for group_name, value in lookback_overrides.items():
+        if value is None:
+            continue
+        normalized[group_name] = max(int(value), 0)
+    return normalized
+
+
+def _resolve_table_lookback_days(
+    table_meta: dict,
+    group_name: str,
+    normalized_overrides: Mapping[str, int],
+) -> int | None:
+    """Return the effective table lookback for a logical stream group.
+
+    When Airflow sets an override for a group, that override should win for all
+    tables in the group, including tables that normally have table-specific
+    defaults like `payments`. If no override exists, the checked-in JSON config
+    remains the source of truth.
+    """
+    if group_name in normalized_overrides:
+        return normalized_overrides[group_name]
+    return table_meta.get("lookback_days", None)
+
+
+def load_stream_groups(
+    lookback_overrides: Mapping[str, int | None] | None = None,
+) -> list[dict]:
+    """Load logical execution groups and apply optional Airflow lookback overrides.
+
+    The checked-in JSON remains the default behavior for normal daily runs, but
+    operators sometimes need to widen the raw/bronze scan window after outages.
+    Applying overrides here keeps the declarative config stable while still
+    letting Airflow widen facts, events, or mutable-dimension rescans on demand.
     """
     groups = _load_json(STREAM_GROUPS_PATH)
+    normalized_overrides = _normalize_lookback_overrides(lookback_overrides)
     for group in groups:
-        if group.get("group") == "events":
-            group["lookback_days"] = event_lookback_days
+        group_name = group.get("group")
+        if group_name in normalized_overrides:
+            group["lookback_days"] = normalized_overrides[group_name]
     return groups
 
 
-def build_raw_stream_groups(event_lookback_days: int) -> list[dict]:
+def build_raw_stream_groups(
+    lookback_overrides: Mapping[str, int | None] | None = None,
+) -> list[dict]:
     """Combine table definitions and group settings into raw-landing run groups.
 
     Raw extraction needs to know more than just table names: mutable dimensions
@@ -53,7 +98,8 @@ def build_raw_stream_groups(event_lookback_days: int) -> list[dict]:
     application template.
     """
     tables = load_table_definitions()
-    groups = load_stream_groups(event_lookback_days)
+    normalized_overrides = _normalize_lookback_overrides(lookback_overrides)
+    groups = load_stream_groups(normalized_overrides)
     stream_groups = []
     for group in groups:
         name = group["group"]
@@ -75,7 +121,11 @@ def build_raw_stream_groups(event_lookback_days: int) -> list[dict]:
                 table_config = {
                     table: {
                         "event_date_column": table_map[table].get("event_date_column", ""),
-                        "lookback_days": table_map[table].get("lookback_days", None),
+                        "lookback_days": _resolve_table_lookback_days(
+                            table_map[table],
+                            name,
+                            normalized_overrides,
+                        ),
                     }
                     for table in tables_list
                 }
@@ -91,7 +141,9 @@ def build_raw_stream_groups(event_lookback_days: int) -> list[dict]:
     return stream_groups
 
 
-def build_bronze_stream_groups(event_lookback_days: int) -> list[dict]:
+def build_bronze_stream_groups(
+    lookback_overrides: Mapping[str, int | None] | None = None,
+) -> list[dict]:
     """Combine table definitions and group settings into bronze run groups.
 
     Bronze processing has different needs from raw landing: it cares about merge
@@ -100,7 +152,8 @@ def build_bronze_stream_groups(event_lookback_days: int) -> list[dict]:
     Spark application.
     """
     tables = load_table_definitions()
-    groups = load_stream_groups(event_lookback_days)
+    normalized_overrides = _normalize_lookback_overrides(lookback_overrides)
+    groups = load_stream_groups(normalized_overrides)
     stream_groups = []
     for group in groups:
         name = group["group"]
@@ -113,7 +166,11 @@ def build_bronze_stream_groups(event_lookback_days: int) -> list[dict]:
             table_config = {
                 table: {
                     "merge_keys": table_map[table].get("merge_keys", []),
-                    "lookback_days": table_map[table].get("lookback_days", None),
+                    "lookback_days": _resolve_table_lookback_days(
+                        table_map[table],
+                        name,
+                        normalized_overrides,
+                    ),
                 }
                 for table in tables_list
             }

@@ -260,9 +260,14 @@ def _build_where_clause(
         run_date: Logical run date, e.g. date(2026, 1, 24).
         event_date_column: Event column, e.g. "order_date".
         watermark_column: Watermark column, e.g. "updated_at".
-        lookback_days: Lookback size, e.g. 2.
+        lookback_days: Optional recovery window size, e.g. 2.
         watermark_from: Lower watermark, e.g. datetime(2026, 1, 23, tzinfo=UTC).
         watermark_to: Upper watermark, e.g. datetime(2026, 1, 24, tzinfo=UTC).
+
+    For `event_date` tables the lookback behaves like a normal date window.
+    For `extract_date` tables a positive lookback switches the query into a
+    fixed "re-read the last N days of updates" mode instead of relying only on
+    the stored watermark checkpoint.
     """
     if mode != "incremental":
         return None
@@ -272,10 +277,14 @@ def _build_where_clause(
         lower = watermark_from
         if upper is None:
             upper = datetime.combine(run_date, datetime.min.time(), tzinfo=timezone.utc)
-        if lower is None:
-            lower = upper - timedelta(days=1)
-        if created_column:
+        if lookback_days > 0:
+            lower = upper - timedelta(days=lookback_days)
+            created_lower = lower
+        else:
+            if lower is None:
+                lower = upper - timedelta(days=1)
             created_lower = created_from
+        if created_column:
             if created_lower is None:
                 created_lower = lower
             return (
@@ -873,7 +882,10 @@ def main() -> None:
                 if bootstrap_full_extract:
                     lower = datetime(1900, 1, 1, tzinfo=timezone.utc)
                 else:
-                    lower = table_watermark_from or (upper - timedelta(days=1))
+                    if table_lookback_days > 0:
+                        lower = upper - timedelta(days=table_lookback_days)
+                    else:
+                        lower = table_watermark_from or (upper - timedelta(days=1))
                 if table_watermark_col:
                     window_from = _format_ts(lower)
                     window_to = _format_ts(upper)
@@ -882,6 +894,12 @@ def main() -> None:
                         "from": window_from,
                         "to": window_to,
                     }
+                    if table_lookback_days > 0:
+                        manifest_context["lookback_days"] = table_lookback_days
+                        manifest_context["window"] = {
+                            "from": window_from,
+                            "to": window_to,
+                        }
                 batch_result = _write_batch(
                     spark,
                     df,

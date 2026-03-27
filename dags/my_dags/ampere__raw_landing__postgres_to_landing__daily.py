@@ -67,7 +67,6 @@ EXECUTOR_INSTANCES_SNAPSHOTS = int(
 EXECUTOR_INSTANCES_FACTS_EVENTS = int(
     Variable.get("spark_executor_instances_facts_events", default="4")
 )
-EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
 SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="4"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_source_to_raw_max_active_tasks", default="2")
@@ -155,6 +154,63 @@ def _base_params() -> dict:
     }
 
 
+def _read_optional_nonnegative_int_variable(name: str) -> int | None:
+    """Read an optional Airflow integer variable without forcing a fallback.
+
+    These lookback overrides are meant to be opt-in recovery levers, so a
+    missing or blank variable must behave differently from an explicit `0`.
+    Returning `None` for unset values lets the JSON config stay in control until
+    an operator deliberately widens a group window.
+    """
+    value = Variable.get(name, default=None)
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+    return max(int(value), 0)
+
+
+def _resolve_lookback_overrides() -> dict[str, int | None]:
+    """Collect optional per-group recovery windows from Airflow variables.
+
+    Facts and mutable dimensions get new dedicated variables, while events also
+    keeps supporting the legacy singular variable name already used in the
+    cluster. This makes the new behavior backward compatible and keeps existing
+    operator habits from breaking.
+    """
+    events_override = _read_optional_nonnegative_int_variable(
+        "spark_events_lookback_days"
+    )
+    if events_override is None:
+        events_override = _read_optional_nonnegative_int_variable(
+            "spark_event_lookback_days"
+        )
+    return {
+        "facts": _read_optional_nonnegative_int_variable(
+            "spark_facts_lookback_days"
+        ),
+        "events": events_override,
+        "mutable_dims": _read_optional_nonnegative_int_variable(
+            "spark_mutable_dims_lookback_days"
+        ),
+    }
+
+
+def _group_pair_lookback_days(groups_config: list[dict]) -> int:
+    """Return the widest lookback used by a combined Spark submission.
+
+    A single SparkApplication can process more than one logical group at once,
+    such as `facts` together with `events`. Using the maximum lookback keeps the
+    top-level CLI argument aligned with the most demanding group, even though
+    the detailed per-table behavior still comes from `groups_config`.
+    """
+    return max(
+        (int(group.get("lookback_days", 0) or 0) for group in groups_config),
+        default=0,
+    )
+
+
 with DAG(
     dag_id=DAG_ID,
     default_args=default_args,
@@ -198,7 +254,7 @@ with DAG(
 
     # Convert JSON config into two execution bundles so related table families
     # can be extracted together with matching Spark sizing.
-    stream_groups = build_raw_stream_groups(EVENT_LOOKBACK_DAYS)
+    stream_groups = build_raw_stream_groups(_resolve_lookback_overrides())
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
         group["shuffle_partitions"] = 1 if name == "snapshots" else SHUFFLE_PARTITIONS
@@ -230,7 +286,7 @@ with DAG(
             "watermark_column": seed_group.get("watermark_column", ""),
             "watermark_from": "",
             "watermark_to": "",
-            "lookback_days": seed_group.get("lookback_days", 0),
+            "lookback_days": _group_pair_lookback_days(groups_config),
             "snapshot_partitioned": seed_group.get("snapshot_partitioned", "true"),
             "app_name": f"source-to-raw-{group_name}",
             "executor_instances": executor_instances,

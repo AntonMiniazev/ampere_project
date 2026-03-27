@@ -94,7 +94,6 @@ FILES_OPEN_COST_BYTES_FACTS_EVENTS = Variable.get(
 ADAPTIVE_COALESCE_FACTS_EVENTS = Variable.get(
     "spark_sql_adaptive_coalesce_facts_events", default="false"
 )
-EVENT_LOOKBACK_DAYS = int(Variable.get("spark_event_lookback_days", default="2"))
 MAX_ACTIVE_TASKS = int(
     Variable.get("spark_raw_to_bronze_max_active_tasks", default="2")
 )
@@ -270,6 +269,62 @@ def _base_params() -> dict:
     }
 
 
+def _read_optional_nonnegative_int_variable(name: str) -> int | None:
+    """Read an optional Airflow integer variable without inventing a default.
+
+    Bronze recovery windows should only change when an operator explicitly sets
+    them. Returning `None` for missing or blank variables lets the checked-in
+    JSON config remain the default daily behavior.
+    """
+    value = Variable.get(name, default=None)
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value:
+        return None
+    return max(int(value), 0)
+
+
+def _resolve_lookback_overrides() -> dict[str, int | None]:
+    """Collect optional per-group lookback overrides for bronze processing.
+
+    Facts and mutable dimensions use new dedicated variables, while events still
+    accepts the legacy singular variable name already present in the cluster.
+    Supporting both names keeps the DAG upgrade-compatible with existing Airflow
+    configuration.
+    """
+    events_override = _read_optional_nonnegative_int_variable(
+        "spark_events_lookback_days"
+    )
+    if events_override is None:
+        events_override = _read_optional_nonnegative_int_variable(
+            "spark_event_lookback_days"
+        )
+    return {
+        "facts": _read_optional_nonnegative_int_variable(
+            "spark_facts_lookback_days"
+        ),
+        "events": events_override,
+        "mutable_dims": _read_optional_nonnegative_int_variable(
+            "spark_mutable_dims_lookback_days"
+        ),
+    }
+
+
+def _group_pair_lookback_days(groups_config: list[dict]) -> int:
+    """Return the widest lookback across the logical groups in one Spark job.
+
+    The bronze DAG submits one SparkApplication for `facts+events` and another
+    for `snapshots+mutable_dims`. Using the maximum group lookback keeps the
+    top-level CLI argument in sync with the broadest recovery window represented
+    inside the richer `groups_config` payload.
+    """
+    return max(
+        (int(group.get("lookback_days", 0) or 0) for group in groups_config),
+        default=0,
+    )
+
+
 with DAG(
     dag_id=DAG_ID,
     default_args={
@@ -310,7 +365,7 @@ with DAG(
     base_params = _base_params()
 
     # Expand the shared JSON config into the logical groups processed by bronze.
-    stream_groups = build_bronze_stream_groups(EVENT_LOOKBACK_DAYS)
+    stream_groups = build_bronze_stream_groups(_resolve_lookback_overrides())
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
         if name == "snapshots":
@@ -378,7 +433,7 @@ with DAG(
             "mode": "snapshot",
             "partition_key": "snapshot_date",
             "event_date_column": "",
-            "lookback_days": EVENT_LOOKBACK_DAYS,
+            "lookback_days": _group_pair_lookback_days(groups_config),
             "app_name": f"raw-to-bronze-{group_name}",
             "executor_instances": executor_instances,
         }
