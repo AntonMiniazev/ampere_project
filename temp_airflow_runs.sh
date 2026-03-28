@@ -1,1 +1,0 @@
-ssh -J oppie@oppie-server -o BatchMode=yes ampere@ampere-k8s-master 'kubectl --kubeconfig=$HOME/.kube/config -n ampere exec airflow-scheduler-cc975b467-czgct -c scheduler -- airflow dags list-runs -d ampere__bronze__landing_to_delta__daily --no-backfill | tail -n 20'
