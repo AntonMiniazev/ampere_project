@@ -73,7 +73,7 @@ def apply_facts_events_batches(
     # checkpoint block loss when executors churn under tight memory.
     spark.conf.set("spark.databricks.delta.merge.materializeSource", "none")
     logger.info(
-        "Set spark.databricks.delta.merge.materializeSource=false for facts/events."
+        "Set spark.databricks.delta.merge.materializeSource=none for facts/events."
     )
     append_only = append_only_override
     if append_only is None:

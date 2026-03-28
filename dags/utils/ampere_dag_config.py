@@ -240,6 +240,8 @@ class BronzeDagConfig:
     executor_instances: int
     executor_instances_snapshots: int
     executor_instances_facts_events: int
+    executor_memory_facts_events: str
+    executor_memory_overhead_facts_events: str
     executor_node_selector: str
     shuffle_partitions: int
     shuffle_partitions_facts_events: int
@@ -285,6 +287,8 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - executor_instances: Default executor count for bronze jobs. Default `3`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `3`.
     - executor_instances_facts_events: Executor count override for facts/events group. Default `3`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `1536m`.
+    - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `384m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `1`.
     - shuffle_partitions_facts_events: Shuffle partition override for facts/events. Default `8`.
@@ -350,6 +354,12 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         ),
         executor_instances_facts_events=int(
             Variable.get("spark_executor_instances_facts_events", default="3")
+        ),
+        executor_memory_facts_events=Variable.get(
+            "spark_executor_memory_facts_events", default="1536m"
+        ),
+        executor_memory_overhead_facts_events=Variable.get(
+            "spark_executor_memory_overhead_facts_events", default="384m"
         ),
         executor_node_selector=Variable.get(
             "spark_executor_node_selector", default="ampere-k8s-node4"

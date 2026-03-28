@@ -258,6 +258,16 @@ with DAG(
             if group_name == "snapshots-mutable-dims"
             else DAG_CONFIG.executor_instances_facts_events
         )
+        executor_memory = (
+            DAG_CONFIG.executor_memory
+            if group_name == "snapshots-mutable-dims"
+            else DAG_CONFIG.executor_memory_facts_events
+        )
+        executor_memory_overhead = (
+            DAG_CONFIG.executor_memory_overhead
+            if group_name == "snapshots-mutable-dims"
+            else DAG_CONFIG.executor_memory_overhead_facts_events
+        )
         params = {
             **base_params,
             "group": group_name,
@@ -271,6 +281,8 @@ with DAG(
             "lookback_days": _group_pair_lookback_days(groups_config),
             "app_name": f"raw-to-bronze-{group_name}",
             "executor_instances": executor_instances,
+            "executor_memory": executor_memory,
+            "executor_memory_overhead": executor_memory_overhead,
         }
         task = SparkKubernetesOperator(
             task_id=f"run__sparkapp__group_{group_name}",
