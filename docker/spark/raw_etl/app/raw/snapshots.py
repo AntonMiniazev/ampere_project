@@ -39,6 +39,7 @@ def build_snapshot_plan(
         table_lookback_days=int(table_lookback_days or 0),
         table_watermark_col=table_watermark_col,
         table_created_col=table_created_col,
+        table_cursor_granularity="timestamp",
         state_path_value=None,
         table_watermark_from=None,
         table_created_from=None,

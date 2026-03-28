@@ -34,6 +34,13 @@ def build_mutable_dim_plan(
         table_lookback_days = group_lookback_days
     table_watermark_col = table_meta.get("watermark_column") or group_watermark_col
     table_created_col = table_meta.get("created_column") or None
+    table_cursor_granularity = (
+        table_meta.get("cursor_granularity") or "timestamp"
+    ).strip().lower()
+    if table_cursor_granularity not in {"date", "timestamp"}:
+        raise ValueError(
+            f"Unsupported cursor_granularity={table_cursor_granularity!r} for {table}."
+        )
     if not table_watermark_col:
         raise ValueError("watermark_column is required for extract_date batches.")
 
@@ -70,6 +77,7 @@ def build_mutable_dim_plan(
             table_event_col,
             table_watermark_col,
             table_created_col,
+            table_cursor_granularity,
             int(table_lookback_days or 0),
             table_watermark_from,
             table_created_from,
@@ -86,6 +94,7 @@ def build_mutable_dim_plan(
         table_lookback_days=int(table_lookback_days or 0),
         table_watermark_col=table_watermark_col,
         table_created_col=table_created_col,
+        table_cursor_granularity=table_cursor_granularity,
         state_path_value=state_path_value,
         table_watermark_from=table_watermark_from,
         table_created_from=table_created_from,
@@ -152,15 +161,20 @@ def write_mutable_dim_table(
         logger,
     )
     if plan.state_path_value and batch_result["success"]:
+        if plan.table_cursor_granularity == "date":
+            last_cursor_value = upper.date().isoformat()
+        else:
+            last_cursor_value = format_ts(upper)
         state_payload = {
             "source_system": source_system,
             "source_schema": schema,
             "source_table": table,
             "watermark_column": plan.table_watermark_col,
             "created_column": plan.table_created_col,
-            "last_watermark": format_ts(upper),
-            "last_updated_at": format_ts(upper),
-            "last_created_at": format_ts(upper),
+            "cursor_granularity": plan.table_cursor_granularity,
+            "last_watermark": last_cursor_value,
+            "last_updated_at": last_cursor_value,
+            "last_created_at": last_cursor_value,
             "last_successful_run_id": run_id,
             "last_successful_ingest_ts_utc": ingest_ts_utc,
             "last_manifest_path": batch_result["manifest_path"],

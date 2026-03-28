@@ -44,7 +44,8 @@
         "id"
       ],
       "watermark_column": "updated_at",
-      "created_column": "registration_date"
+      "created_column": "registration_date",
+      "cursor_granularity": "date"
     },
     "costing": {
       "merge_keys": [
@@ -53,14 +54,16 @@
         "valid_from"
       ],
       "watermark_column": "valid_to",
-      "created_column": "valid_from"
+      "created_column": "valid_from",
+      "cursor_granularity": "date"
     },
     "delivery_resource": {
       "merge_keys": [
         "id"
       ],
       "watermark_column": "updated_at",
-      "created_column": "created_at"
+      "created_column": "created_at",
+      "cursor_granularity": "date"
     },
     "products": {
       "merge_keys": [
@@ -68,7 +71,8 @@
         "valid_from"
       ],
       "watermark_column": "valid_to",
-      "created_column": "valid_from"
+      "created_column": "valid_from",
+      "cursor_granularity": "date"
     }
   },
   "snapshots": [

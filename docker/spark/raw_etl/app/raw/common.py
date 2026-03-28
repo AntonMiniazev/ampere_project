@@ -35,6 +35,7 @@ class RawTablePlan:
     table_lookback_days: int
     table_watermark_col: str | None
     table_created_col: str | None
+    table_cursor_granularity: str
     state_path_value: str | None
     table_watermark_from: datetime | None
     table_created_from: datetime | None
@@ -52,6 +53,7 @@ def build_where_clause(
     event_date_column: str | None,
     watermark_column: str | None,
     created_column: str | None,
+    cursor_granularity: str,
     lookback_days: int,
     watermark_from: Optional[datetime],
     created_from: Optional[datetime],
@@ -73,6 +75,29 @@ def build_where_clause(
             if lower is None:
                 lower = upper - timedelta(days=1)
             created_lower = created_from
+        if cursor_granularity == "date":
+            upper_date = upper.date()
+            if lookback_days > 0:
+                lower_date = upper_date - timedelta(days=max(lookback_days - 1, 0))
+                created_lower_date = lower_date
+            else:
+                lower_date = (lower or upper).date()
+                created_lower_date = (
+                    created_lower.date() if created_lower is not None else lower_date
+                )
+            if created_column:
+                return (
+                    f"(({watermark_column} IS NOT NULL AND "
+                    f"{watermark_column} >= DATE '{lower_date.isoformat()}' AND "
+                    f"{watermark_column} <= DATE '{upper_date.isoformat()}') "
+                    f"OR ({watermark_column} IS NULL AND "
+                    f"{created_column} >= DATE '{created_lower_date.isoformat()}' AND "
+                    f"{created_column} <= DATE '{upper_date.isoformat()}'))"
+                )
+            return (
+                f"{watermark_column} >= DATE '{lower_date.isoformat()}' "
+                f"AND {watermark_column} <= DATE '{upper_date.isoformat()}'"
+            )
         if created_column:
             if created_lower is None:
                 created_lower = lower
