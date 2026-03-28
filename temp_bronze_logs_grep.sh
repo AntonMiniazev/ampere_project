@@ -1,0 +1,1 @@
+ssh -J oppie@oppie-server -o BatchMode=yes ampere@ampere-k8s-master 'kubectl --kubeconfig=$HOME/.kube/config -n ampere logs raw-to-bronze-uc-facts-events-20260328t041500-ppal2lwn-driver | grep -E "ERROR|Failed|payments|delivery_tracking|order_status_history|Applied batch|Exception|Traceback" | tail -n 200'

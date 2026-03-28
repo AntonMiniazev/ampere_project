@@ -1,0 +1,1 @@
+ssh -J oppie@oppie-server -o BatchMode=yes ampere@ampere-k8s-master 'kubectl --kubeconfig=$HOME/.kube/config -n ampere logs airflow-worker-0 -c worker --since=2h | grep -E "run__sparkapp__group_snapshots-mutable-dims|Failed applying|raw-to-bronze-etl|ERROR" | tail -n 200'

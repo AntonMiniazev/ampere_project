@@ -1,0 +1,1 @@
+ssh -J oppie@oppie-server -o BatchMode=yes ampere@ampere-k8s-master 'kubectl --kubeconfig=$HOME/.kube/config -n ampere exec airflow-worker-0 -c worker -- sh -lc "tail -n 300 /opt/airflow/logs/dag_id=ampere__bronze__landing_to_delta__daily/run_id=manual__2026-03-28T04:15:00+00:00/task_id=run__sparkapp__group_snapshots-mutable-dims/attempt=4.log"'

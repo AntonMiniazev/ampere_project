@@ -288,15 +288,15 @@ def apply_snapshot_batches(
             df = df.withColumn("snapshot_date", F.lit(partition_value))
             if align_to_target_schema is not None:
                 df = align_to_target_schema(table, df)
-            (
-                df.write.format("delta")
-                .mode("overwrite")
-                .option(
-                    "replaceWhere",
-                    f"snapshot_date = '{partition_value}'",
-                )
-                .saveAsTable(bronze_table_name)
-            )
+            try:
+                from delta.tables import DeltaTable
+            except ImportError as exc:
+                raise ImportError(
+                    "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
+                ) from exc
+            delta_table = DeltaTable.forName(spark, bronze_table_name)
+            delta_table.delete(f"snapshot_date = '{partition_value}'")
+            df.write.format("delta").mode("append").saveAsTable(bronze_table_name)
 
             # Step C: Record the applied batch in the registry.
             # This keeps idempotency and traceability for future runs.

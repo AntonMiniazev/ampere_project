@@ -224,6 +224,7 @@ class BronzeDagConfig:
     image: str
     image_pull_policy: str
     minio_endpoint: str
+    minio_conn_id: str
     schema: str
     raw_bucket: str
     raw_prefix: str
@@ -251,6 +252,7 @@ class BronzeDagConfig:
     uc_catalog: str
     uc_bronze_schema: str
     uc_ops_schema: str
+    registry_location: str
     uc_api_uri: str
     uc_token: str
     uc_auth_type: str
@@ -267,6 +269,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - image: Spark container image used for the bronze app. Default `ghcr.io/antonminiazev/ampere-spark:latest` when `ampere-spark-image` is unset.
     - image_pull_policy: Kubernetes image pull policy for the Spark pods. Default `IfNotPresent`.
     - minio_endpoint: MinIO/S3 endpoint used by Spark S3A IO. Default `http://minio.ampere.svc.cluster.local:9000`.
+    - minio_conn_id: Airflow connection id used for MinIO registry existence checks. Default `minio_conn`.
     - schema: Source schema name used in raw and bronze metadata. Default `source`.
     - raw_bucket: Raw landing bucket name. Default `ampere-raw`.
     - raw_prefix: Prefix under the raw bucket where landing batches live. Default `postgres-pre-raw`.
@@ -294,12 +297,20 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - uc_catalog: Unity Catalog catalog name for bronze objects. Default `ampere`.
     - uc_bronze_schema: Unity Catalog schema name for bronze tables. Default `bronze`.
     - uc_ops_schema: Unity Catalog schema name for operational tables. Default `ops`.
+    - registry_location: Storage location used only for registry bootstrap/recovery. Default `s3a://ampere-bronze/bronze/ops/bronze_apply_registry`.
     - uc_api_uri: Unity Catalog API endpoint. Default `http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080`.
     - uc_token: Unity Catalog auth token used by Spark config. Default `local-dev-token`.
     - uc_auth_type: Unity Catalog auth mode used by Spark config. Default `static`.
     - uc_catalog_impl: Spark catalog implementation class for Unity Catalog. Default `io.unitycatalog.spark.UCSingleCatalog`.
     - template_paths: Template search paths for SparkApplication YAML rendering. Default is derived from `anchor_file` plus `dags/sparkapplications`.
     """
+    bronze_bucket = Variable.get("minio_bronze_bucket", default="ampere-bronze")
+    bronze_prefix = Variable.get("bronze_output_prefix", default="bronze").strip("/")
+    default_registry_location = (
+        f"s3a://{bronze_bucket}/{bronze_prefix}/ops/bronze_apply_registry"
+        if bronze_prefix
+        else f"s3a://{bronze_bucket}/ops/bronze_apply_registry"
+    )
     return BronzeDagConfig(
         spark_namespace=Variable.get("spark_namespace", default=DEFAULT_NAMESPACE),
         service_account=Variable.get(
@@ -312,6 +323,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "minio_s3_endpoint",
             default=DEFAULT_MINIO_ENDPOINT,
         ),
+        minio_conn_id=Variable.get("minio_conn_id", default="minio_conn"),
         schema=Variable.get("pg_schema", default="source"),
         raw_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
         raw_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
@@ -367,6 +379,10 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         uc_catalog=Variable.get("spark_uc_catalog", default="ampere"),
         uc_bronze_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
         uc_ops_schema=Variable.get("spark_uc_ops_schema", default="ops"),
+        registry_location=Variable.get(
+            "spark_uc_bronze_registry_location",
+            default=default_registry_location,
+        ),
         uc_api_uri=Variable.get(
             "spark_uc_api_uri",
             default="http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080",
