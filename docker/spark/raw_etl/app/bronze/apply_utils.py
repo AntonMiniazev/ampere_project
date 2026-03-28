@@ -10,7 +10,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType

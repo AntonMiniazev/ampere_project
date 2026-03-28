@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
 
 from etl_utils import manifest_ok, parse_optional_datetime
-from raw_to_bronze_apply_utils import build_registry_payload
+from bronze.apply_utils import build_registry_payload
 
 
 def apply_snapshot_batches(

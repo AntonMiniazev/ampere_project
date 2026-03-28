@@ -1,49 +1,18 @@
 from datetime import datetime
-import json
 
 from airflow import DAG
-from airflow.sdk import Variable
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
+from utils.ampere_dag_config import load_pre_raw_dag_config
+
 DAG_ID = "ampere__pre_raw__generators__daily"
-
-# Namespace where the pod runs; affects K8s placement and secret lookup.
-NAMESPACE = Variable.get("cluster_namespace", default="ampere")
-# Target node hostname; controls scheduling affinity.
-NODE_SELECTOR = {
-    "kubernetes.io/hostname": Variable.get(
-        "source_prep_node", default="ampere-k8s-node4"
-    )
-}
-
-
-# Image map from Airflow variable; allows pinning tags per pipeline.
-def _load_image_map() -> dict:
-    """Read the shared GHCR image map from Airflow Variables.
-
-    The project stores container tags in one JSON variable so DAGs can stay
-    stable while image versions change independently. Returning a dictionary here
-    keeps the rest of the DAG focused on orchestration logic instead of JSON
-    parsing details.
-    """
-    raw_value = Variable.get("ghcr_images", default="{}")
-    if isinstance(raw_value, str):
-        try:
-            return json.loads(raw_value)
-        except json.JSONDecodeError:
-            return {}
-    return raw_value
-
-
-GHCR_IMAGES = _load_image_map()
-# Tag-only map; always compose full image from the tag.
-IMAGE_TAG = GHCR_IMAGES.get("orders_clients_generation", "latest")
-IMAGE = f"ghcr.io/antonminiazev/order-data-generator:{IMAGE_TAG}"
-# Per-pod Postgres settings (libpq PGOPTIONS); raises work_mem for heavy sorts.
-PGOPTIONS = Variable.get("pg_work_mem", default="64MB")
+DAG_CONFIG = load_pre_raw_dag_config(
+    image_name="orders_clients_generation",
+    repository="ghcr.io/antonminiazev/order-data-generator",
+)
 
 pg_user = Secret(
     deploy_type="env",
@@ -74,13 +43,13 @@ with DAG(
         task_id="run__pre_raw__daily",
         name="order-data-generator",
         depends_on_past=True,
-        namespace=NAMESPACE,
-        node_selector=NODE_SELECTOR,
-        image=IMAGE,
+        namespace=DAG_CONFIG.namespace,
+        node_selector=DAG_CONFIG.node_selector,
+        image=DAG_CONFIG.image,
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
-        env_vars={"PGOPTIONS": f"-c work_mem={PGOPTIONS}"},
+        env_vars={"PGOPTIONS": f"-c work_mem={DAG_CONFIG.pg_work_mem}"},
         cmds=["python", "-m", "order_data_generator"],
         # Use Airflow's logical date as the business date for synthetic data.
         # Manual runs still work because `run_after` is used as a fallback.

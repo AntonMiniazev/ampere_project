@@ -13,7 +13,6 @@ from urllib import request as urlrequest
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.types import (
-    ArrayType,
     BinaryType,
     BooleanType,
     DateType,
@@ -22,10 +21,8 @@ from pyspark.sql.types import (
     FloatType,
     IntegerType,
     LongType,
-    MapType,
     ShortType,
     StringType,
-    StructField,
     StructType,
     TimestampNTZType,
     TimestampType,

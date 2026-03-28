@@ -1,210 +1,70 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 
 from airflow import DAG
-from airflow.sdk import Variable
-from airflow.providers.standard.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
+from airflow.providers.standard.operators.python import PythonOperator
 
+from utils.ampere_dag_config import (
+    get_optional_nonnegative_int_variable,
+    load_raw_landing_dag_config,
+    minio_ssl_enabled,
+    standard_default_args,
+)
 from utils.stream_group_config import build_raw_stream_groups
 
 DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
-
-SPARK_NAMESPACE = Variable.get("spark_namespace", default="ampere")
-SERVICE_ACCOUNT = Variable.get(
-    "spark_service_account",
-    default="spark-operator-spark",
-)
-DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
-
-
-def _resolve_image(value: str | None) -> str:
-    """Resolve a Spark image reference from an Airflow variable.
-
-    The DAG accepts either a full registry path or just a tag value. That keeps
-    Airflow configuration convenient for day-to-day operations while still
-    allowing explicit image pinning when you need to test or roll back a Spark
-    application version.
-    """
-    if not value:
-        return DEFAULT_IMAGE
-    if "/" in value:
-        return value
-    return f"ghcr.io/antonminiazev/ampere-spark:{value}"
-
-
-IMAGE = _resolve_image(Variable.get("ampere-spark-image", default=None))
-IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default="IfNotPresent")
-
-PG_HOST = Variable.get("pg_host", default="postgres-service")
-PG_PORT = Variable.get("pg_port", default="5432")
-PG_DATABASE = Variable.get("pg_database", default="ampere_db")
-SCHEMA = Variable.get("pg_schema", default="source")
-SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
-
-MINIO_ENDPOINT = Variable.get(
-    "minio_s3_endpoint",
-    default="http://minio.ampere.svc.cluster.local:9000",
-)
-MINIO_BUCKET = Variable.get("minio_raw_bucket", default="ampere-raw")
-OUTPUT_PREFIX = Variable.get("raw_output_prefix", default="postgres-pre-raw")
-
-DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="250m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default="512m")
-EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="250m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="512m")
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default="4"))
-EXECUTOR_INSTANCES_SNAPSHOTS = int(
-    Variable.get("spark_executor_instances_snapshots", default="2")
-)
-EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default="4")
-)
-SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="4"))
-MAX_ACTIVE_TASKS = int(
-    Variable.get("spark_source_to_raw_max_active_tasks", default="2")
-)
-
+DAG_CONFIG = load_raw_landing_dag_config(__file__)
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
-SPARK_TEMPLATE_PATHS = [
-    str(Path(__file__).resolve().parent),
-    str(Path(__file__).resolve().parents[1] / "sparkapplications"),
-]
-
-
-default_args = {
-    "owner": "airflow",
-    "depends_on_past": False,
-    "start_date": datetime.now() - timedelta(days=1),
-    "email": ["airflow@example.com"],
-    "email_on_failure": False,
-    "email_on_retry": False,
-    "max_active_runs": 1,
-    "retries": 0,
-}
-
-
-def startBatch() -> None:
-    """Emit a simple log marker for the start of the raw landing DAG.
-
-    This helper does not transform data by itself, but it gives new readers an
-    easy "pipeline started here" anchor in the Airflow graph and task logs. It
-    is also a convenient place to explain that the next tasks are Spark jobs,
-    not regular Python code inside the scheduler.
-    """
-    print("##### startBatch #####")
-
-
-def done() -> None:
-    """Emit a simple log marker for the end of the raw landing DAG.
-
-    In Airflow, explicit boundary tasks make the graph easier to read than
-    having only opaque Spark submit tasks. For a junior reader this helps
-    separate orchestration bookkeeping from the actual extraction work.
-    """
-    print("##### done #####")
-
-
-def _minio_ssl_enabled(endpoint: str) -> str:
-    """Translate the object-store endpoint into Spark's expected SSL flag.
-
-    SparkApplication YAML needs a plain `"true"` or `"false"` string, while the
-    Airflow config stores the full endpoint URL. This helper hides that small
-    impedance mismatch from the rest of the DAG.
-    """
-    return "true" if endpoint.startswith("https://") else "false"
 
 
 def _base_params() -> dict:
-    """Assemble the common parameter set shared by every source-to-raw Spark app.
-
-    The raw landing DAG submits multiple SparkApplication objects, but they all
-    share the same cluster, Postgres, and MinIO settings. Building the base
-    parameter dictionary once makes the per-group differences easier to spot.
-    """
+    """Assemble the common parameter set shared by every source-to-raw Spark app."""
     return {
-        "namespace": SPARK_NAMESPACE,
-        "image": IMAGE,
-        "image_pull_policy": IMAGE_PULL_POLICY,
-        "service_account": SERVICE_ACCOUNT,
-        "schema": SCHEMA,
-        "bucket": MINIO_BUCKET,
-        "output_prefix": OUTPUT_PREFIX,
-        "source_system": SOURCE_SYSTEM,
-        "pg_host": PG_HOST,
-        "pg_port": PG_PORT,
-        "pg_database": PG_DATABASE,
-        "minio_endpoint": MINIO_ENDPOINT,
-        "minio_ssl_enabled": _minio_ssl_enabled(MINIO_ENDPOINT),
-        "driver_cores": DRIVER_CORES,
-        "driver_core_request": DRIVER_CORE_REQUEST,
-        "driver_memory": DRIVER_MEMORY,
-        "executor_cores": EXECUTOR_CORES,
-        "executor_core_request": EXECUTOR_CORE_REQUEST,
-        "executor_memory": EXECUTOR_MEMORY,
-        "executor_instances": EXECUTOR_INSTANCES,
-        "shuffle_partitions": SHUFFLE_PARTITIONS,
+        "namespace": DAG_CONFIG.spark_namespace,
+        "image": DAG_CONFIG.image,
+        "image_pull_policy": DAG_CONFIG.image_pull_policy,
+        "service_account": DAG_CONFIG.service_account,
+        "schema": DAG_CONFIG.schema,
+        "bucket": DAG_CONFIG.minio_bucket,
+        "output_prefix": DAG_CONFIG.output_prefix,
+        "source_system": DAG_CONFIG.source_system,
+        "pg_host": DAG_CONFIG.pg_host,
+        "pg_port": DAG_CONFIG.pg_port,
+        "pg_database": DAG_CONFIG.pg_database,
+        "minio_endpoint": DAG_CONFIG.minio_endpoint,
+        "minio_ssl_enabled": minio_ssl_enabled(DAG_CONFIG.minio_endpoint),
+        "driver_cores": DAG_CONFIG.driver_cores,
+        "driver_core_request": DAG_CONFIG.driver_core_request,
+        "driver_memory": DAG_CONFIG.driver_memory,
+        "executor_cores": DAG_CONFIG.executor_cores,
+        "executor_core_request": DAG_CONFIG.executor_core_request,
+        "executor_memory": DAG_CONFIG.executor_memory,
+        "executor_instances": DAG_CONFIG.executor_instances,
+        "shuffle_partitions": DAG_CONFIG.shuffle_partitions,
     }
 
 
-def _read_optional_nonnegative_int_variable(name: str) -> int | None:
-    """Read an optional Airflow integer variable without forcing a fallback.
-
-    These lookback overrides are meant to be opt-in recovery levers, so a
-    missing or blank variable must behave differently from an explicit `0`.
-    Returning `None` for unset values lets the JSON config stay in control until
-    an operator deliberately widens a group window.
-    """
-    value = Variable.get(name, default=None)
-    if value is None:
-        return None
-    value = str(value).strip()
-    if not value:
-        return None
-    return max(int(value), 0)
-
-
 def _resolve_lookback_overrides() -> dict[str, int | None]:
-    """Collect optional per-group recovery windows from Airflow variables.
-
-    Facts and mutable dimensions get new dedicated variables, while events also
-    keeps supporting the legacy singular variable name already used in the
-    cluster. This makes the new behavior backward compatible and keeps existing
-    operator habits from breaking.
-    """
-    events_override = _read_optional_nonnegative_int_variable(
-        "spark_events_lookback_days"
-    )
+    """Collect optional per-group recovery windows from Airflow variables."""
+    events_override = get_optional_nonnegative_int_variable("spark_events_lookback_days")
     if events_override is None:
-        events_override = _read_optional_nonnegative_int_variable(
-            "spark_event_lookback_days"
-        )
+        events_override = get_optional_nonnegative_int_variable("spark_event_lookback_days")
     return {
-        "facts": _read_optional_nonnegative_int_variable(
-            "spark_facts_lookback_days"
-        ),
+        "facts": get_optional_nonnegative_int_variable("spark_facts_lookback_days"),
         "events": events_override,
-        "mutable_dims": _read_optional_nonnegative_int_variable(
+        "mutable_dims": get_optional_nonnegative_int_variable(
             "spark_mutable_dims_lookback_days"
         ),
     }
 
 
 def _group_pair_lookback_days(groups_config: list[dict]) -> int:
-    """Return the widest lookback used by a combined Spark submission.
-
-    A single SparkApplication can process more than one logical group at once,
-    such as `facts` together with `events`. Using the maximum lookback keeps the
-    top-level CLI argument aligned with the most demanding group, even though
-    the detailed per-table behavior still comes from `groups_config`.
-    """
+    """Return the widest lookback used by a combined Spark submission."""
     return max(
         (int(group.get("lookback_days", 0) or 0) for group in groups_config),
         default=0,
@@ -213,7 +73,7 @@ def _group_pair_lookback_days(groups_config: list[dict]) -> int:
 
 with DAG(
     dag_id=DAG_ID,
-    default_args=default_args,
+    default_args=standard_default_args(),
     schedule=None,
     start_date=datetime(2025, 8, 24),
     tags=[
@@ -224,19 +84,21 @@ with DAG(
         "mode:daily",
     ],
     catchup=False,
-    max_active_tasks=MAX_ACTIVE_TASKS,
-    template_searchpath=SPARK_TEMPLATE_PATHS,
+    max_active_tasks=DAG_CONFIG.max_active_tasks,
+    template_searchpath=DAG_CONFIG.template_paths,
 ) as dag:
     # Boundary marker before submitting Spark workloads.
     start_batch_task = PythonOperator(
         task_id="run__sparkapp__start",
-        python_callable=startBatch,
+        python_callable=print,
+        op_args=["##### startBatch #####"],
     )
 
     # Boundary marker after all raw batches have been extracted.
     done_task = PythonOperator(
         task_id="run__sparkapp__done",
-        python_callable=done,
+        python_callable=print,
+        op_args=["##### done #####"],
     )
 
     # After raw landing is written successfully, Airflow hands control to the
@@ -257,21 +119,27 @@ with DAG(
     stream_groups = build_raw_stream_groups(_resolve_lookback_overrides())
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
-        group["shuffle_partitions"] = 1 if name == "snapshots" else SHUFFLE_PARTITIONS
+        group["shuffle_partitions"] = (
+            1 if name == "snapshots" else DAG_CONFIG.shuffle_partitions
+        )
 
     group_pairs = [
         ("snapshots-mutable-dims", ["snapshots", "mutable_dims"]),
         ("facts-events", ["facts", "events"]),
     ]
+    # Each loop iteration creates one SparkApplication submission that may cover
+    # multiple logical table groups. Pairing related groups keeps the Airflow
+    # graph smaller and lets us size one Spark job for a family of tables that
+    # have similar extraction behavior.
     for group_name, group_keys in group_pairs:
         groups_config = [group_map[key] for key in group_keys if key in group_map]
         if not groups_config:
             continue
         seed_group = groups_config[0]
         executor_instances = (
-            EXECUTOR_INSTANCES_SNAPSHOTS
+            DAG_CONFIG.executor_instances_snapshots
             if group_name == "snapshots-mutable-dims"
-            else EXECUTOR_INSTANCES_FACTS_EVENTS
+            else DAG_CONFIG.executor_instances_facts_events
         )
         params = {
             **base_params,
@@ -294,7 +162,7 @@ with DAG(
         submit_tasks.append(
             SparkKubernetesOperator(
                 task_id=f"run__sparkapp__group_{group_name}",
-                namespace=SPARK_NAMESPACE,
+                namespace=DAG_CONFIG.spark_namespace,
                 application_file=SPARK_APP_TEMPLATE,
                 params=params,
                 kubernetes_conn_id="kubernetes_default",

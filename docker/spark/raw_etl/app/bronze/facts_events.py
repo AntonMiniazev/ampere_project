@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
 
 from etl_utils import manifest_ok
-from raw_to_bronze_apply_utils import build_registry_payload, merge_to_delta
+from bronze.apply_utils import build_registry_payload, merge_to_delta
 
 
 def apply_facts_events_batches(

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import hashlib
 import json
 import logging
 import os
+import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
@@ -62,6 +65,31 @@ def get_env(name: str, default: Optional[str] = None) -> Optional[str]:
         return default
     return value
 
+
+@dataclass(frozen=True)
+class PostgresConnectionSettings:
+    """Connection settings used for source PostgreSQL JDBC reads."""
+
+    host: str
+    port: str
+    database: str
+    user: str
+    password: str
+
+    @property
+    def jdbc_url(self) -> str:
+        """Build a JDBC URL from the stored host, port, and database."""
+        return f"jdbc:postgresql://{self.host}:{self.port}/{self.database}"
+
+
+@dataclass(frozen=True)
+class MinioConnectionSettings:
+    """Connection settings used for MinIO / S3A reads and writes."""
+
+    endpoint: str
+    access_key: str
+    secret_key: str
+
 # --- Parsing helpers ---
 
 
@@ -92,7 +120,100 @@ def parse_optional_datetime(value: str) -> Optional[datetime]:
         datetime.strptime(normalized, "%Y-%m-%d")
         return datetime.combine(date.fromisoformat(normalized), datetime.min.time())
 
+
+def parse_table_list(raw: str) -> list[str]:
+    """Split a comma-separated table list into clean tokens."""
+    return [token.strip() for token in raw.split(",") if token.strip()]
+
+
+def parse_bool_flag(value: str | bool | None, default: bool = False) -> bool:
+    """Parse a boolean-like value used by CLI flags and config payloads."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def sanitize_run_id(value: str) -> str:
+    """Normalize run_id values so they stay safe as folder names."""
+    if not value:
+        return value
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", value)
+
+
+def date_range(run_date: date, lookback_days: int) -> tuple[date, date, list[date]]:
+    """Return a [start, end) window and the covered business dates."""
+    if lookback_days < 1:
+        lookback_days = 1
+    end_date = run_date + timedelta(days=1)
+    start_date = run_date - timedelta(days=lookback_days - 1)
+    dates = [start_date + timedelta(days=i) for i in range(lookback_days)]
+    return start_date, end_date, dates
+
+
+def format_ts(value: datetime) -> str:
+    """Format a datetime in ISO-8601 and force UTC when tzinfo is missing."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def format_date_window(start_date: date, end_date: date) -> tuple[str, str]:
+    """Build UTC window timestamps for a [start, end) date range."""
+    start_ts = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    end_ts = datetime.combine(end_date, datetime.min.time(), tzinfo=timezone.utc)
+    return format_ts(start_ts), format_ts(end_ts)
+
+
+def md5_hexdigest(value: str) -> str:
+    """Return an md5 digest string for short metadata payloads."""
+    return hashlib.md5(value.encode("utf-8")).hexdigest()
+
 # --- Spark and storage configuration ---
+
+
+def get_postgres_connection_settings(
+    default_host: str = "postgres-service",
+    default_port: str = "5432",
+    default_database: str = "ampere_db",
+) -> PostgresConnectionSettings:
+    """Read PostgreSQL connection settings from environment variables."""
+    host = get_env("PGHOST", default_host)
+    port = get_env("PGPORT", default_port)
+    database = get_env("PGDATABASE", default_database)
+    user = get_env("PGUSER")
+    password = get_env("PGPASSWORD")
+    if not user or not password:
+        raise ValueError("Missing PGUSER/PGPASSWORD for source database access.")
+    return PostgresConnectionSettings(
+        host=host or default_host,
+        port=port or default_port,
+        database=database or default_database,
+        user=user,
+        password=password,
+    )
+
+
+def get_minio_connection_settings(
+    default_endpoint: str = "http://minio.ampere.svc.cluster.local:9000",
+) -> MinioConnectionSettings:
+    """Read MinIO / S3A connection settings from environment variables."""
+    endpoint = get_env("MINIO_S3_ENDPOINT", default_endpoint)
+    access_key = get_env("MINIO_ACCESS_KEY")
+    secret_key = get_env("MINIO_SECRET_KEY")
+    if not access_key or not secret_key:
+        raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
+    return MinioConnectionSettings(
+        endpoint=endpoint or default_endpoint,
+        access_key=access_key,
+        secret_key=secret_key,
+    )
 
 
 def configure_s3(
@@ -309,9 +430,8 @@ def _read_bytes_hadoop(
     fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
     if not fs.exists(path):
         return None
-    file_size = None
     try:
-        file_size = fs.getFileStatus(path).getLen()
+        fs.getFileStatus(path).getLen()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to stat JSON at %s: %s", path_str, exc)
     input_stream = fs.open(path)

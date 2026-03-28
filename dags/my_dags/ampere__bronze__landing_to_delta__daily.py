@@ -1,167 +1,37 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import os
-from pathlib import Path
 
 from airflow import DAG
-from airflow.sdk import Variable
-from airflow.providers.standard.operators.python import PythonOperator
-from airflow.providers.standard.operators.python import BranchPythonOperator
-from airflow.providers.standard.operators.empty import EmptyOperator
-from airflow.task.trigger_rule import TriggerRule
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import BranchPythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.task.trigger_rule import TriggerRule
 
+from utils.ampere_dag_config import (
+    get_optional_nonnegative_int_variable,
+    get_optional_variable,
+    load_bronze_dag_config,
+    minio_ssl_enabled,
+    standard_default_args,
+)
 from utils.stream_group_config import build_bronze_stream_groups
 
 DAG_ID = "ampere__bronze__landing_to_delta__daily"
-
-SPARK_NAMESPACE = Variable.get("spark_namespace", default="ampere")
-SERVICE_ACCOUNT = Variable.get(
-    "spark_service_account",
-    default="spark-operator-spark",
-)
-DEFAULT_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
-
-
-def _resolve_image(value: str | None) -> str:
-    """Resolve a Spark image reference for bronze ingestion jobs.
-
-    Bronze processing is packaged as Spark applications, not ordinary Airflow
-    Python callables, so the image choice matters for every downstream helper
-    library on the driver and executors. Supporting both full image names and
-    short tags keeps operational changes simple without hiding where the image is
-    injected.
-    """
-    if not value:
-        return DEFAULT_IMAGE
-    if "/" in value:
-        return value
-    return f"ghcr.io/antonminiazev/ampere-spark:{value}"
-
-
-IMAGE = _resolve_image(Variable.get("ampere-spark-image", default=None))
-IMAGE_PULL_POLICY = Variable.get("image_pull_policy", default="IfNotPresent")
-
-MINIO_ENDPOINT = Variable.get(
-    "minio_s3_endpoint",
-    default="http://minio.ampere.svc.cluster.local:9000",
-)
-MINIO_CONN_ID = Variable.get("minio_conn_id", default="minio_conn")
-SCHEMA = Variable.get("pg_schema", default="source")
-RAW_BUCKET = Variable.get("minio_raw_bucket", default="ampere-raw")
-RAW_PREFIX = Variable.get("raw_output_prefix", default="postgres-pre-raw")
-BRONZE_BUCKET = Variable.get("minio_bronze_bucket", default="ampere-bronze")
-BRONZE_PREFIX = Variable.get("bronze_output_prefix", default="bronze")
-SOURCE_SYSTEM = Variable.get("raw_source_system", default="postgres-pre-raw")
-
-DRIVER_CORES = int(Variable.get("spark_driver_cores", default="1"))
-DRIVER_CORE_REQUEST = Variable.get("spark_driver_core_request", default="400m")
-DRIVER_MEMORY = Variable.get("spark_driver_memory", default="2000m")
-DRIVER_MEMORY_OVERHEAD = Variable.get("spark_driver_memory_overhead", default="384m")
-EXECUTOR_CORES = int(Variable.get("spark_executor_cores", default="1"))
-EXECUTOR_CORE_REQUEST = Variable.get("spark_executor_core_request", default="300m")
-EXECUTOR_MEMORY = Variable.get("spark_executor_memory", default="1024m")
-EXECUTOR_MEMORY_OVERHEAD = Variable.get(
-    "spark_executor_memory_overhead", default="256m"
-)
-EXECUTOR_INSTANCES = int(Variable.get("spark_executor_instances", default="3"))
-EXECUTOR_INSTANCES_SNAPSHOTS = int(
-    Variable.get("spark_executor_instances_snapshots", default="3")
-)
-EXECUTOR_INSTANCES_FACTS_EVENTS = int(
-    Variable.get("spark_executor_instances_facts_events", default="3")
-)
-EXECUTOR_NODE_SELECTOR = Variable.get(
-    "spark_executor_node_selector", default="ampere-k8s-node4"
-)
-SHUFFLE_PARTITIONS = int(Variable.get("spark_sql_shuffle_partitions", default="1"))
-SHUFFLE_PARTITIONS_FACTS_EVENTS = int(
-    Variable.get("spark_sql_shuffle_partitions_facts_events", default="8")
-)
-SHUFFLE_PARTITIONS_MUTABLE_DIMS = int(
-    Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="1")
-)
-FILES_MAX_PARTITION_BYTES_FACTS_EVENTS = Variable.get(
-    "spark_sql_files_max_partition_bytes_facts_events", default="8m"
-)
-FILES_OPEN_COST_BYTES_FACTS_EVENTS = Variable.get(
-    "spark_sql_files_open_cost_bytes_facts_events", default="4m"
-)
-ADAPTIVE_COALESCE_FACTS_EVENTS = Variable.get(
-    "spark_sql_adaptive_coalesce_facts_events", default="false"
-)
-MAX_ACTIVE_TASKS = int(
-    Variable.get("spark_raw_to_bronze_max_active_tasks", default="2")
-)
-UC_ENABLED = Variable.get("spark_uc_enabled", default="true").strip().lower()
-UC_CATALOG = Variable.get("spark_uc_catalog", default="ampere")
-UC_BRONZE_SCHEMA = Variable.get("spark_uc_bronze_schema", default="bronze")
-UC_OPS_SCHEMA = Variable.get("spark_uc_ops_schema", default="ops")
-UC_API_URI = Variable.get(
-    "spark_uc_api_uri",
-    default="http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080",
-)
-UC_TOKEN = Variable.get("spark_uc_token", default="local-dev-token")
-UC_AUTH_TYPE = Variable.get("spark_uc_auth_type", default="static")
-UC_CATALOG_IMPL = Variable.get(
-    "spark_uc_catalog_impl",
-    default="io.unitycatalog.spark.UCSingleCatalog",
-)
-
+DAG_CONFIG = load_bronze_dag_config(__file__)
 SPARK_APP_TEMPLATE = "raw_to_bronze_template_uc.yaml"
 REGISTRY_INIT_TEMPLATE = "bronze_registry_init_uc.yaml"
-SPARK_TEMPLATE_PATHS = [
-    str(Path(__file__).resolve().parent),
-    str(Path(__file__).resolve().parents[1] / "sparkapplications"),
-]
-
-
-def _minio_ssl_enabled(endpoint: str) -> str:
-    """Convert the MinIO endpoint URL into Spark's boolean-like SSL flag.
-
-    Airflow variables store a full URL because humans reason about endpoints
-    that way, while SparkApplication YAML needs a `"true"` or `"false"` string.
-    This helper keeps that translation obvious and localized.
-    """
-    return "true" if endpoint.startswith("https://") else "false"
-
-
-def startBatch() -> None:
-    """Emit a start marker for the bronze DAG.
-
-    This helper is intentionally simple, but it makes the DAG graph easier to
-    read and gives a junior developer a natural point where the bronze phase
-    begins. Everything after this task is Spark-driven Delta work rather than
-    plain Airflow Python logic.
-    """
-    print("##### startBatch #####")
-
-
-def done() -> None:
-    """Emit an end marker for the bronze DAG.
-
-    The bronze DAG groups a lot of Spark work behind a few tasks. Having an
-    explicit closing marker makes the orchestration easier to scan in Airflow and
-    clarifies where the raw-to-bronze phase finishes.
-    """
-    print("##### done #####")
 
 
 def _registry_exists() -> bool:
-    """Check whether the bronze apply registry Delta table already exists.
-
-    The bronze pipeline uses the registry as its idempotency and bookkeeping
-    table, so the DAG decides up front whether it needs to run the registry-init
-    Spark app. The function first tries Airflow's S3Hook and then falls back to
-    raw MinIO credentials so the existence check still works in lighter runtime
-    environments.
-    """
+    """Check whether the bronze apply registry Delta table already exists."""
     logger = logging.getLogger(DAG_ID)
-    prefix = BRONZE_PREFIX.strip("/")
+    prefix = DAG_CONFIG.bronze_prefix.strip("/")
     delta_prefix = "ops/bronze_apply_registry/_delta_log/"
     if prefix:
         delta_prefix = f"{prefix}/{delta_prefix}"
@@ -172,21 +42,19 @@ def _registry_exists() -> bool:
         logger.warning("S3Hook unavailable for registry check: %s", exc)
     else:
         try:
-            s3 = S3Hook(aws_conn_id=MINIO_CONN_ID)
+            s3 = S3Hook(aws_conn_id=DAG_CONFIG.minio_conn_id)
             client = s3.get_conn()
             response = client.list_objects_v2(
-                Bucket=BRONZE_BUCKET, Prefix=delta_prefix, MaxKeys=1
+                Bucket=DAG_CONFIG.bronze_bucket,
+                Prefix=delta_prefix,
+                MaxKeys=1,
             )
             return bool(response.get("Contents"))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Registry check via S3Hook failed: %s", exc)
 
-    access_key = Variable.get("minio_access_key", default=None) or os.getenv(
-        "MINIO_ACCESS_KEY"
-    )
-    secret_key = Variable.get("minio_secret_key", default=None) or os.getenv(
-        "MINIO_SECRET_KEY"
-    )
+    access_key = get_optional_variable("minio_access_key") or os.getenv("MINIO_ACCESS_KEY")
+    secret_key = get_optional_variable("minio_secret_key") or os.getenv("MINIO_SECRET_KEY")
     if not access_key or not secret_key:
         logger.warning("Missing MinIO creds; running registry init.")
         return False
@@ -199,26 +67,22 @@ def _registry_exists() -> bool:
 
     client = boto3.client(
         "s3",
-        endpoint_url=MINIO_ENDPOINT,
+        endpoint_url=DAG_CONFIG.minio_endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         config=Config(signature_version="s3v4"),
         region_name="us-east-1",
     )
     response = client.list_objects_v2(
-        Bucket=BRONZE_BUCKET, Prefix=delta_prefix, MaxKeys=1
+        Bucket=DAG_CONFIG.bronze_bucket,
+        Prefix=delta_prefix,
+        MaxKeys=1,
     )
     return bool(response.get("Contents"))
 
 
 def _select_registry_path() -> str:
-    """Choose the Airflow branch target for registry initialization.
-
-    Airflow branching is easier to understand when the decision is expressed as
-    a tiny helper that returns a downstream task ID. In pipeline terms this is
-    the control point that decides whether bronze can start writing immediately
-    or must bootstrap its registry table first.
-    """
+    """Choose the Airflow branch target for registry initialization."""
     return (
         "skip__sparkapp__registry_init"
         if _registry_exists()
@@ -227,98 +91,58 @@ def _select_registry_path() -> str:
 
 
 def _base_params() -> dict:
-    """Assemble the parameter block shared by all bronze Spark applications.
-
-    Registry init and the group-based bronze loaders use the same cluster, image,
-    source bucket, bronze bucket, and Unity Catalog settings. Centralizing these
-    values makes the DAG easier to review because the per-task differences are
-    then mostly about group behavior and executor sizing.
-    """
+    """Assemble the parameter block shared by all bronze Spark applications."""
     return {
-        "namespace": SPARK_NAMESPACE,
-        "image": IMAGE,
-        "image_pull_policy": IMAGE_PULL_POLICY,
-        "service_account": SERVICE_ACCOUNT,
-        "schema": SCHEMA,
-        "raw_bucket": RAW_BUCKET,
-        "raw_prefix": RAW_PREFIX,
-        "bronze_bucket": BRONZE_BUCKET,
-        "bronze_prefix": BRONZE_PREFIX,
-        "source_system": SOURCE_SYSTEM,
-        "minio_endpoint": MINIO_ENDPOINT,
-        "minio_ssl_enabled": _minio_ssl_enabled(MINIO_ENDPOINT),
-        "driver_cores": DRIVER_CORES,
-        "driver_core_request": DRIVER_CORE_REQUEST,
-        "driver_memory": DRIVER_MEMORY,
-        "driver_memory_overhead": DRIVER_MEMORY_OVERHEAD,
-        "executor_cores": EXECUTOR_CORES,
-        "executor_core_request": EXECUTOR_CORE_REQUEST,
-        "executor_memory": EXECUTOR_MEMORY,
-        "executor_memory_overhead": EXECUTOR_MEMORY_OVERHEAD,
-        "executor_instances": EXECUTOR_INSTANCES,
-        "executor_node_selector": EXECUTOR_NODE_SELECTOR,
-        "shuffle_partitions": SHUFFLE_PARTITIONS,
-        "uc_enabled": UC_ENABLED,
-        "uc_catalog": UC_CATALOG,
-        "uc_bronze_schema": UC_BRONZE_SCHEMA,
-        "uc_ops_schema": UC_OPS_SCHEMA,
-        "uc_api_uri": UC_API_URI,
-        "uc_token": UC_TOKEN,
-        "uc_auth_type": UC_AUTH_TYPE,
-        "uc_catalog_impl": UC_CATALOG_IMPL,
+        "namespace": DAG_CONFIG.spark_namespace,
+        "image": DAG_CONFIG.image,
+        "image_pull_policy": DAG_CONFIG.image_pull_policy,
+        "service_account": DAG_CONFIG.service_account,
+        "schema": DAG_CONFIG.schema,
+        "raw_bucket": DAG_CONFIG.raw_bucket,
+        "raw_prefix": DAG_CONFIG.raw_prefix,
+        "bronze_bucket": DAG_CONFIG.bronze_bucket,
+        "bronze_prefix": DAG_CONFIG.bronze_prefix,
+        "source_system": DAG_CONFIG.source_system,
+        "minio_endpoint": DAG_CONFIG.minio_endpoint,
+        "minio_ssl_enabled": minio_ssl_enabled(DAG_CONFIG.minio_endpoint),
+        "driver_cores": DAG_CONFIG.driver_cores,
+        "driver_core_request": DAG_CONFIG.driver_core_request,
+        "driver_memory": DAG_CONFIG.driver_memory,
+        "driver_memory_overhead": DAG_CONFIG.driver_memory_overhead,
+        "executor_cores": DAG_CONFIG.executor_cores,
+        "executor_core_request": DAG_CONFIG.executor_core_request,
+        "executor_memory": DAG_CONFIG.executor_memory,
+        "executor_memory_overhead": DAG_CONFIG.executor_memory_overhead,
+        "executor_instances": DAG_CONFIG.executor_instances,
+        "executor_node_selector": DAG_CONFIG.executor_node_selector,
+        "shuffle_partitions": DAG_CONFIG.shuffle_partitions,
+        "uc_enabled": DAG_CONFIG.uc_enabled,
+        "uc_catalog": DAG_CONFIG.uc_catalog,
+        "uc_bronze_schema": DAG_CONFIG.uc_bronze_schema,
+        "uc_ops_schema": DAG_CONFIG.uc_ops_schema,
+        "uc_api_uri": DAG_CONFIG.uc_api_uri,
+        "uc_token": DAG_CONFIG.uc_token,
+        "uc_auth_type": DAG_CONFIG.uc_auth_type,
+        "uc_catalog_impl": DAG_CONFIG.uc_catalog_impl,
     }
 
 
-def _read_optional_nonnegative_int_variable(name: str) -> int | None:
-    """Read an optional Airflow integer variable without inventing a default.
-
-    Bronze recovery windows should only change when an operator explicitly sets
-    them. Returning `None` for missing or blank variables lets the checked-in
-    JSON config remain the default daily behavior.
-    """
-    value = Variable.get(name, default=None)
-    if value is None:
-        return None
-    value = str(value).strip()
-    if not value:
-        return None
-    return max(int(value), 0)
-
-
 def _resolve_lookback_overrides() -> dict[str, int | None]:
-    """Collect optional per-group lookback overrides for bronze processing.
-
-    Facts and mutable dimensions use new dedicated variables, while events still
-    accepts the legacy singular variable name already present in the cluster.
-    Supporting both names keeps the DAG upgrade-compatible with existing Airflow
-    configuration.
-    """
-    events_override = _read_optional_nonnegative_int_variable(
-        "spark_events_lookback_days"
-    )
+    """Collect optional per-group lookback overrides for bronze processing."""
+    events_override = get_optional_nonnegative_int_variable("spark_events_lookback_days")
     if events_override is None:
-        events_override = _read_optional_nonnegative_int_variable(
-            "spark_event_lookback_days"
-        )
+        events_override = get_optional_nonnegative_int_variable("spark_event_lookback_days")
     return {
-        "facts": _read_optional_nonnegative_int_variable(
-            "spark_facts_lookback_days"
-        ),
+        "facts": get_optional_nonnegative_int_variable("spark_facts_lookback_days"),
         "events": events_override,
-        "mutable_dims": _read_optional_nonnegative_int_variable(
+        "mutable_dims": get_optional_nonnegative_int_variable(
             "spark_mutable_dims_lookback_days"
         ),
     }
 
 
 def _group_pair_lookback_days(groups_config: list[dict]) -> int:
-    """Return the widest lookback across the logical groups in one Spark job.
-
-    The bronze DAG submits one SparkApplication for `facts+events` and another
-    for `snapshots+mutable_dims`. Using the maximum group lookback keeps the
-    top-level CLI argument in sync with the broadest recovery window represented
-    inside the richer `groups_config` payload.
-    """
+    """Return the widest lookback across the logical groups in one Spark job."""
     return max(
         (int(group.get("lookback_days", 0) or 0) for group in groups_config),
         default=0,
@@ -327,16 +151,7 @@ def _group_pair_lookback_days(groups_config: list[dict]) -> int:
 
 with DAG(
     dag_id=DAG_ID,
-    default_args={
-        "owner": "airflow",
-        "depends_on_past": False,
-        "start_date": datetime.now() - timedelta(days=1),
-        "email": ["airflow@example.com"],
-        "email_on_failure": False,
-        "email_on_retry": False,
-        "max_active_runs": 1,
-        "retries": 0,
-    },
+    default_args=standard_default_args(),
     schedule=None,
     start_date=datetime(2025, 8, 24),
     tags=[
@@ -347,19 +162,21 @@ with DAG(
         "mode:daily",
     ],
     catchup=False,
-    max_active_tasks=MAX_ACTIVE_TASKS,
-    template_searchpath=SPARK_TEMPLATE_PATHS,
+    max_active_tasks=DAG_CONFIG.max_active_tasks,
+    template_searchpath=DAG_CONFIG.template_paths,
 ) as dag:
     # Boundary marker before any bronze Spark job is submitted.
     start_batch_task = PythonOperator(
         task_id="run__sparkapp__start",
-        python_callable=startBatch,
+        python_callable=print,
+        op_args=["##### startBatch #####"],
     )
 
     # Boundary marker after bronze processing has finished.
     done_task = PythonOperator(
         task_id="run__sparkapp__done",
-        python_callable=done,
+        python_callable=print,
+        op_args=["##### done #####"],
     )
 
     base_params = _base_params()
@@ -371,14 +188,18 @@ with DAG(
         if name == "snapshots":
             group["shuffle_partitions"] = 1
         elif name in {"facts", "events"}:
-            group["shuffle_partitions"] = SHUFFLE_PARTITIONS_FACTS_EVENTS
-            group["files_max_partition_bytes"] = FILES_MAX_PARTITION_BYTES_FACTS_EVENTS
-            group["files_open_cost_bytes"] = FILES_OPEN_COST_BYTES_FACTS_EVENTS
-            group["adaptive_coalesce"] = ADAPTIVE_COALESCE_FACTS_EVENTS
+            group["shuffle_partitions"] = DAG_CONFIG.shuffle_partitions_facts_events
+            group["files_max_partition_bytes"] = (
+                DAG_CONFIG.files_max_partition_bytes_facts_events
+            )
+            group["files_open_cost_bytes"] = (
+                DAG_CONFIG.files_open_cost_bytes_facts_events
+            )
+            group["adaptive_coalesce"] = DAG_CONFIG.adaptive_coalesce_facts_events
         elif name == "mutable_dims":
-            group["shuffle_partitions"] = SHUFFLE_PARTITIONS_MUTABLE_DIMS
+            group["shuffle_partitions"] = DAG_CONFIG.shuffle_partitions_mutable_dims
         else:
-            group["shuffle_partitions"] = SHUFFLE_PARTITIONS
+            group["shuffle_partitions"] = DAG_CONFIG.shuffle_partitions
 
     registry_check = BranchPythonOperator(
         task_id="run__sparkapp__registry_check",
@@ -396,7 +217,7 @@ with DAG(
 
     init_registry_task = SparkKubernetesOperator(
         task_id="run__sparkapp__registry_init",
-        namespace=SPARK_NAMESPACE,
+        namespace=DAG_CONFIG.spark_namespace,
         application_file=REGISTRY_INIT_TEMPLATE,
         params=registry_params,
         kubernetes_conn_id="kubernetes_default",
@@ -419,9 +240,9 @@ with DAG(
         if not groups_config:
             continue
         executor_instances = (
-            EXECUTOR_INSTANCES_SNAPSHOTS
+            DAG_CONFIG.executor_instances_snapshots
             if group_name == "snapshots-mutable-dims"
-            else EXECUTOR_INSTANCES_FACTS_EVENTS
+            else DAG_CONFIG.executor_instances_facts_events
         )
         params = {
             **base_params,
@@ -439,7 +260,7 @@ with DAG(
         }
         task = SparkKubernetesOperator(
             task_id=f"run__sparkapp__group_{group_name}",
-            namespace=SPARK_NAMESPACE,
+            namespace=DAG_CONFIG.spark_namespace,
             application_file=SPARK_APP_TEMPLATE,
             params=params,
             kubernetes_conn_id="kubernetes_default",
