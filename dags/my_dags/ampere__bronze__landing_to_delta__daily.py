@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
-import os
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
@@ -15,7 +16,6 @@ from airflow.task.trigger_rule import TriggerRule
 
 from utils.ampere_dag_config import (
     get_optional_nonnegative_int_variable,
-    get_optional_variable,
     load_bronze_dag_config,
     minio_ssl_enabled,
     standard_default_args,
@@ -28,60 +28,47 @@ SPARK_APP_TEMPLATE = "raw_to_bronze_template_uc.yaml"
 REGISTRY_INIT_TEMPLATE = "bronze_registry_init_uc.yaml"
 
 
+def _uc_request_headers() -> dict[str, str]:
+    """Build HTTP headers for Unity Catalog metadata calls."""
+    headers = {"Content-Type": "application/json"}
+    auth_type = (DAG_CONFIG.uc_auth_type or "").strip().lower()
+    token = (DAG_CONFIG.uc_token or "").strip()
+    if token and auth_type in {"", "static"}:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def _registry_exists() -> bool:
-    """Check whether the bronze apply registry Delta table already exists."""
+    """Check whether the bronze apply registry table exists in Unity Catalog."""
     logger = logging.getLogger(DAG_ID)
-    prefix = DAG_CONFIG.bronze_prefix.strip("/")
-    delta_prefix = "ops/bronze_apply_registry/_delta_log/"
-    if prefix:
-        delta_prefix = f"{prefix}/{delta_prefix}"
-
-    try:
-        from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("S3Hook unavailable for registry check: %s", exc)
-    else:
-        try:
-            s3 = S3Hook(aws_conn_id=DAG_CONFIG.minio_conn_id)
-            client = s3.get_conn()
-            response = client.list_objects_v2(
-                Bucket=DAG_CONFIG.bronze_bucket,
-                Prefix=delta_prefix,
-                MaxKeys=1,
-            )
-            return bool(response.get("Contents"))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Registry check via S3Hook failed: %s", exc)
-
-    access_key = get_optional_variable("minio_access_key") or os.getenv("MINIO_ACCESS_KEY")
-    secret_key = get_optional_variable("minio_secret_key") or os.getenv("MINIO_SECRET_KEY")
-    if not access_key or not secret_key:
-        logger.warning("Missing MinIO creds; running registry init.")
+    uc_api_uri = (DAG_CONFIG.uc_api_uri or "").strip().rstrip("/")
+    if not uc_api_uri:
+        logger.warning("UC API URI is missing; running registry validation task.")
         return False
+    fq_table = (
+        f"{DAG_CONFIG.uc_catalog}."
+        f"{DAG_CONFIG.uc_ops_schema}."
+        "bronze_apply_registry"
+    )
+    request = urlrequest.Request(
+        f"{uc_api_uri}/api/2.1/unity-catalog/tables/{fq_table}",
+        headers=_uc_request_headers(),
+        method="GET",
+    )
     try:
-        import boto3
-        from botocore.client import Config
+        with urlrequest.urlopen(request, timeout=20) as response:  # noqa: S310
+            return response.status == 200
+    except urlerror.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        logger.warning("UC registry check failed for %s: HTTP %s", fq_table, exc.code)
+        return False
     except Exception as exc:  # noqa: BLE001
-        logger.warning("boto3 unavailable for registry check: %s", exc)
+        logger.warning("UC registry check failed for %s: %s", fq_table, exc)
         return False
 
-    client = boto3.client(
-        "s3",
-        endpoint_url=DAG_CONFIG.minio_endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
-    response = client.list_objects_v2(
-        Bucket=DAG_CONFIG.bronze_bucket,
-        Prefix=delta_prefix,
-        MaxKeys=1,
-    )
-    return bool(response.get("Contents"))
 
-
-def _select_registry_path() -> str:
+def _select_registry_task() -> str:
     """Choose the Airflow branch target for registry initialization."""
     return (
         "skip__sparkapp__registry_init"
@@ -100,8 +87,6 @@ def _base_params() -> dict:
         "schema": DAG_CONFIG.schema,
         "raw_bucket": DAG_CONFIG.raw_bucket,
         "raw_prefix": DAG_CONFIG.raw_prefix,
-        "bronze_bucket": DAG_CONFIG.bronze_bucket,
-        "bronze_prefix": DAG_CONFIG.bronze_prefix,
         "source_system": DAG_CONFIG.source_system,
         "minio_endpoint": DAG_CONFIG.minio_endpoint,
         "minio_ssl_enabled": minio_ssl_enabled(DAG_CONFIG.minio_endpoint),
@@ -203,7 +188,7 @@ with DAG(
 
     registry_check = BranchPythonOperator(
         task_id="run__sparkapp__registry_check",
-        python_callable=_select_registry_path,
+        python_callable=_select_registry_task,
     )
     skip_registry_task = EmptyOperator(
         task_id="skip__sparkapp__registry_init",

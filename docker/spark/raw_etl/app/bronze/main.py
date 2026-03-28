@@ -8,12 +8,10 @@ from typing import Optional
 from pyspark.sql import SparkSession, functions as F
 
 from etl_utils import (
-    bronze_registry_path,
     configure_s3,
     exists,
     get_env,
     list_dirs,
-    load_registry_table,
     parse_optional_datetime,
     partition_info,
     read_json,
@@ -29,8 +27,8 @@ from bronze.snapshots import apply_snapshot_batches
 from bronze.uc import (
     align_df_to_uc_schema,
     ensure_uc_schema,
+    ensure_uc_external_delta_table,
     parse_bool_flag,
-    sync_external_delta_table,
 )
 from etl_parser import parse_bronze_args, resolve_bronze_groups
 
@@ -76,7 +74,7 @@ def _search_start_date(
 
     Args:
         partition_key: Partition type, e.g. "snapshot_date", "extract_date", "event_date".
-        registry_df: Registry DataFrame or None, e.g. spark.read.format("delta").load(...).
+        registry_df: Registry DataFrame or None, e.g. spark.read.table("`ampere`.`ops`.`bronze_apply_registry`").
         state_last_ingest: Last ingest timestamp, e.g. datetime(2026, 1, 24, tzinfo=UTC).
         run_date: Run date, e.g. date(2026, 1, 24).
         lookback_days: Lookback window in days, e.g. 2.
@@ -242,11 +240,13 @@ def main() -> None:
     logger = logging.getLogger(APP_NAME)
 
     args = parse_bronze_args()
-    uc_enabled = parse_bool_flag(args.uc_enabled, default=False)
+    uc_enabled = parse_bool_flag(args.uc_enabled, default=True)
     uc_catalog = (args.uc_catalog or "").strip()
     uc_bronze_schema = (args.uc_bronze_schema or "bronze").strip()
     uc_ops_schema = (args.uc_ops_schema or "ops").strip()
-    if uc_enabled and not uc_catalog:
+    if not uc_enabled:
+        raise ValueError("Bronze apply is UC-only. Set --uc-enabled=true.")
+    if not uc_catalog:
         raise ValueError("--uc-catalog is required when --uc-enabled=true.")
     run_date_str = args.run_date or date.today().isoformat()
     run_date = date.fromisoformat(run_date_str)
@@ -290,44 +290,30 @@ def main() -> None:
     )
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
     set_spark_log_level(spark)
-    if uc_enabled:
-        # Create UC schemas up-front to avoid per-table schema checks later.
-        ensure_uc_schema(spark, uc_catalog, uc_bronze_schema, logger)
-        ensure_uc_schema(spark, uc_catalog, uc_ops_schema, logger)
-        logger.info("UC-first schema handling enabled: drop extra DF columns, align to UC schema.")
+    ensure_uc_schema(spark, uc_catalog, uc_bronze_schema, logger)
+    ensure_uc_schema(spark, uc_catalog, uc_ops_schema, logger)
+    logger.info("UC-only bronze apply enabled: bronze targets and registry are resolved from UC.")
 
     # Step 4: Load the registry table to track applied batches.
     # This drives idempotency and prevents duplicate loads per partition.
     # The expected outcome is a Delta-backed DataFrame or None when missing.
     # Registry is the source of truth for applied landing batches.
-    registry_path = bronze_registry_path(args.bronze_bucket, args.bronze_prefix)
     schema_path = get_env(
         "BRONZE_REGISTRY_SCHEMA_PATH",
         str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
     )
     registry_schema = load_registry_schema(schema_path)
-    try:
-        from delta.tables import DeltaTable
-    except ImportError as exc:
-        raise ImportError(
-            "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
-        ) from exc
-    if not DeltaTable.isDeltaTable(spark, registry_path):
-        raise ValueError("Registry table is missing; run bronze_registry_init first.")
-    registry_df = load_registry_table(spark, registry_path)
-    if uc_enabled:
-        sync_external_delta_table(
-            spark=spark,
-            catalog=uc_catalog,
-            schema=uc_ops_schema,
-            table="bronze_apply_registry",
-            location=registry_path,
-            logger=logger,
-        )
+    registry_table_name = ensure_uc_external_delta_table(
+        spark=spark,
+        catalog=uc_catalog,
+        schema=uc_ops_schema,
+        table="bronze_apply_registry",
+        logger=logger,
+    )
+    registry_df = spark.read.table(registry_table_name)
+
     def _align_to_uc_bronze_schema(table_name: str, df):
         """Align a table DataFrame to UC schema before bronze write/merge."""
-        if not uc_enabled:
-            return df
         return align_df_to_uc_schema(
             spark=spark,
             df=df,
@@ -384,10 +370,14 @@ def main() -> None:
             raw_base = table_base_path(
                 args.raw_bucket, args.raw_prefix, args.schema, table
             )
-            bronze_path = table_base_path(
-                args.bronze_bucket, args.bronze_prefix, args.schema, table
+            bronze_table_name = ensure_uc_external_delta_table(
+                spark=spark,
+                catalog=uc_catalog,
+                schema=uc_bronze_schema,
+                table=table,
+                logger=logger,
             )
-    
+
             table_registry = None
             applied_batches = set()
             expected_schema_hash = None
@@ -413,7 +403,7 @@ def main() -> None:
                     expected_schema_hash = latest_row[0].schema_hash
                     expected_contract_version = latest_row[0].contract_version
             has_registry_rows = bool(latest_row) if registry_df is not None else False
-    
+
             state_last_ingest = None
             if partition_key == "extract_date":
                 state_path_value = state_path(
@@ -507,7 +497,7 @@ def main() -> None:
                 logger.info("No new batches to apply for %s", table)
                 write_registry_rows(
                     spark,
-                    registry_path,
+                    registry_table_name,
                     registry_schema,
                     registry_rows,
                 )
@@ -540,8 +530,7 @@ def main() -> None:
                 apply_snapshot_batches(
                     spark=spark,
                     table=table,
-                    bronze_path=bronze_path,
-                    registry_path=registry_path,
+                    bronze_table_name=bronze_table_name,
                     registry_schema=registry_schema,
                     registry_rows=registry_rows,
                     source_system=args.source_system,
@@ -550,15 +539,14 @@ def main() -> None:
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,
-                    align_to_target_schema=_align_to_uc_bronze_schema if uc_enabled else None,
+                    align_to_target_schema=_align_to_uc_bronze_schema,
                 )
             elif partition_key == "extract_date":
                 apply_mutable_dim_batches(
                     spark=spark,
                     table=table,
-                    bronze_path=bronze_path,
+                    bronze_table_name=bronze_table_name,
                     merge_keys=merge_keys,
-                    registry_path=registry_path,
                     registry_schema=registry_schema,
                     registry_rows=registry_rows,
                     source_system=args.source_system,
@@ -567,15 +555,14 @@ def main() -> None:
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,
-                    align_to_target_schema=_align_to_uc_bronze_schema if uc_enabled else None,
+                    align_to_target_schema=_align_to_uc_bronze_schema,
                 )
             else:
                 apply_facts_events_batches(
                     spark=spark,
                     table=table,
-                    bronze_path=bronze_path,
+                    bronze_table_name=bronze_table_name,
                     merge_keys=merge_keys,
-                    registry_path=registry_path,
                     registry_schema=registry_schema,
                     registry_rows=registry_rows,
                     source_system=args.source_system,
@@ -586,26 +573,17 @@ def main() -> None:
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,
-                    align_to_target_schema=_align_to_uc_bronze_schema if uc_enabled else None,
+                    align_to_target_schema=_align_to_uc_bronze_schema,
                 )
             write_registry_rows(
                 spark,
-                registry_path,
+                registry_table_name,
                 registry_schema,
                 registry_rows,
             )
-            if uc_enabled and DeltaTable.isDeltaTable(spark, bronze_path):
-                sync_external_delta_table(
-                    spark=spark,
-                    catalog=uc_catalog,
-                    schema=uc_bronze_schema,
-                    table=table,
-                    location=bronze_path,
-                    logger=logger,
-                )
             # Release cached data between tables to limit driver memory growth.
             spark.catalog.clearCache()
-    
+
     spark.stop()
 
 

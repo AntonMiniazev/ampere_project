@@ -16,9 +16,8 @@ from bronze.apply_utils import build_registry_payload, merge_to_delta
 def apply_facts_events_batches(
     spark: SparkSession,
     table: str,
-    bronze_path: str,
+    bronze_table_name: str,
     merge_keys: list[str],
-    registry_path: str,
     registry_schema: StructType,
     registry_rows: list[dict],
     source_system: str,
@@ -39,9 +38,8 @@ def apply_facts_events_batches(
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         table: Source table name, e.g. "orders".
-        bronze_path: Delta target path, e.g. "s3a://ampere-bronze/bronze/source/orders".
+        bronze_table_name: UC bronze table name, e.g. "`ampere`.`bronze`.`orders`".
         merge_keys: Business keys, e.g. ["order_id"] or [] for pure append.
-        registry_path: Registry Delta path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
         registry_schema: Registry schema StructType, e.g. StructType([...]).
         registry_rows: Output list to collect registry rows for a single write.
         source_system: Source system id, e.g. "postgres-pre-raw".
@@ -57,9 +55,8 @@ def apply_facts_events_batches(
         apply_facts_events_batches(
             spark=spark,
             table="orders",
-            bronze_path="s3a://ampere-bronze/bronze/source/orders",
+            bronze_table_name="`ampere`.`bronze`.`orders`",
             merge_keys=["order_id"],
-            registry_path="s3a://ampere-bronze/bronze/ops/bronze_apply_registry",
             registry_schema=registry_schema,
             registry_rows=[],
             source_system="postgres-pre-raw",
@@ -310,13 +307,13 @@ def apply_facts_events_batches(
             merge_to_delta(
                 spark,
                 df,
-                bronze_path,
+                bronze_table_name,
                 merge_keys,
                 partition_column=partition_kind,
                 partition_value=None,
             )
         else:
-            df.write.format("delta").mode("append").save(bronze_path)
+            df.write.format("delta").mode("append").saveAsTable(bronze_table_name)
 
         # Step C: Emit registry rows for every batch we included.
         # This keeps the registry granular while the write is consolidated.

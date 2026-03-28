@@ -114,6 +114,9 @@ def build_raw_stream_groups(
                     table: {
                         "watermark_column": table_map[table].get("watermark_column", ""),
                         "created_column": table_map[table].get("created_column", ""),
+                        "cursor_granularity": table_map[table].get(
+                            "cursor_granularity", "timestamp"
+                        ),
                     }
                     for table in tables_list
                 }

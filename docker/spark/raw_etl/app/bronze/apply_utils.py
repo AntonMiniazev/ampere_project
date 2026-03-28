@@ -49,18 +49,21 @@ def load_registry_schema(schema_path: str) -> StructType:
 
 
 def write_registry_rows(
-    spark: SparkSession, path_str: str, schema: StructType, rows: list[dict]
+    spark: SparkSession,
+    table_name: str,
+    schema: StructType,
+    rows: list[dict],
 ) -> None:
     """Append a batch of apply-registry rows with retry on concurrent commits.
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: Registry table path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+        table_name: UC registry table name, e.g. "`ampere`.`ops`.`bronze_apply_registry`".
         schema: Registry schema, e.g. StructType([...]).
         rows: Row payloads, e.g. [{"source_table": "orders", "status": "applied"}].
 
     Examples:
-        write_registry_rows(spark, registry_path, registry_schema, rows)
+        write_registry_rows(spark, "`ampere`.`ops`.`bronze_apply_registry`", registry_schema, rows)
     """
     logger = logging.getLogger("raw-to-bronze-apply-utils")
     if not rows:
@@ -76,7 +79,7 @@ def write_registry_rows(
     )
     for attempt in range(retries):
         try:
-            df.write.format("delta").mode("append").save(path_str)
+            df.write.format("delta").mode("append").saveAsTable(table_name)
             return
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
@@ -151,7 +154,7 @@ def build_registry_payload(
 def merge_to_delta(
     spark: SparkSession,
     df,
-    target_path: str,
+    target_table: str,
     merge_keys: list[str],
     partition_column: str | None = None,
     partition_value: str | None = None,
@@ -161,7 +164,7 @@ def merge_to_delta(
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         df: Source DataFrame, e.g. spark.read.parquet("s3a://...").
-        target_path: Delta table path, e.g. "s3a://ampere-bronze/bronze/source/orders".
+        target_table: UC table name, e.g. "`ampere`.`bronze`.`orders`".
         merge_keys: Business keys, e.g. ["order_id"].
         partition_column: Optional partition column for pruning, e.g. "event_date".
         partition_value: Optional partition value for pruning, e.g. "2026-01-24".
@@ -170,7 +173,7 @@ def merge_to_delta(
         merge_to_delta(
             spark,
             df,
-            "s3a://ampere-bronze/bronze/source/orders",
+            "`ampere`.`bronze`.`orders`",
             ["order_id"],
             partition_column="event_date",
             partition_value="2026-01-24",
@@ -186,21 +189,25 @@ def merge_to_delta(
     if partition_column and partition_value and partition_column in df.columns:
         df = df.filter(df[partition_column] == partition_value)
 
-    if DeltaTable.isDeltaTable(spark, target_path):
-        delta_table = DeltaTable.forPath(spark, target_path)
-        conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
-        if partition_column and partition_column in df.columns:
-            target_columns = set(delta_table.toDF().columns)
-            if partition_column in target_columns:
-                conditions = (
-                    f"t.{partition_column} = s.{partition_column} AND {conditions}"
-                )
-        (
-            delta_table.alias("t")
-            .merge(df.alias("s"), conditions)
-            .whenMatchedUpdateAll()
-            .whenNotMatchedInsertAll()
-            .execute()
-        )
-    else:
-        df.write.format("delta").mode("overwrite").save(target_path)
+    try:
+        delta_table = DeltaTable.forName(spark, target_table)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"UC target table {target_table} is not available for Delta merge. "
+            "Pre-create it in Unity Catalog before running the bronze pipeline."
+        ) from exc
+
+    conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
+    if partition_column and partition_column in df.columns:
+        target_columns = set(delta_table.toDF().columns)
+        if partition_column in target_columns:
+            conditions = (
+                f"t.{partition_column} = s.{partition_column} AND {conditions}"
+            )
+    (
+        delta_table.alias("t")
+        .merge(df.alias("s"), conditions)
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute()
+    )

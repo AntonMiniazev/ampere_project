@@ -16,8 +16,7 @@ from bronze.apply_utils import build_registry_payload
 def apply_snapshot_batches(
     spark: SparkSession,
     table: str,
-    bronze_path: str,
-    registry_path: str,
+    bronze_table_name: str,
     registry_schema: StructType,
     registry_rows: list[dict],
     source_system: str,
@@ -36,8 +35,7 @@ def apply_snapshot_batches(
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         table: Source table name, e.g. "orders".
-        bronze_path: Delta target path, e.g. "s3a://ampere-bronze/bronze/source/orders".
-        registry_path: Registry Delta path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
+        bronze_table_name: UC bronze table name, e.g. "`ampere`.`bronze`.`orders`".
         registry_schema: Registry schema StructType, e.g. StructType([...]).
         registry_rows: Output list to collect registry rows for a single write.
         source_system: Source system id, e.g. "postgres-pre-raw".
@@ -51,8 +49,7 @@ def apply_snapshot_batches(
         apply_snapshot_batches(
             spark=spark,
             table="orders",
-            bronze_path="s3a://ampere-bronze/bronze/source/orders",
-            registry_path="s3a://ampere-bronze/bronze/ops/bronze_apply_registry",
+            bronze_table_name="`ampere`.`bronze`.`orders`",
             registry_schema=registry_schema,
             registry_rows=[],
             source_system="postgres-pre-raw",
@@ -63,13 +60,6 @@ def apply_snapshot_batches(
             logger=logging.getLogger("raw-to-bronze-etl"),
         )
     """
-    try:
-        from delta.tables import DeltaTable
-    except ImportError as exc:
-        raise ImportError(
-            "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
-        ) from exc
-
     if not sorted_batches:
         logger.info("No snapshot batches to apply for %s", table)
         return
@@ -298,23 +288,15 @@ def apply_snapshot_batches(
             df = df.withColumn("snapshot_date", F.lit(partition_value))
             if align_to_target_schema is not None:
                 df = align_to_target_schema(table, df)
-            if DeltaTable.isDeltaTable(spark, bronze_path):
-                (
-                    df.write.format("delta")
-                    .mode("overwrite")
-                    .option(
-                        "replaceWhere",
-                        f"snapshot_date = '{partition_value}'",
-                    )
-                    .save(bronze_path)
+            (
+                df.write.format("delta")
+                .mode("overwrite")
+                .option(
+                    "replaceWhere",
+                    f"snapshot_date = '{partition_value}'",
                 )
-            else:
-                (
-                    df.write.format("delta")
-                    .mode("overwrite")
-                    .partitionBy("snapshot_date")
-                    .save(bronze_path)
-                )
+                .saveAsTable(bronze_table_name)
+            )
 
             # Step C: Record the applied batch in the registry.
             # This keeps idempotency and traceability for future runs.

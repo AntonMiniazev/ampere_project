@@ -15,10 +15,6 @@ spec:
   arguments:
     # These CLI arguments are rendered by Airflow and then consumed by
     # bronze_registry_init_uc.py inside the Spark image.
-    - --bronze-bucket
-    - {{ params.bronze_bucket }}
-    - --bronze-prefix
-    - {{ params.bronze_prefix }}
     - --uc-enabled
     - "{{ params.uc_enabled }}"
     - --uc-catalog
@@ -34,16 +30,6 @@ spec:
     spark.ui.enabled: "false"
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
-    spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
-    spark.hadoop.fs.s3a.path.style.access: "true"
-    spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
-    spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
-    spark.hadoop.fs.s3a.aws.credentials.provider: "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
-    spark.hadoop.fs.s3.endpoint: "{{ params.minio_endpoint }}"
-    spark.hadoop.fs.s3.path.style.access: "true"
-    spark.hadoop.fs.s3.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
-    spark.hadoop.fs.s3.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
-    spark.hadoop.fs.AbstractFileSystem.s3.impl: "org.apache.hadoop.fs.s3a.S3A"
 {% if params.uc_enabled == "true" %}
     spark.sql.catalog.{{ params.uc_catalog }}: "{{ params.uc_catalog_impl }}"
     spark.sql.catalog.{{ params.uc_catalog }}.uri: "{{ params.uc_api_uri }}"
@@ -58,7 +44,7 @@ spec:
   restartPolicy:
     type: Never
   driver:
-    # The driver performs the fast existence check and the fallback Spark-based creation path.
+    # The driver validates that the UC registry table is already present.
     cores: {{ params.driver_cores }}
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
@@ -68,22 +54,9 @@ spec:
     volumeMounts:
       - name: ivy-cache
         mountPath: /opt/spark/ivy
-    env:
-      - name: MINIO_S3_ENDPOINT
-        value: "{{ params.minio_endpoint }}"
-      - name: MINIO_ACCESS_KEY
-        valueFrom:
-          secretKeyRef:
-            name: minio-creds
-            key: MINIO_ACCESS_KEY
-      - name: MINIO_SECRET_KEY
-        valueFrom:
-          secretKeyRef:
-            name: minio-creds
-            key: MINIO_SECRET_KEY
   executor:
     # Executors are kept for symmetry with the SparkApplication spec, even though
-    # registry initialization is mostly driver-centric work.
+    # registry validation is mostly driver-centric work.
     instances: {{ params.executor_instances }}
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
@@ -93,16 +66,3 @@ spec:
     volumeMounts:
       - name: ivy-cache
         mountPath: /opt/spark/ivy
-    env:
-      - name: MINIO_S3_ENDPOINT
-        value: "{{ params.minio_endpoint }}"
-      - name: MINIO_ACCESS_KEY
-        valueFrom:
-          secretKeyRef:
-            name: minio-creds
-            key: MINIO_ACCESS_KEY
-      - name: MINIO_SECRET_KEY
-        valueFrom:
-          secretKeyRef:
-            name: minio-creds
-            key: MINIO_SECRET_KEY

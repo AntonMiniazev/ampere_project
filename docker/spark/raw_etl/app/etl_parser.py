@@ -140,11 +140,9 @@ def parse_bronze_args() -> argparse.Namespace:
     - --lookback-days: Lookback window in days for fallback fact/event runs. Default `0`.
     - --raw-bucket: Raw landing bucket name. Default `ampere-raw`.
     - --raw-prefix: Prefix inside the raw landing bucket. Default `postgres-pre-raw`.
-    - --bronze-bucket: Bronze Delta bucket name. Default `ampere-bronze`.
-    - --bronze-prefix: Prefix inside the bronze bucket. Default `bronze`.
     - --source-system: Source-system identifier used in manifests and registry rows. Default `postgres-pre-raw`.
     - --shuffle-partitions: Override for `spark.sql.shuffle.partitions`; `0` keeps Spark default. Default `0`.
-    - --uc-enabled: Enable Unity Catalog sync behavior. Default `false`.
+    - --uc-enabled: Enable the required Unity Catalog mode; must stay `true`. Default `true`.
     - --uc-catalog: Unity Catalog catalog name. Default `""`.
     - --uc-bronze-schema: Unity Catalog schema for bronze tables. Default `bronze`.
     - --uc-ops-schema: Unity Catalog schema for operational tables. Default `ops`.
@@ -205,16 +203,6 @@ def parse_bronze_args() -> argparse.Namespace:
         help="Raw landing prefix",
     )
     parser.add_argument(
-        "--bronze-bucket",
-        default="ampere-bronze",
-        help="Bronze bucket",
-    )
-    parser.add_argument(
-        "--bronze-prefix",
-        default="bronze",
-        help="Bronze prefix",
-    )
-    parser.add_argument(
         "--source-system",
         default="postgres-pre-raw",
         help="Source system identifier",
@@ -227,8 +215,8 @@ def parse_bronze_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--uc-enabled",
-        default="false",
-        help="Enable Unity Catalog sync for bronze tables (true/false).",
+        default="true",
+        help="Enable the required Unity Catalog mode for bronze tables (true/false).",
     )
     parser.add_argument(
         "--uc-catalog",

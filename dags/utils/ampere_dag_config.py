@@ -224,12 +224,9 @@ class BronzeDagConfig:
     image: str
     image_pull_policy: str
     minio_endpoint: str
-    minio_conn_id: str
     schema: str
     raw_bucket: str
     raw_prefix: str
-    bronze_bucket: str
-    bronze_prefix: str
     source_system: str
     driver_cores: int
     driver_core_request: str
@@ -270,12 +267,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - image: Spark container image used for the bronze app. Default `ghcr.io/antonminiazev/ampere-spark:latest` when `ampere-spark-image` is unset.
     - image_pull_policy: Kubernetes image pull policy for the Spark pods. Default `IfNotPresent`.
     - minio_endpoint: MinIO/S3 endpoint used by Spark S3A IO. Default `http://minio.ampere.svc.cluster.local:9000`.
-    - minio_conn_id: Airflow connection id used for registry existence checks. Default `minio_conn`.
     - schema: Source schema name used in raw and bronze metadata. Default `source`.
     - raw_bucket: Raw landing bucket name. Default `ampere-raw`.
     - raw_prefix: Prefix under the raw bucket where landing batches live. Default `postgres-pre-raw`.
-    - bronze_bucket: Bronze Delta bucket name. Default `ampere-bronze`.
-    - bronze_prefix: Prefix under the bronze bucket where Delta tables live. Default `bronze`.
     - source_system: Source-system id used in manifests and registry rows. Default `postgres-pre-raw`.
     - driver_cores: Spark driver CPU core count. Default `1`.
     - driver_core_request: Kubernetes CPU request for the Spark driver. Default `400m`.
@@ -318,12 +312,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "minio_s3_endpoint",
             default=DEFAULT_MINIO_ENDPOINT,
         ),
-        minio_conn_id=Variable.get("minio_conn_id", default="minio_conn"),
         schema=Variable.get("pg_schema", default="source"),
         raw_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
         raw_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
-        bronze_bucket=Variable.get("minio_bronze_bucket", default="ampere-bronze"),
-        bronze_prefix=Variable.get("bronze_output_prefix", default="bronze"),
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get(

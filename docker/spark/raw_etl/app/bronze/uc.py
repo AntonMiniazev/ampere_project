@@ -1,8 +1,4 @@
-"""Unity Catalog helpers for raw-to-bronze Spark jobs.
-
-This module keeps UC-specific logic isolated so path-based ETL can stay
-unchanged and UC enablement can be toggled with runtime flags.
-"""
+"""Unity Catalog helpers for raw-to-bronze Spark jobs."""
 
 from __future__ import annotations
 
@@ -12,21 +8,6 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
-from pyspark.sql.types import (
-    BinaryType,
-    BooleanType,
-    DateType,
-    DecimalType,
-    DoubleType,
-    FloatType,
-    IntegerType,
-    LongType,
-    ShortType,
-    StringType,
-    StructType,
-    TimestampNTZType,
-    TimestampType,
-)
 
 
 def parse_bool_flag(value: str | bool | None, default: bool = False) -> bool:
@@ -75,93 +56,6 @@ def ensure_uc_schema(
     logger.info("Ensured UC schema exists: %s.%s", catalog, schema)
 
 
-def _column_type_sql(data_type) -> str:
-    """Return Spark SQL type text for a PySpark data type."""
-    # `simpleString()` is accepted by Spark SQL DDL for common/complex types.
-    return data_type.simpleString()
-
-
-def _uc_column_type_parts(data_type) -> tuple[str, str, str]:
-    """Map Spark SQL types to UC column metadata fields."""
-    if isinstance(data_type, BooleanType):
-        return ("BOOLEAN", "BOOLEAN", json.dumps({"name": "boolean"}))
-    if isinstance(data_type, ShortType):
-        return ("SHORT", "SMALLINT", json.dumps({"name": "short"}))
-    if isinstance(data_type, IntegerType):
-        return ("INT", "INT", json.dumps({"name": "integer"}))
-    if isinstance(data_type, LongType):
-        return ("LONG", "BIGINT", json.dumps({"name": "long"}))
-    if isinstance(data_type, FloatType):
-        return ("FLOAT", "FLOAT", json.dumps({"name": "float"}))
-    if isinstance(data_type, DoubleType):
-        return ("DOUBLE", "DOUBLE", json.dumps({"name": "double"}))
-    if isinstance(data_type, DecimalType):
-        return (
-            "DECIMAL",
-            f"DECIMAL({data_type.precision},{data_type.scale})",
-            json.dumps(
-                {
-                    "name": "decimal",
-                    "precision": int(data_type.precision),
-                    "scale": int(data_type.scale),
-                }
-            ),
-        )
-    if isinstance(data_type, StringType):
-        return ("STRING", "STRING", json.dumps({"name": "string"}))
-    if isinstance(data_type, BinaryType):
-        return ("BINARY", "BINARY", json.dumps({"name": "binary"}))
-    if isinstance(data_type, DateType):
-        return ("DATE", "DATE", json.dumps({"name": "date"}))
-    if isinstance(data_type, (TimestampType, TimestampNTZType)):
-        return ("TIMESTAMP", "TIMESTAMP", json.dumps({"name": "timestamp"}))
-    # Conservative fallback for complex / unsupported types in this helper.
-    return ("STRING", _column_type_sql(data_type).upper(), json.dumps({"name": "string"}))
-
-
-def _columns_ddl(struct: StructType) -> str:
-    """Build column DDL for CREATE TABLE from a Spark StructType."""
-    columns = []
-    for field in struct.fields:
-        nullable_suffix = "" if field.nullable else " NOT NULL"
-        columns.append(
-            f"{quote_ident(field.name)} {_column_type_sql(field.dataType)}{nullable_suffix}"
-        )
-    return ", ".join(columns)
-
-
-def _uc_columns_payload(struct: StructType) -> list[dict]:
-    """Build UC REST API column payload from Spark schema."""
-    payload: list[dict] = []
-    for idx, field in enumerate(struct.fields, start=1):
-        type_name, type_text, type_json = _uc_column_type_parts(field.dataType)
-        payload.append(
-            {
-                "name": field.name,
-                "type_name": type_name,
-                "type_text": type_text,
-                "type_json": type_json,
-                "position": idx,
-                "nullable": bool(field.nullable),
-            }
-        )
-    return payload
-
-
-def _table_has_columns(spark: SparkSession, fq_table: str) -> bool:
-    """Best-effort check whether a registered table has visible columns."""
-    try:
-        described = spark.sql(f"DESCRIBE TABLE {fq_table}").collect()
-    except Exception:
-        return False
-    for row in described:
-        col_name = (row[0] or "").strip() if len(row) > 0 else ""
-        if not col_name or col_name.startswith("#"):
-            continue
-        if col_name.lower() in {"col_name"}:
-            continue
-        return True
-    return False
 
 
 def _uc_api_base(spark: SparkSession, catalog: str) -> str:
@@ -259,10 +153,32 @@ def get_uc_table_payload(
     )
     if status != 200:
         raise RuntimeError(
-            f"UC-first schema check failed: table {catalog}.{schema}.{table} is not "
+            f"UC metadata check failed: table {catalog}.{schema}.{table} is not "
             f"available in Unity Catalog (HTTP {status}). Pre-create it in UC first."
         )
     return payload
+
+
+def ensure_uc_external_delta_table(
+    spark: SparkSession,
+    catalog: str,
+    schema: str,
+    table: str,
+    logger: logging.Logger,
+) -> str:
+    """Return the UC table name after verifying the table exists as external Delta."""
+    payload = get_uc_table_payload(spark, catalog, schema, table, logger)
+    table_type = str(payload.get("table_type") or "").upper()
+    data_source_format = str(payload.get("data_source_format") or "").upper()
+    if table_type != "EXTERNAL":
+        raise RuntimeError(
+            f"UC table {catalog}.{schema}.{table} must be EXTERNAL, got {table_type!r}."
+        )
+    if data_source_format != "DELTA":
+        raise RuntimeError(
+            f"UC table {catalog}.{schema}.{table} must use DELTA, got {data_source_format!r}."
+        )
+    return uc_table_name(catalog, schema, table)
 
 
 def align_df_to_uc_schema(
@@ -273,7 +189,7 @@ def align_df_to_uc_schema(
     table: str,
     logger: logging.Logger,
 ) -> DataFrame:
-    """Align a Spark DataFrame to UC table schema (UC-first contract enforcement).
+    """Align a Spark DataFrame to the UC table schema.
 
     The function reads UC table metadata via REST and:
     - reorders columns to UC order,
@@ -295,7 +211,7 @@ def align_df_to_uc_schema(
     uc_columns = payload.get("columns") or []
     if not uc_columns:
         raise RuntimeError(
-            f"UC-first schema check failed: {catalog}.{schema}.{table} has no columns[] "
+            f"UC metadata check failed: {catalog}.{schema}.{table} has no columns[] "
             "metadata. Recreate the UC table with explicit columns."
         )
     uc_columns = sorted(
@@ -315,7 +231,7 @@ def align_df_to_uc_schema(
     extra_columns = [name for name in df_names if name not in uc_set]
     if extra_columns:
         logger.warning(
-            "UC-first dropping %s extra columns for %s.%s.%s: %s",
+            "UC dropping %s extra columns for %s.%s.%s: %s",
             len(extra_columns),
             catalog,
             schema,
@@ -347,91 +263,3 @@ def align_df_to_uc_schema(
         type_text = str(uc_map[name].get("type_text") or "string")
         select_exprs.append(F.col(name).cast(type_text).alias(name))
     return aligned.select(*select_exprs)
-
-
-def _uc_create_external_delta_table(
-    spark: SparkSession,
-    catalog: str,
-    schema: str,
-    table: str,
-    uc_location: str,
-    delta_schema: StructType,
-    logger: logging.Logger,
-) -> None:
-    """Create an external Delta table in UC via REST with explicit columns."""
-    payload = {
-        "name": table,
-        "catalog_name": catalog,
-        "schema_name": schema,
-        "table_type": "EXTERNAL",
-        "data_source_format": "DELTA",
-        "storage_location": uc_location,
-        "columns": _uc_columns_payload(delta_schema),
-    }
-    status, data = _uc_http_json(
-        spark=spark,
-        catalog=catalog,
-        method="POST",
-        path="/api/2.1/unity-catalog/tables",
-        logger=logger,
-        payload=payload,
-    )
-    if status in {200, 201}:
-        return
-    body_text = json.dumps(data)[:2000]
-    if status in {400, 409} and ("already exists" in body_text.lower() or "already_exists" in body_text.lower()):
-        return
-    raise RuntimeError(
-        f"UC create table failed for {catalog}.{schema}.{table} (HTTP {status}): {body_text}"
-    )
-
-
-def sync_external_delta_table(
-    spark: SparkSession,
-    catalog: str,
-    schema: str,
-    table: str,
-    location: str,
-    logger: logging.Logger,
-) -> None:
-    """Register or keep UC external table pointing to Delta path.
-
-    Registration is done through the UC REST API (not Spark SQL catalog create)
-    so Spark can keep using `s3a://` paths while UC receives `s3://` locations
-    for its temporary-credentials API.
-    """
-    # Spark/Delta on Hadoop resolves MinIO via `s3a://`, while UC REST/storage
-    # mappings and temporary-credentials API use `s3://`.
-    uc_location = location.replace("s3a://", "s3://", 1)
-    delta_schema = spark.read.format("delta").load(location).schema
-    status, table_payload = _uc_get_table(
-        spark=spark,
-        catalog=catalog,
-        schema=schema,
-        table=table,
-        logger=logger,
-    )
-    table_exists = status == 200
-    if not table_exists:
-        _uc_create_external_delta_table(
-            spark=spark,
-            catalog=catalog,
-            schema=schema,
-            table=table,
-            uc_location=uc_location,
-            delta_schema=delta_schema,
-            logger=logger,
-        )
-    else:
-        columns = table_payload.get("columns") or []
-        if not columns:
-            logger.warning(
-                "UC table %s exists but has no visible columns; consider drop/recreate "
-                "to repopulate metadata.",
-                f"{catalog}.{schema}.{table}",
-            )
-    logger.info(
-        "Synced UC table %s -> %s",
-        f"{catalog}.{schema}.{table}",
-        uc_location,
-    )

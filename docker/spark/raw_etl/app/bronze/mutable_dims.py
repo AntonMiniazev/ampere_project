@@ -16,9 +16,8 @@ from bronze.apply_utils import build_registry_payload, merge_to_delta
 def apply_mutable_dim_batches(
     spark: SparkSession,
     table: str,
-    bronze_path: str,
+    bronze_table_name: str,
     merge_keys: list[str],
-    registry_path: str,
     registry_schema: StructType,
     registry_rows: list[dict],
     source_system: str,
@@ -37,9 +36,8 @@ def apply_mutable_dim_batches(
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
         table: Source table name, e.g. "clients".
-        bronze_path: Delta target path, e.g. "s3a://ampere-bronze/bronze/source/clients".
+        bronze_table_name: UC bronze table name, e.g. "`ampere`.`bronze`.`clients`".
         merge_keys: Stable business keys, e.g. ["client_id"].
-        registry_path: Registry Delta path, e.g. "s3a://ampere-bronze/bronze/ops/bronze_apply_registry".
         registry_schema: Registry schema StructType, e.g. StructType([...]).
         registry_rows: Output list to collect registry rows for a single write.
         source_system: Source system id, e.g. "postgres-pre-raw".
@@ -53,9 +51,8 @@ def apply_mutable_dim_batches(
         apply_mutable_dim_batches(
             spark=spark,
             table="clients",
-            bronze_path="s3a://ampere-bronze/bronze/source/clients",
+            bronze_table_name="`ampere`.`bronze`.`clients`",
             merge_keys=["client_id"],
-            registry_path="s3a://ampere-bronze/bronze/ops/bronze_apply_registry",
             registry_schema=registry_schema,
             registry_rows=[],
             source_system="postgres-pre-raw",
@@ -269,7 +266,12 @@ def apply_mutable_dim_batches(
 
             if align_to_target_schema is not None:
                 df = align_to_target_schema(table, df)
-            merge_to_delta(spark, df, bronze_path, merge_keys)
+            merge_to_delta(
+                spark,
+                df,
+                bronze_table_name,
+                merge_keys,
+            )
 
             # Step C: Emit registry rows for every batch in the partition.
             # This keeps the registry granular while the write is consolidated.
