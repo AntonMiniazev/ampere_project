@@ -352,7 +352,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             Variable.get("spark_executor_instances_facts_events", default="3")
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="2000m"
+            "spark_executor_memory_facts_events", default="1800"
         ),
         executor_memory_overhead_facts_events=Variable.get(
             "spark_executor_memory_overhead_facts_events", default="384m"
