@@ -79,6 +79,29 @@ def _repair_registry_storage(
     )
 
 
+def _registry_table_exists(
+    spark: SparkSession,
+    registry_table_name: str,
+    logger: logging.Logger,
+) -> bool:
+    """Return True when registry table exists, tolerating broken Delta path metadata.
+
+    In UC mode a table entry may exist while its underlying Delta path is missing.
+    Spark can raise AnalysisException during tableExists() in that case.
+    """
+    try:
+        return bool(spark.catalog.tableExists(registry_table_name))
+    except Exception as exc:  # noqa: BLE001
+        message = str(exc)
+        if "DELTA_PATH_DOES_NOT_EXIST" in message or "doesn't exist" in message:
+            logger.warning(
+                "Registry table metadata exists but Delta path is missing; treating as absent: %s",
+                registry_table_name,
+            )
+            return False
+        raise
+
+
 def main() -> None:
     """Ensure the bronze registry table exists and is readable from Unity Catalog."""
     setup_logging()
@@ -118,7 +141,11 @@ def main() -> None:
         "bronze_apply_registry",
     )
 
-    if not spark.catalog.tableExists(registry_table_name):
+    if not _registry_table_exists(
+        spark=spark,
+        registry_table_name=registry_table_name,
+        logger=logger,
+    ):
         logger.warning(
             "UC registry table is missing; creating %s at %s",
             registry_table_name,
