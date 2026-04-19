@@ -165,17 +165,17 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - output_prefix: Prefix under the raw bucket where extracts are written. Default `postgres-pre-raw`.
     - driver_cores: Spark driver CPU core count. Default `1`.
     - driver_core_request: Kubernetes CPU request for the Spark driver. Default `250m`.
-    - driver_memory: Spark driver memory setting. Default `2000m`.
-    - driver_memory_overhead: Extra Kubernetes memory overhead for the driver. Default `384m`.
+    - driver_memory: Spark driver memory setting. Default `2500m`.
+    - driver_memory_overhead: Extra Kubernetes memory overhead for the driver. Default `512m`.
     - executor_cores: Spark executor CPU core count. Default `1`.
     - executor_core_request: Kubernetes CPU request for each executor. Default `250m`.
-    - executor_memory: Spark executor memory setting. Default `1024m`.
-    - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `256m`.
+    - executor_memory: Spark executor memory setting. Default `1536m`.
+    - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for raw jobs. Default `4`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `2`.
     - executor_instances_facts_events: Executor count override for facts/events group. Default `2`.
-    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `1800m`.
-    - executor_memory_overhead_facts_events: Executor memory overhead override for facts/events SparkApplication. Default `384m`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `3400m`.
+    - executor_memory_overhead_facts_events: Executor memory overhead override for facts/events SparkApplication. Default `512m`.
     - jdbc_fetchsize: JDBC fetch batch size for PostgreSQL reads. Default `10000`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `4`.
     - max_active_tasks: Airflow max_active_tasks limit for the DAG. Default `1`.
@@ -202,17 +202,17 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         output_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get("spark_driver_core_request", default="250m"),
-        driver_memory=Variable.get("spark_driver_memory", default="2000m"),
+        driver_memory=Variable.get("spark_driver_memory", default="2500m"),
         driver_memory_overhead=Variable.get(
-            "spark_driver_memory_overhead", default="384m"
+            "spark_driver_memory_overhead", default="512m"
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
             "spark_executor_core_request", default="250m"
         ),
-        executor_memory=Variable.get("spark_executor_memory", default="1024m"),
+        executor_memory=Variable.get("spark_executor_memory", default="1536m"),
         executor_memory_overhead=Variable.get(
-            "spark_executor_memory_overhead", default="256m"
+            "spark_executor_memory_overhead", default="384m"
         ),
         executor_instances=int(Variable.get("spark_executor_instances", default="4")),
         executor_instances_snapshots=int(
@@ -222,10 +222,10 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
             Variable.get("spark_executor_instances_facts_events", default="2")
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="1800m"
+            "spark_executor_memory_facts_events", default="3400m"
         ),
         executor_memory_overhead_facts_events=Variable.get(
-            "spark_executor_memory_overhead_facts_events", default="384m"
+            "spark_executor_memory_overhead_facts_events", default="512m"
         ),
         jdbc_fetchsize=max(int(Variable.get("spark_jdbc_fetchsize", default="10000")), 1),
         shuffle_partitions=int(
@@ -299,17 +299,17 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - source_system: Source-system id used in manifests and registry rows. Default `postgres-pre-raw`.
     - driver_cores: Spark driver CPU core count. Default `1`.
     - driver_core_request: Kubernetes CPU request for the Spark driver. Default `400m`.
-    - driver_memory: Spark driver memory setting. Default `2000m`.
-    - driver_memory_overhead: Extra Kubernetes memory overhead for the driver. Default `384m`.
+    - driver_memory: Spark driver memory setting. Default `2500m`.
+    - driver_memory_overhead: Extra Kubernetes memory overhead for the driver. Default `512m`.
     - executor_cores: Spark executor CPU core count. Default `1`.
     - executor_core_request: Kubernetes CPU request for each executor. Default `300m`.
-    - executor_memory: Spark executor memory setting. Default `1024m`.
-    - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `256m`.
+    - executor_memory: Spark executor memory setting. Default `1536m`.
+    - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for bronze jobs. Default `3`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `3`.
     - executor_instances_facts_events: Executor count override for facts/events group. Default `3`.
-    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `1536m`.
-    - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `384m`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2400m`.
+    - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `512m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `1`.
     - shuffle_partitions_facts_events: Shuffle partition override for facts/events. Default `8`.
@@ -355,17 +355,17 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
-        driver_memory=Variable.get("spark_driver_memory", default="2000m"),
+        driver_memory=Variable.get("spark_driver_memory", default="2500m"),
         driver_memory_overhead=Variable.get(
-            "spark_driver_memory_overhead", default="384m"
+            "spark_driver_memory_overhead", default="512m"
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
             "spark_executor_core_request", default="300m"
         ),
-        executor_memory=Variable.get("spark_executor_memory", default="1024m"),
+        executor_memory=Variable.get("spark_executor_memory", default="1536m"),
         executor_memory_overhead=Variable.get(
-            "spark_executor_memory_overhead", default="256m"
+            "spark_executor_memory_overhead", default="384m"
         ),
         executor_instances=int(Variable.get("spark_executor_instances", default="3")),
         executor_instances_snapshots=int(
@@ -375,10 +375,10 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             Variable.get("spark_executor_instances_facts_events", default="3")
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="1800m"
+            "spark_executor_memory_facts_events", default="2400m"
         ),
         executor_memory_overhead_facts_events=Variable.get(
-            "spark_executor_memory_overhead_facts_events", default="384m"
+            "spark_executor_memory_overhead_facts_events", default="512m"
         ),
         executor_node_selector=Variable.get(
             "spark_executor_node_selector", default="ampere-k8s-node4"
