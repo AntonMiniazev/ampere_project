@@ -41,10 +41,13 @@ def _base_params() -> dict:
         "driver_cores": DAG_CONFIG.driver_cores,
         "driver_core_request": DAG_CONFIG.driver_core_request,
         "driver_memory": DAG_CONFIG.driver_memory,
+        "driver_memory_overhead": DAG_CONFIG.driver_memory_overhead,
         "executor_cores": DAG_CONFIG.executor_cores,
         "executor_core_request": DAG_CONFIG.executor_core_request,
         "executor_memory": DAG_CONFIG.executor_memory,
+        "executor_memory_overhead": DAG_CONFIG.executor_memory_overhead,
         "executor_instances": DAG_CONFIG.executor_instances,
+        "jdbc_fetchsize": DAG_CONFIG.jdbc_fetchsize,
         "shuffle_partitions": DAG_CONFIG.shuffle_partitions,
     }
 
@@ -141,6 +144,16 @@ with DAG(
             if group_name == "snapshots-mutable-dims"
             else DAG_CONFIG.executor_instances_facts_events
         )
+        executor_memory = (
+            DAG_CONFIG.executor_memory
+            if group_name == "snapshots-mutable-dims"
+            else DAG_CONFIG.executor_memory_facts_events
+        )
+        executor_memory_overhead = (
+            DAG_CONFIG.executor_memory_overhead
+            if group_name == "snapshots-mutable-dims"
+            else DAG_CONFIG.executor_memory_overhead_facts_events
+        )
         params = {
             **base_params,
             "group": group_name,
@@ -158,6 +171,8 @@ with DAG(
             "snapshot_partitioned": seed_group.get("snapshot_partitioned", "true"),
             "app_name": f"source-to-raw-{group_name}",
             "executor_instances": executor_instances,
+            "executor_memory": executor_memory,
+            "executor_memory_overhead": executor_memory_overhead,
         }
         submit_tasks.append(
             SparkKubernetesOperator(

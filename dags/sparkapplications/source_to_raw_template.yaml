@@ -55,6 +55,8 @@ spec:
     - {{ params.app_name }}
     - --image
     - {{ params.image }}
+    - --jdbc-fetchsize
+    - "{{ params.jdbc_fetchsize }}"
   sparkConf:
     # Keep Spark on the image's built-in Hadoop runtime and add only the jars
     # this job actually needs. Avoid wildcard Ivy classpaths because old cached
@@ -82,6 +84,7 @@ spec:
     cores: {{ params.driver_cores }}
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
+    memoryOverhead: "{{ params.driver_memory_overhead }}"
     serviceAccount: {{ params.service_account }}
     nodeSelector:
       kubernetes.io/hostname: ampere-k8s-node4
@@ -124,6 +127,7 @@ spec:
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
+    memoryOverhead: "{{ params.executor_memory_overhead }}"
     nodeSelector:
       kubernetes.io/hostname: ampere-k8s-node4
     volumeMounts:

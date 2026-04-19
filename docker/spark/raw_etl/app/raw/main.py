@@ -49,6 +49,7 @@ def main() -> None:
     event_date_column = args.event_date_column.strip() or None
     watermark_column = args.watermark_column.strip() or None
     lookback_days = max(args.lookback_days, 0)
+    jdbc_fetchsize = max(args.jdbc_fetchsize, 1)
 
     pg_settings = get_postgres_connection_settings()
     minio_settings = get_minio_connection_settings()
@@ -85,6 +86,7 @@ def main() -> None:
         pg_settings.database,
         pg_settings.user,
     )
+    logger.info("JDBC fetchsize=%s", jdbc_fetchsize)
     logger.info("MinIO endpoint=%s bucket=%s", minio_settings.endpoint, args.bucket)
 
     # Step 4: Initialize Spark, configure S3, and build the JDBC URL.
@@ -147,6 +149,7 @@ def main() -> None:
                 .option("user", pg_settings.user)
                 .option("password", pg_settings.password)
                 .option("driver", "org.postgresql.Driver")
+                .option("fetchsize", str(jdbc_fetchsize))
                 .load()
             )
 

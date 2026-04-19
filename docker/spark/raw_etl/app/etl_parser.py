@@ -37,6 +37,7 @@ def parse_raw_args() -> argparse.Namespace:
     - --output-prefix: Prefix inside the raw bucket. Default `postgres-pre-raw`.
     - --app-name: Spark application name. Default `source-to-raw-etl`.
     - --image: Container image reference written into the manifest producer block. Default `""`.
+    - --jdbc-fetchsize: JDBC fetch batch size for PostgreSQL reads. Default `10000`.
     """
     parser = argparse.ArgumentParser(
         description="Extract source tables to MinIO-backed parquet."
@@ -122,6 +123,12 @@ def parse_raw_args() -> argparse.Namespace:
     )
     parser.add_argument("--app-name", default=RAW_APP_NAME, help="Spark app name")
     parser.add_argument("--image", default="", help="Container image reference")
+    parser.add_argument(
+        "--jdbc-fetchsize",
+        type=int,
+        default=10000,
+        help="JDBC fetch batch size for PostgreSQL reads",
+    )
     return parser.parse_args()
 
 
