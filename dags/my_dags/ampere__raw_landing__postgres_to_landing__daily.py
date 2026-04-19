@@ -20,6 +20,8 @@ from utils.stream_group_config import build_raw_stream_groups
 DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
 DAG_CONFIG = load_raw_landing_dag_config(__file__)
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
+MAX_SNAPSHOT_EXECUTORS = 1
+MAX_FACTS_EVENTS_EXECUTORS = 2
 
 
 def _base_params() -> dict:
@@ -140,9 +142,12 @@ with DAG(
             continue
         seed_group = groups_config[0]
         executor_instances = (
-            DAG_CONFIG.executor_instances_snapshots
+            min(DAG_CONFIG.executor_instances_snapshots, MAX_SNAPSHOT_EXECUTORS)
             if group_name == "snapshots-mutable-dims"
-            else DAG_CONFIG.executor_instances_facts_events
+            else min(
+                DAG_CONFIG.executor_instances_facts_events,
+                MAX_FACTS_EVENTS_EXECUTORS,
+            )
         )
         executor_memory = (
             DAG_CONFIG.executor_memory
@@ -185,4 +190,9 @@ with DAG(
             )
         )
 
-    start_batch_task >> submit_tasks >> done_task >> trigger_bronze
+    # Keep SparkApplications serialized to fit the current node memory envelope.
+    previous_task = start_batch_task
+    for task in submit_tasks:
+        previous_task >> task
+        previous_task = task
+    previous_task >> done_task >> trigger_bronze

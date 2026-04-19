@@ -173,7 +173,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `256m`.
     - executor_instances: Default executor count for raw jobs. Default `4`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `2`.
-    - executor_instances_facts_events: Executor count override for facts/events group. Default `4`.
+    - executor_instances_facts_events: Executor count override for facts/events group. Default `2`.
     - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `1800m`.
     - executor_memory_overhead_facts_events: Executor memory overhead override for facts/events SparkApplication. Default `384m`.
     - jdbc_fetchsize: JDBC fetch batch size for PostgreSQL reads. Default `10000`.
@@ -219,7 +219,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
             Variable.get("spark_executor_instances_snapshots", default="2")
         ),
         executor_instances_facts_events=int(
-            Variable.get("spark_executor_instances_facts_events", default="4")
+            Variable.get("spark_executor_instances_facts_events", default="2")
         ),
         executor_memory_facts_events=Variable.get(
             "spark_executor_memory_facts_events", default="1800m"
