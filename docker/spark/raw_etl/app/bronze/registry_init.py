@@ -32,10 +32,10 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _to_s3a_path(path_str: str) -> str:
-    """Convert an s3:// path to the s3a:// path Spark expects for Hadoop IO."""
-    if path_str.startswith("s3://"):
-        return "s3a://" + path_str[len("s3://") :]
+def _to_uc_s3_path(path_str: str) -> str:
+    """Normalize storage paths to s3:// for Unity Catalog API compatibility."""
+    if path_str.startswith("s3a://"):
+        return "s3://" + path_str[len("s3a://") :]
     return path_str
 
 
@@ -51,10 +51,11 @@ def _bootstrap_registry_storage(
     )
     registry_schema = load_registry_schema(schema_path)
     empty_df = spark.createDataFrame([], schema=registry_schema)
+    uc_location = _to_uc_s3_path(registry_location)
     (
         empty_df.write.format("delta")
         .mode("overwrite")
-        .option("path", registry_location)
+        .option("path", uc_location)
         .partitionBy("source_table")
         .saveAsTable(table_name)
     )
@@ -71,11 +72,12 @@ def _repair_registry_storage(
     )
     registry_schema = load_registry_schema(schema_path)
     empty_df = spark.createDataFrame([], schema=registry_schema)
+    uc_location = _to_uc_s3_path(registry_location)
     (
         empty_df.write.format("delta")
         .mode("overwrite")
         .partitionBy("source_table")
-        .save(_to_s3a_path(registry_location))
+        .save(uc_location)
     )
 
 
