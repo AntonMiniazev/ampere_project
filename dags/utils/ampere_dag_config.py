@@ -178,7 +178,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - executor_memory_overhead_facts_events: Executor memory overhead override for facts/events SparkApplication. Default `384m`.
     - jdbc_fetchsize: JDBC fetch batch size for PostgreSQL reads. Default `10000`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `4`.
-    - max_active_tasks: Airflow max_active_tasks limit for the DAG. Default `2`.
+    - max_active_tasks: Airflow max_active_tasks limit for the DAG. Default `1`.
     - template_paths: Template search paths for SparkApplication YAML rendering. Default is derived from `anchor_file` plus `dags/sparkapplications`.
     """
     return RawLandingDagConfig(
@@ -232,7 +232,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
             Variable.get("spark_sql_shuffle_partitions", default="4")
         ),
         max_active_tasks=int(
-            Variable.get("spark_source_to_raw_max_active_tasks", default="2")
+            Variable.get("spark_source_to_raw_max_active_tasks", default="1")
         ),
         template_paths=spark_template_paths(anchor_file),
     )
