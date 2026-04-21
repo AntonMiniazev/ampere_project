@@ -271,6 +271,7 @@ class BronzeDagConfig:
     executor_instances: int
     executor_instances_snapshots: int
     executor_instances_facts_events: int
+    executor_memory_snapshots: str
     executor_memory_facts_events: str
     executor_memory_overhead_facts_events: str
     executor_node_selector: str
@@ -316,8 +317,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - executor_memory: Spark executor memory setting. Default `1536m`.
     - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for bronze jobs. Default `3`.
-    - executor_instances_snapshots: Executor count override for snapshots group. Default `3`.
-    - executor_instances_facts_events: Executor count override for facts/events group. Default `1`.
+    - executor_instances_snapshots: Executor count override for snapshots group. Default `2`.
+    - executor_instances_facts_events: Executor count override for facts/events group. Default `2`.
+    - executor_memory_snapshots: Executor memory override for the snapshots/mutable_dims SparkApplication. Default `2560m`.
     - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2048m`.
     - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `512m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
@@ -379,10 +381,13 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         ),
         executor_instances=int(Variable.get("spark_executor_instances", default="3")),
         executor_instances_snapshots=int(
-            Variable.get("spark_executor_instances_snapshots", default="1")
+            Variable.get("spark_executor_instances_snapshots", default="2")
         ),
         executor_instances_facts_events=int(
-            Variable.get("spark_executor_instances_facts_events", default="1")
+            Variable.get("spark_executor_instances_facts_events", default="2")
+        ),
+        executor_memory_snapshots=Variable.get(
+            "spark_executor_memory_snapshots", default="2560m"
         ),
         executor_memory_facts_events=Variable.get(
             "spark_executor_memory_facts_events", default="2048m"

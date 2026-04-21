@@ -270,7 +270,7 @@ with DAG(
             else DAG_CONFIG.executor_instances_facts_events
         )
         executor_memory = (
-            DAG_CONFIG.executor_memory
+            DAG_CONFIG.executor_memory_snapshots
             if group_name == "snapshots-mutable-dims"
             else DAG_CONFIG.executor_memory_facts_events
         )
@@ -312,10 +312,9 @@ with DAG(
     registry_check >> skip_registry_task >> registry_ready
     registry_check >> init_registry_task >> registry_ready
     if snapshots_task and facts_events_task:
-        registry_ready >> snapshots_task
-        registry_ready >> facts_events_task
-        snapshots_task >> done_task
-        facts_events_task >> done_task
+        # Run bronze groups sequentially so each SparkApplication can consume
+        # a larger share of node4 memory/CPU without competing with the other.
+        registry_ready >> snapshots_task >> facts_events_task >> done_task
     elif snapshots_task:
         registry_ready >> snapshots_task >> done_task
     elif facts_events_task:
