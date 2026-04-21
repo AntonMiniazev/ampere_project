@@ -145,9 +145,13 @@ def _base_params() -> dict:
 
 def _resolve_lookback_overrides() -> dict[str, int | None]:
     """Collect optional per-group lookback overrides for bronze processing."""
-    events_override = get_optional_nonnegative_int_variable("spark_events_lookback_days")
+    events_override = get_optional_nonnegative_int_variable(
+        "spark_events_lookback_days"
+    )
     if events_override is None:
-        events_override = get_optional_nonnegative_int_variable("spark_event_lookback_days")
+        events_override = get_optional_nonnegative_int_variable(
+            "spark_event_lookback_days"
+        )
     return {
         "facts": get_optional_nonnegative_int_variable("spark_facts_lookback_days"),
         "events": events_override,
@@ -319,4 +323,4 @@ with DAG(
         registry_ready >> snapshots_task >> done_task
     elif facts_events_task:
         registry_ready >> facts_events_task >> done_task
-    done_task >> trigger_silver
+    done_task  # >> trigger_silver temporarily disable automatic silver triggering until silver is ready
