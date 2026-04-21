@@ -318,13 +318,13 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for bronze jobs. Default `3`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `2`.
-    - executor_instances_facts_events: Executor count override for facts/events group. Default `3`.
+    - executor_instances_facts_events: Executor count override for facts/events group. Default `2`.
     - executor_memory_snapshots: Executor memory override for the snapshots/mutable_dims SparkApplication. Default `2560m`.
-    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `1536m`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2048m`.
     - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `512m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `1`.
-    - shuffle_partitions_facts_events: Shuffle partition override for facts/events. Default `12`.
+    - shuffle_partitions_facts_events: Shuffle partition override for facts/events. Default `8`.
     - shuffle_partitions_mutable_dims: Shuffle partition override for mutable dims. Default `1`.
     - files_max_partition_bytes_facts_events: File split size override for facts/events scans. Default `8m`.
     - files_open_cost_bytes_facts_events: File open cost override for facts/events scans. Default `4m`.
@@ -384,13 +384,13 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             Variable.get("spark_executor_instances_snapshots", default="2")
         ),
         executor_instances_facts_events=int(
-            Variable.get("spark_executor_instances_facts_events", default="3")
+            Variable.get("spark_executor_instances_facts_events", default="2")
         ),
         executor_memory_snapshots=Variable.get(
             "spark_executor_memory_snapshots", default="2560m"
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="1536m"
+            "spark_executor_memory_facts_events", default="2048m"
         ),
         executor_memory_overhead_facts_events=Variable.get(
             "spark_executor_memory_overhead_facts_events", default="512m"
@@ -402,7 +402,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             Variable.get("spark_sql_shuffle_partitions", default="1")
         ),
         shuffle_partitions_facts_events=int(
-            Variable.get("spark_sql_shuffle_partitions_facts_events", default="12")
+            Variable.get("spark_sql_shuffle_partitions_facts_events", default="8")
         ),
         shuffle_partitions_mutable_dims=int(
             Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="1")
