@@ -21,7 +21,7 @@ DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
 DAG_CONFIG = load_raw_landing_dag_config(__file__)
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
 MAX_SNAPSHOT_EXECUTORS = 1
-MAX_FACTS_EVENTS_EXECUTORS = 1
+MAX_FACTS_EVENTS_EXECUTORS = 2
 
 
 def _base_params() -> dict:
