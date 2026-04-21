@@ -65,6 +65,16 @@ def minio_ssl_enabled(endpoint: str) -> str:
     return "true" if endpoint.startswith("https://") else "false"
 
 
+def strip_url_scheme(value: str) -> str:
+    """Return host[:port] without an optional http/https scheme prefix."""
+    text = (value or "").strip()
+    if text.startswith("http://"):
+        return text[len("http://") :]
+    if text.startswith("https://"):
+        return text[len("https://") :]
+    return text
+
+
 def spark_template_paths(anchor_file: str | Path) -> list[str]:
     """Return the Airflow template lookup paths for SparkApplication YAML files."""
     anchor_path = Path(anchor_file).resolve()
@@ -173,8 +183,8 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for raw jobs. Default `4`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `2`.
-    - executor_instances_facts_events: Executor count override for facts/events group. Default `2`.
-    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `3400m`.
+    - executor_instances_facts_events: Executor count override for facts/events group. Default `1`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2048m`.
     - executor_memory_overhead_facts_events: Executor memory overhead override for facts/events SparkApplication. Default `512m`.
     - jdbc_fetchsize: JDBC fetch batch size for PostgreSQL reads. Default `10000`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `4`.
@@ -219,10 +229,10 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
             Variable.get("spark_executor_instances_snapshots", default="2")
         ),
         executor_instances_facts_events=int(
-            Variable.get("spark_executor_instances_facts_events", default="2")
+            Variable.get("spark_executor_instances_facts_events", default="1")
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="3400m"
+            "spark_executor_memory_facts_events", default="2048m"
         ),
         executor_memory_overhead_facts_events=Variable.get(
             "spark_executor_memory_overhead_facts_events", default="512m"
@@ -232,7 +242,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
             Variable.get("spark_sql_shuffle_partitions", default="4")
         ),
         max_active_tasks=int(
-            Variable.get("spark_source_to_raw_max_active_tasks", default="1")
+            Variable.get("spark_source_to_raw_max_active_tasks", default="2")
         ),
         template_paths=spark_template_paths(anchor_file),
     )
@@ -307,8 +317,8 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for bronze jobs. Default `3`.
     - executor_instances_snapshots: Executor count override for snapshots group. Default `3`.
-    - executor_instances_facts_events: Executor count override for facts/events group. Default `3`.
-    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2400m`.
+    - executor_instances_facts_events: Executor count override for facts/events group. Default `1`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2048m`.
     - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `512m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `1`.
@@ -369,13 +379,13 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         ),
         executor_instances=int(Variable.get("spark_executor_instances", default="3")),
         executor_instances_snapshots=int(
-            Variable.get("spark_executor_instances_snapshots", default="3")
+            Variable.get("spark_executor_instances_snapshots", default="1")
         ),
         executor_instances_facts_events=int(
-            Variable.get("spark_executor_instances_facts_events", default="3")
+            Variable.get("spark_executor_instances_facts_events", default="1")
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="2400m"
+            "spark_executor_memory_facts_events", default="2048m"
         ),
         executor_memory_overhead_facts_events=Variable.get(
             "spark_executor_memory_overhead_facts_events", default="512m"
@@ -423,4 +433,96 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             default="io.unitycatalog.spark.UCSingleCatalog",
         ),
         template_paths=spark_template_paths(anchor_file),
+    )
+
+
+@dataclass(frozen=True)
+class SilverDagConfig:
+    namespace: str
+    image: str
+    image_pull_policy: str
+    service_account: str
+    node_selector: dict[str, str]
+    minio_endpoint: str
+    minio_use_ssl: str
+    uc_api_uri: str
+    uc_token: str
+    bronze_uc_catalog: str
+    bronze_uc_schema: str
+    bronze_source_name: str
+    bronze_source_schema: str
+    bronze_source_mapping_path: str
+    bronze_source_mapping_max_age_hours: str
+    run_uc_mapping_generation: str
+    run_bronze_preflight: str
+    run_bronze_preflight_delta_scan: str
+    dbt_target: str
+    dbt_threads: str
+    dbt_command: str
+    max_active_runs: int
+
+
+def load_silver_dag_config() -> SilverDagConfig:
+    """Load shared silver dbt-runtime DAG constants from Airflow variables."""
+    raw_minio_endpoint = Variable.get("minio_s3_endpoint", default="s3.minio.local")
+    minio_endpoint = strip_url_scheme(raw_minio_endpoint)
+    minio_use_ssl = Variable.get("minio_s3_use_ssl", default="true").strip().lower()
+    return SilverDagConfig(
+        namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
+        image=Variable.get(
+            "ampere_silver_dbt_image",
+            default="ghcr.io/antonminiazev/ampere-silver-dbt:latest",
+        ),
+        image_pull_policy=Variable.get("image_pull_policy", default="IfNotPresent"),
+        service_account=Variable.get(
+            "spark_service_account",
+            default=DEFAULT_SPARK_SERVICE_ACCOUNT,
+        ),
+        node_selector={
+            "kubernetes.io/hostname": Variable.get(
+                "silver_runtime_node",
+                default="ampere-k8s-node3",
+            )
+        },
+        minio_endpoint=minio_endpoint,
+        minio_use_ssl=minio_use_ssl,
+        uc_api_uri=Variable.get(
+            "spark_uc_api_uri",
+            default="http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080",
+        ),
+        uc_token=Variable.get("spark_uc_token", default="local-dev-token"),
+        bronze_uc_catalog=Variable.get("spark_uc_catalog", default="ampere"),
+        bronze_uc_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
+        bronze_source_name=Variable.get("bronze_source_name", default="bronze"),
+        bronze_source_schema=Variable.get("bronze_source_schema", default="bronze"),
+        bronze_source_mapping_path=Variable.get(
+            "bronze_source_mapping_path",
+            default="/app/artifacts/bronze_source_mapping.json",
+        ),
+        bronze_source_mapping_max_age_hours=Variable.get(
+            "bronze_source_mapping_max_age_hours",
+            default="24",
+        ),
+        run_uc_mapping_generation=Variable.get(
+            "run_uc_mapping_generation",
+            default="true",
+        ).strip().lower(),
+        run_bronze_preflight=Variable.get(
+            "run_bronze_preflight",
+            default="true",
+        ).strip().lower(),
+        run_bronze_preflight_delta_scan=Variable.get(
+            "run_bronze_preflight_delta_scan",
+            default="true",
+        ).strip().lower(),
+        dbt_target=Variable.get("silver_dbt_target", default="prod"),
+        dbt_threads=Variable.get("silver_dbt_threads", default="4"),
+        dbt_command=Variable.get(
+            "silver_dbt_command",
+            default=(
+                "dbt build --selector silver_staging "
+                "silver_dimensions_facts silver_publishable"
+            ),
+        ),
+        max_active_runs=int(Variable.get("silver_dag_max_active_runs", default="1")),
     )

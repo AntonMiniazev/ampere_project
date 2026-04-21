@@ -21,7 +21,7 @@ DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
 DAG_CONFIG = load_raw_landing_dag_config(__file__)
 SPARK_APP_TEMPLATE = "source_to_raw_template.yaml"
 MAX_SNAPSHOT_EXECUTORS = 1
-MAX_FACTS_EVENTS_EXECUTORS = 2
+MAX_FACTS_EVENTS_EXECUTORS = 1
 
 
 def _base_params() -> dict:
@@ -190,9 +190,9 @@ with DAG(
             )
         )
 
-    # Keep SparkApplications serialized to fit the current node memory envelope.
-    previous_task = start_batch_task
+    # Run raw SparkApplications in parallel: node4 now has enough headroom for
+    # one snapshots/mutable-dims app and one facts/events app concurrently.
+    start_batch_task >> submit_tasks
     for task in submit_tasks:
-        previous_task >> task
-        previous_task = task
-    previous_task >> done_task >> trigger_bronze
+        task >> done_task
+    done_task >> trigger_bronze

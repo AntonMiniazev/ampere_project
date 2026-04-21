@@ -58,8 +58,8 @@ with DAG(
             "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
         ],
         container_resources=V1ResourceRequirements(
-            requests={"cpu": "250m", "memory": "1Gi"},
-            limits={"cpu": "2", "memory": "3Gi"},
+            requests={"cpu": "300m", "memory": "1Gi"},
+            limits={"cpu": "3", "memory": "4Gi"},
         ),
         get_logs=True,
         is_delete_operator_pod=True,

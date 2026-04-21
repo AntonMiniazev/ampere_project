@@ -4,6 +4,7 @@ from datetime import datetime
 import logging
 
 from airflow import DAG
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
@@ -194,6 +195,16 @@ with DAG(
         op_args=["##### done #####"],
     )
 
+    # Trigger silver transformation once bronze finished successfully for the
+    # same logical date. This keeps bronze -> silver orchestration automatic.
+    trigger_silver = TriggerDagRunOperator(
+        task_id="trigger__silver__dbt_duckdb__daily",
+        trigger_dag_id="ampere__silver__dbt_duckdb__daily",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+        reset_dag_run=True,
+        wait_for_completion=False,
+    )
+
     base_params = _base_params()
 
     # Expand the shared JSON config into the logical groups processed by bronze.
@@ -301,8 +312,12 @@ with DAG(
     registry_check >> skip_registry_task >> registry_ready
     registry_check >> init_registry_task >> registry_ready
     if snapshots_task and facts_events_task:
-        registry_ready >> snapshots_task >> facts_events_task >> done_task
+        registry_ready >> snapshots_task
+        registry_ready >> facts_events_task
+        snapshots_task >> done_task
+        facts_events_task >> done_task
     elif snapshots_task:
         registry_ready >> snapshots_task >> done_task
     elif facts_events_task:
         registry_ready >> facts_events_task >> done_task
+    done_task >> trigger_silver
