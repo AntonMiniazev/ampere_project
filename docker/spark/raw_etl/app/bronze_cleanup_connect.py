@@ -49,6 +49,12 @@ def _parse_args() -> argparse.Namespace:
         help="Days to retain before DELETE/VACUUM. Default 7.",
     )
     parser.add_argument(
+        "--snapshot-vacuum-retention-hours",
+        type=int,
+        default=0,
+        help="VACUUM retention for snapshot tables after DELETE. Default 0.",
+    )
+    parser.add_argument(
         "--snapshot-tables",
         default="",
         help="Comma-separated snapshot table names.",
@@ -131,7 +137,11 @@ def _delete_old_snapshots(
             f"DELETE FROM {fqtn} "
             f"WHERE {SNAPSHOT_PARTITION_COLUMN} < DATE '{cutoff.isoformat()}'"
         ).collect()
-        logger.info("Vacuuming deleted snapshot files for %s", fqtn)
+        logger.info(
+            "Vacuuming deleted snapshot files for %s with RETAIN %s HOURS",
+            fqtn,
+            retention_hours,
+        )
         spark.sql(f"VACUUM {fqtn} RETAIN {retention_hours} HOURS").collect()
 
 
@@ -163,6 +173,10 @@ def main() -> None:
     retention_days = max(int(args.retention_days), 1)
     cutoff = run_date - timedelta(days=retention_days)
     retention_hours = retention_days * 24
+    snapshot_vacuum_retention_hours = max(
+        int(args.snapshot_vacuum_retention_hours),
+        0,
+    )
     snapshot_tables = parse_table_list(args.snapshot_tables)
     maintenance_tables = parse_table_list(args.maintenance_tables)
 
@@ -183,6 +197,18 @@ def main() -> None:
         .getOrCreate()
     )
     try:
+        if snapshot_tables and snapshot_vacuum_retention_hours < 168:
+            spark.conf.set(
+                "spark.databricks.delta.retentionDurationCheck.enabled",
+                "false",
+            )
+            logger.warning(
+                "Disabled Delta retention duration check for snapshot VACUUM "
+                "RETAIN %s HOURS. This physically removes files immediately "
+                "after snapshot DELETE and disables time travel for deleted "
+                "snapshot partitions.",
+                snapshot_vacuum_retention_hours,
+            )
         _validate_uc_tables(
             spark,
             catalog=args.uc_catalog,
@@ -197,7 +223,7 @@ def main() -> None:
                 schema=args.uc_bronze_schema,
                 tables=snapshot_tables,
                 cutoff=cutoff,
-                retention_hours=retention_hours,
+                retention_hours=snapshot_vacuum_retention_hours,
                 logger=logger,
             )
         if maintenance_tables:

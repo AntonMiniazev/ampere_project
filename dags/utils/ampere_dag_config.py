@@ -445,6 +445,7 @@ class BronzeCleanupDagConfig:
     uc_catalog: str
     uc_bronze_schema: str
     retention_days: int
+    snapshot_vacuum_retention_hours: int
     client_cpu_request: str
     client_memory_request: str
     client_cpu_limit: str
@@ -477,6 +478,10 @@ def load_bronze_cleanup_dag_config() -> BronzeCleanupDagConfig:
         uc_catalog=Variable.get("spark_uc_catalog", default="ampere"),
         uc_bronze_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
         retention_days=int(Variable.get("bronze_cleanup_retention_days", default="7")),
+        snapshot_vacuum_retention_hours=max(
+            int(Variable.get("bronze_snapshot_vacuum_retention_hours", default="0")),
+            0,
+        ),
         client_cpu_request=Variable.get(
             "bronze_cleanup_client_cpu_request",
             default="250m",

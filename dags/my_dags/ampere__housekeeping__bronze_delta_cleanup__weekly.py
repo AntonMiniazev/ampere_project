@@ -148,6 +148,8 @@ with DAG(
                     "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
                     "--retention-days",
                     str(DAG_CONFIG.retention_days),
+                    "--snapshot-vacuum-retention-hours",
+                    str(DAG_CONFIG.snapshot_vacuum_retention_hours),
                     "--snapshot-tables",
                     ",".join(snapshot_chunk),
                     "--maintenance-tables",
