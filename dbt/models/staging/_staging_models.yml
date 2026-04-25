@@ -1,0 +1,230 @@
+version: 2
+
+models:
+  - name: stg_stores
+    description: Store dictionary normalized to silver naming.
+    columns:
+      - name: store_id
+        tests: [not_null, unique]
+      - name: store_name
+        tests: [not_null]
+      - name: city
+        tests: [not_null]
+
+  - name: stg_zones
+    description: Delivery zones normalized for silver joins.
+    columns:
+      - name: zone_id
+        tests: [not_null, unique]
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+  - name: stg_product_categories
+    description: Product categories normalized for silver joins.
+    columns:
+      - name: category_id
+        tests: [not_null, unique]
+      - name: category_name
+        tests: [not_null]
+
+  - name: stg_order_statuses
+    description: Order statuses normalized for silver joins.
+    columns:
+      - name: order_status_id
+        tests: [not_null, unique]
+      - name: order_status
+        tests: [not_null]
+
+  - name: stg_delivery_type
+    description: Delivery types normalized for silver joins.
+    columns:
+      - name: delivery_type_id
+        tests: [not_null, unique]
+      - name: courier_type
+        tests: [not_null]
+
+  - name: stg_delivery_costing
+    description: Delivery tariffs at zone and type grain.
+    columns:
+      - name: zone_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_zones')
+                field: zone_id
+      - name: delivery_type_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_delivery_type')
+                field: delivery_type_id
+      - name: tariff
+        tests: [not_null, positive_number]
+
+  - name: stg_assortment
+    description: Store assortment mapping at store and product grain.
+    columns:
+      - name: product_id
+        tests: [not_null]
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+
+  - name: stg_clients
+    description: Current client rows deduplicated to one row per client.
+    columns:
+      - name: client_id
+        tests: [not_null, unique]
+      - name: client_full_name
+        tests: [not_null]
+
+  - name: stg_delivery_resource
+    description: Current delivery-resource rows deduplicated to one row per courier.
+    columns:
+      - name: delivery_resource_id
+        tests: [not_null, unique]
+      - name: delivery_type_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_delivery_type')
+                field: delivery_type_id
+
+  - name: stg_products
+    description: Product history deduplicated to one row per product version.
+    columns:
+      - name: product_id
+        tests: [not_null]
+      - name: category_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_product_categories')
+                field: category_id
+      - name: unit_price
+        tests: [not_null, positive_number]
+
+  - name: stg_costing
+    description: Product costing history deduplicated to one row per costing version.
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+      - name: avg_cost
+        tests: [not_null, positive_number]
+
+  - name: stg_orders
+    description: Orders normalized to one row per order id.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: client_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_clients')
+                field: client_id
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_stores')
+                field: store_id
+      - name: total_amount
+        tests: [not_null, positive_number]
+
+  - name: stg_order_product
+    description: Order line items deduplicated to order, product, and order-date grain.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+      - name: quantity
+        tests: [not_null, positive_number]
+      - name: sales_price
+        tests: [not_null, positive_number]
+
+  - name: stg_payments
+    description: Payment rows deduplicated to order and payment-date grain.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: payment_amount
+        tests: [not_null, positive_number]
+      - name: payment_date
+        tests: [not_null]
+
+  - name: stg_order_status_history
+    description: Order status events deduplicated to order and status timestamp grain.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: order_status_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_order_statuses')
+                field: order_status_id
+      - name: status_datetime
+        tests: [not_null]
+
+  - name: stg_delivery_tracking
+    description: Delivery tracking events deduplicated to order and status timestamp grain.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: status_datetime
+        tests: [not_null]

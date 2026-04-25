@@ -1,0 +1,103 @@
+version: 2
+
+models:
+  - name: dim_stores
+    description: Curated store dimension.
+    columns:
+      - name: store_id
+        tests: [not_null, unique]
+      - name: store_name
+        tests: [not_null]
+
+  - name: dim_zones
+    description: Curated zone dimension enriched with store context.
+    columns:
+      - name: zone_id
+        tests: [not_null, unique]
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+
+  - name: dim_product_categories
+    description: Curated product-category dimension.
+    columns:
+      - name: category_id
+        tests: [not_null, unique]
+
+  - name: dim_order_statuses
+    description: Curated order-status dimension.
+    columns:
+      - name: order_status_id
+        tests: [not_null, unique]
+
+  - name: dim_delivery_type
+    description: Curated delivery-type dimension.
+    columns:
+      - name: delivery_type_id
+        tests: [not_null, unique]
+
+  - name: dim_delivery_costing
+    description: Curated delivery-tariff dimension by zone and courier type.
+    columns:
+      - name: delivery_costing_key
+        tests: [not_null, unique]
+      - name: tariff
+        tests: [not_null, positive_number]
+
+  - name: dim_assortment
+    description: Curated assortment dimension at store and product grain.
+    columns:
+      - name: assortment_key
+        tests: [not_null, unique]
+
+  - name: dim_clients
+    description: Curated current-state client dimension.
+    columns:
+      - name: client_id
+        tests: [not_null, unique]
+      - name: preferred_store_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+
+  - name: dim_delivery_resource
+    description: Curated current-state delivery-resource dimension.
+    columns:
+      - name: delivery_resource_id
+        tests: [not_null, unique]
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+
+  - name: dim_products
+    description: Curated current-state product dimension.
+    columns:
+      - name: product_id
+        tests: [not_null, unique]
+      - name: category_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_product_categories')
+                field: category_id
+      - name: unit_price
+        tests: [not_null, positive_number]
+
+  - name: dim_costing
+    description: Curated current-state product costing dimension.
+    columns:
+      - name: costing_key
+        tests: [not_null, unique]
+      - name: avg_cost
+        tests: [not_null, positive_number]

@@ -4,19 +4,19 @@ Ampere is a homelab data platform that generates synthetic operational data, lan
 
 Combination of services based on **_practice-first_** focus rather than actual project need.
 
-Current focus: finishing raw landing refactoring, then re-building Bronze/Silver/Gold pipelines and operational controls.
+Current focus: stabilizing raw landing, keeping bronze resource tuning healthy, and finishing silver runtime publication/export steps.
 
 ## Project Structure
 - dags/ — Airflow DAGs and SparkApplication templates.
-- docker/ — container images (generators, Spark ETL).
-- dbt/ — dbt models and tests [to be refactored].
+- docker/ — container images (generators, Spark ETL, silver dbt runtime).
+- dbt/ — active silver dbt models and tests.
 - project_images/ — diagrams [outdated].
 
 ## Architecture Summary
 1) Pre-raw generators -> PostgreSQL (source schema)
 2) Source -> Raw landing (Spark -> Parquet in MinIO)
 3) Raw -> Bronze Delta (Spark)
-4) Bronze -> Silver Delta (Spark)
+4) Bronze -> Silver (DuckDB + dbt via UC metadata bridge)
 5) Silver -> Gold marts (DuckDB + dbt -> PostgreSQL)
 
 Deployment reference: follow the completed infra runbook from https://github.com/AntonMiniazev/bohr_project.
@@ -45,21 +45,26 @@ Deployment reference: follow the completed infra runbook from https://github.com
 
 ### 3) Raw -> Bronze Delta
 - [x] Delta Lake tables in MinIO
-- [x] Airflow DAG for bronze load and backfill
+- [x] Airflow DAG for bronze load
+- [x] Bronze triggers silver daily DAG on success
 
-### 4) Bronze -> Silver Delta
-- [ ] Spark jobs for deduplication, type normalization, and schema evolution
-- [ ] Conformed dimensions + SCD handling
-- [ ] Airflow DAG for silver load and backfill
+### 4) Bronze -> Silver
+- [x] DuckDB/dbt silver runtime: docker/silver_dbt
+- [x] UC metadata bridge for bronze source resolution
+- [x] Airflow DAG: dags/my_dags/ampere__silver__dbt_duckdb__daily.py
+- [x] Bronze -> silver trigger wiring
+- [ ] Cluster-ready silver runtime image publication
+- [ ] Publish silver outputs to ampere.silver
+- [ ] Persist silver audit/artifact outputs
 
 ### 5) Silver -> Gold marts (PostgreSQL)
-- [ ] DuckDB/dbt models for business logic
-- [ ] Airflow DAGs for dbt runs + exports
+- [ ] Export silver outputs into PostgreSQL-serving gold layer
+- [ ] Gold orchestration DAGs
 - [ ] Backups and retention
 
 ### 6) Observability and Data Quality
-- [ ] dbt artifacts (manifest/run_results)
-- [ ] DQ checks / contracts
+- [ ] Persist dbt artifacts (manifest/run_results)
+- [x] dbt tests and silver model contracts in project
 - [ ] Pipeline status dashboard
 
 ---

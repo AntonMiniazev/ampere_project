@@ -26,7 +26,10 @@ ruff.toml
 # =========================
 # Devcontainer / Docker
 # =========================
-.devcontainer/
+.devcontainer/*
+!.devcontainer/devcontainer.json
+!.devcontainer/Dockerfile
+.devcontainer/devcontainer.env
 
 # =========================
 # Secrets / Config
@@ -57,5 +60,9 @@ test/
 /dbt/target/
 /dbt/logs/
 /dbt/dbt_packages/
+/dbt/.dbt_local/
 .dbt/
+.dbt_local/
 /dbt/local.duckdb
+/dbt_profiles
+/logs

@@ -1,0 +1,57 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Bronze tables resolved from UC-generated source mapping views.
+    schema: "{{ env_var('BRONZE_SOURCE_SCHEMA', var('bronze_source_schema', 'bronze')) }}"
+    freshness:
+      warn_after: {count: 6, period: hour}  
+    tables:
+      - name: stores
+        description: Bronze snapshot of store reference data.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: zones
+        description: Bronze snapshot of delivery zones.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: product_categories
+        description: Bronze snapshot of product categories.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: order_statuses
+        description: Bronze snapshot of order statuses.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_type
+        description: Bronze snapshot of delivery types.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_costing
+        description: Bronze snapshot of zone and delivery tariffs.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: assortment
+        description: Bronze snapshot of store assortments.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: clients
+        description: Bronze mutable-dimension table for clients.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: costing
+        description: Bronze mutable-dimension table for product costing history.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_resource
+        description: Bronze mutable-dimension table for delivery resources.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: products
+        description: Bronze mutable-dimension table for products and pricing history.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: orders
+        description: Bronze fact table for orders.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: order_product
+        description: Bronze fact table for order line items.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: payments
+        description: Bronze fact table for payments.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: order_status_history
+        description: Bronze event table for order status changes.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_tracking
+        description: Bronze event table for delivery tracking.
+        loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"

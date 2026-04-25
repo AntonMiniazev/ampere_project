@@ -1,22 +1,41 @@
 name: ampere_duckdb_project
-version: 1.0
+version: 2.0.0
 config-version: 2
 profile: ampere_duckdb_project
 
 model-paths: ["models"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
+clean-targets: ["target"]
+
+vars:
+  bronze_source_name: "bronze"
+  bronze_source_schema: "bronze"
+  bronze_source_mapping_path: "dbt/.dbt_local/bronze_source_mapping.json"
+  bronze_source_mapping_max_age_hours: 24
+
+on-run-start:
+  - "{{ ampere_prepare_bronze_sources() }}"
 
 models:
   ampere_duckdb_project:
-    +materialized: view    
-    processing:
-      +schema: silver
-      +materialized: external
-      +tags: ["processing"]
-    business_logic:
-      export_processing_to_mssql:
-        +enabled: "{{ var('enable_mssql_export', false) }}"
-        +tags: ["bl_export"]
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +materialized: view
+      +schema: silver_staging
+      +tags: ["silver", "staging"]
+    intermediate:
+      +materialized: view
+      +schema: silver_intermediate
+      +tags: ["silver", "intermediate"]
+    marts:
+      dimensions:
         +materialized: table
-        +alias: mssql_export_log
+        +schema: silver
+        +tags: ["silver", "dimension", "publish"]
+      facts:
+        +materialized: table
+        +schema: silver
+        +tags: ["silver", "fact", "publish"]

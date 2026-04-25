@@ -1,0 +1,42 @@
+{
+  "name": "ampere-dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/workspaces/${localWorkspaceFolderBasename}/.venv",
+    "UV_LINK_MODE": "copy"
+  },
+  "remoteEnv": {
+    "PATH": "/workspaces/${localWorkspaceFolderBasename}/.venv/bin:${containerEnv:PATH}"
+  },
+  "runArgs": [
+    "--env-file",
+    "${localWorkspaceFolder}/.devcontainer/devcontainer.env",
+    "--add-host=minio.local:192.168.1.29",
+    "--add-host=s3.minio.local:192.168.1.29"
+  ],
+  "mounts": [
+    "source=${env:USERPROFILE}/.codex,target=/home/vscode/.codex,type=bind,consistency=cached",
+    "source=${env:USERPROFILE}/.cert,target=/workspaces/.cert,type=bind,consistency=cached,readonly"
+  ],
+  "postCreateCommand": "bash -lc \"if [ ! -x /workspaces/${localWorkspaceFolderBasename}/.venv/bin/python ]; then uv venv /workspaces/${localWorkspaceFolderBasename}/.venv; fi; source /workspaces/${localWorkspaceFolderBasename}/.venv/bin/activate && uv sync --frozen --active\"",
+  "postStartCommand": "bash -lc \"grep -qxF 'source /workspaces/${localWorkspaceFolderBasename}/.venv/bin/activate' ~/.bashrc || echo 'source /workspaces/${localWorkspaceFolderBasename}/.venv/bin/activate' >> ~/.bashrc; grep -qxF 'export PATH=/workspaces/${localWorkspaceFolderBasename}/.venv/bin:$PATH' ~/.bashrc || echo 'export PATH=/workspaces/${localWorkspaceFolderBasename}/.venv/bin:$PATH' >> ~/.bashrc; if ls /workspaces/.cert/*.crt >/dev/null 2>&1; then sudo cp -f /workspaces/.cert/*.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates; fi\"",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/${localWorkspaceFolderBasename}/.venv/bin/python",
+        "python.terminal.activateEnvironment": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "redhat.vscode-yaml",
+        "openai.chatgpt"
+      ]
+    }
+  }
+}

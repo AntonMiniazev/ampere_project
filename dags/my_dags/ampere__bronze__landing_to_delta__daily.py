@@ -323,4 +323,4 @@ with DAG(
         registry_ready >> snapshots_task >> done_task
     elif facts_events_task:
         registry_ready >> facts_events_task >> done_task
-    done_task  # >> trigger_silver temporarily disable automatic silver triggering until silver is ready
+    done_task >> trigger_silver

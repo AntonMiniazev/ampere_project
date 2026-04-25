@@ -1,10 +1,29 @@
 selectors:
-  - name: processing_flow
+  - name: silver_source_freshness
+    description: Bronze sources used by the silver dbt project.
     definition:
-      method: path
-      value: models/processing
+      method: source
+      value: bronze.*
 
-  - name: bl_export
+  - name: silver_staging
+    description: Bronze-to-staging models that mirror the business table set.
     definition:
       method: tag
-      value: bl_export
+      value: staging
+
+  - name: silver_dimensions_facts
+    description: Intermediate plus curated silver dimensions and facts.
+    definition:
+      union:
+        - method: tag
+          value: intermediate
+        - method: tag
+          value: dimension
+        - method: tag
+          value: fact
+
+  - name: silver_publishable
+    description: Curated silver tables intended for UC registration and publish.
+    definition:
+      method: tag
+      value: publish

@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: int_orders_latest_status
+    description: Latest known order status derived from the order-status event stream.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: latest_order_status_id
+        tests: [not_null]
+      - name: latest_status_datetime
+        tests: [not_null]
+
+  - name: int_order_value_rollup
+    description: Order-level line-item rollup used by curated order facts.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: ordered_quantity
+        tests: [not_null, positive_number]
+      - name: line_sales_amount
+        tests: [not_null, positive_number]

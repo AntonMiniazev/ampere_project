@@ -320,8 +320,8 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - executor_instances_snapshots: Executor count override for snapshots group. Default `2`.
     - executor_instances_facts_events: Executor count override for facts/events group. Default `2`.
     - executor_memory_snapshots: Executor memory override for the snapshots/mutable_dims SparkApplication. Default `2560m`.
-    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2048m`.
-    - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `512m`.
+    - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2560m`.
+    - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `768m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
     - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `1`.
     - shuffle_partitions_facts_events: Shuffle partition override for facts/events. Default `8`.
@@ -390,10 +390,10 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "spark_executor_memory_snapshots", default="2560m"
         ),
         executor_memory_facts_events=Variable.get(
-            "spark_executor_memory_facts_events", default="2048m"
+            "spark_executor_memory_facts_events", default="2560m"
         ),
         executor_memory_overhead_facts_events=Variable.get(
-            "spark_executor_memory_overhead_facts_events", default="512m"
+            "spark_executor_memory_overhead_facts_events", default="768m"
         ),
         executor_node_selector=Variable.get(
             "spark_executor_node_selector", default="ampere-k8s-node4"
@@ -524,10 +524,7 @@ def load_silver_dag_config() -> SilverDagConfig:
         dbt_threads=Variable.get("silver_dbt_threads", default="4"),
         dbt_command=Variable.get(
             "silver_dbt_command",
-            default=(
-                "dbt build --selector silver_staging "
-                "silver_dimensions_facts silver_publishable"
-            ),
+            default="dbt build",
         ),
         max_active_runs=int(Variable.get("silver_dag_max_active_runs", default="1")),
     )

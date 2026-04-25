@@ -3,7 +3,7 @@
 ############################
 # Stage: dev (VS Code devcontainer)
 ############################
-FROM mcr.microsoft.com/devcontainers/python:3.13 AS dev
+FROM mcr.microsoft.com/devcontainers/python:3.12 AS dev
 
 # Keep dev image lean: only essential CLI
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,7 +27,7 @@ RUN pipx install uv
 ############################
 # Stage: dbt-runner
 ############################
-FROM python:3.13-slim AS dbt-runner
+FROM python:3.12-slim AS dbt-runner
 ENV PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tini \
