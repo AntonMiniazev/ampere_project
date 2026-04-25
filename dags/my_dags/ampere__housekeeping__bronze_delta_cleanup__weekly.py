@@ -107,7 +107,9 @@ with DAG(
         service_account_name=DAG_CONFIG.service_account,
         node_selector=DAG_CONFIG.node_selector,
         secrets=[minio_access_key, minio_secret_key],
-        cmds=["python3", "/opt/spark/app/bronze_cleanup_connect.py"],
+        # Use spark-submit so the Spark image adds its bundled PySpark and
+        # Py4J libraries to PYTHONPATH before the cleanup client imports them.
+        cmds=["/opt/spark/bin/spark-submit", "/opt/spark/app/bronze_cleanup_connect.py"],
         arguments=[
             "--spark-remote",
             DAG_CONFIG.spark_remote,
