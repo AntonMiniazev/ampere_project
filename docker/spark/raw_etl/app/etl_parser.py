@@ -155,8 +155,6 @@ def parse_bronze_args() -> argparse.Namespace:
     - --uc-ops-schema: Unity Catalog schema for operational tables. Default `ops`.
     - --app-name: Spark application name. Default `raw-to-bronze-etl`.
     - --image: Container image reference for logging/metadata. Default `""`.
-    - --maintenance-only: Run only OPTIMIZE/VACUUM maintenance and skip raw-batch apply. Default `false`.
-    - --maintenance-tables: Comma-separated bronze tables for maintenance-only mode. Default `""`.
     """
     parser = argparse.ArgumentParser(
         description="Transform raw landing data to bronze Delta tables."
@@ -244,16 +242,6 @@ def parse_bronze_args() -> argparse.Namespace:
     )
     parser.add_argument("--app-name", default=BRONZE_APP_NAME, help="Spark app name")
     parser.add_argument("--image", default="", help="Container image reference")
-    parser.add_argument(
-        "--maintenance-only",
-        default="false",
-        help="Run only bronze table OPTIMIZE/VACUUM maintenance (true/false).",
-    )
-    parser.add_argument(
-        "--maintenance-tables",
-        default="",
-        help="Comma-separated bronze table list for maintenance-only mode.",
-    )
     return parser.parse_args()
 
 

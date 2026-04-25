@@ -435,6 +435,69 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
 
 
 @dataclass(frozen=True)
+class BronzeCleanupDagConfig:
+    namespace: str
+    image: str
+    image_pull_policy: str
+    service_account: str
+    node_selector: dict[str, str]
+    spark_remote: str
+    uc_catalog: str
+    uc_bronze_schema: str
+    retention_days: int
+    client_cpu_request: str
+    client_memory_request: str
+    client_cpu_limit: str
+    client_memory_limit: str
+    max_active_runs: int
+
+
+def load_bronze_cleanup_dag_config() -> BronzeCleanupDagConfig:
+    """Load settings for the weekly Spark Connect bronze cleanup DAG."""
+    return BronzeCleanupDagConfig(
+        namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
+        image=resolve_spark_image(),
+        image_pull_policy=Variable.get("image_pull_policy", default="IfNotPresent"),
+        service_account=Variable.get(
+            "spark_service_account",
+            default=DEFAULT_SPARK_SERVICE_ACCOUNT,
+        ),
+        node_selector={
+            "kubernetes.io/hostname": Variable.get(
+                "bronze_cleanup_client_node",
+                default="ampere-k8s-node4",
+            )
+        },
+        spark_remote=Variable.get(
+            "bronze_cleanup_spark_remote",
+            default="sc://spark-connect.ampere.svc.cluster.local:15002",
+        ),
+        uc_catalog=Variable.get("spark_uc_catalog", default="ampere"),
+        uc_bronze_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
+        retention_days=int(Variable.get("bronze_cleanup_retention_days", default="7")),
+        client_cpu_request=Variable.get(
+            "bronze_cleanup_client_cpu_request",
+            default="250m",
+        ),
+        client_memory_request=Variable.get(
+            "bronze_cleanup_client_memory_request",
+            default="512Mi",
+        ),
+        client_cpu_limit=Variable.get(
+            "bronze_cleanup_client_cpu_limit",
+            default="1",
+        ),
+        client_memory_limit=Variable.get(
+            "bronze_cleanup_client_memory_limit",
+            default="1Gi",
+        ),
+        max_active_runs=int(
+            Variable.get("bronze_cleanup_dag_max_active_runs", default="1")
+        ),
+    )
+
+
+@dataclass(frozen=True)
 class SilverDagConfig:
     namespace: str
     image: str
