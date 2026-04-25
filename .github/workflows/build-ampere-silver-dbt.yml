@@ -22,6 +22,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Normalize registry owner
+        id: owner
+        shell: bash
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Validate silver dbt project
         run: |
           test -f dbt/dbt_project.yml || {
@@ -43,7 +48,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/ampere-silver-dbt
+          images: ghcr.io/${{ steps.owner.outputs.value }}/ampere-silver-dbt
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=sha-{{sha}},enable={{is_default_branch}}

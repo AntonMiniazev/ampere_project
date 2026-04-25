@@ -132,6 +132,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Normalize registry owner
+        id: owner
+        shell: bash
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Validate silver dbt project
         if: ${{ matrix.image == 'ampere-silver-dbt' }}
         run: |
@@ -156,7 +161,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ needs.plan.outputs.release_tag }}
+          tags: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.image }}:${{ needs.plan.outputs.release_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -169,6 +174,11 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.plan.outputs.unchanged_matrix) }}
     steps:
+      - name: Normalize registry owner
+        id: owner
+        shell: bash
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -182,7 +192,7 @@ jobs:
       - name: Copy existing image digest to release tag
         shell: bash
         env:
-          OWNER: ${{ github.repository_owner }}
+          OWNER: ${{ steps.owner.outputs.value }}
           IMAGE: ${{ matrix.image }}
           RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
           PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
