@@ -1,0 +1,194 @@
+name: Release image versions
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish, for example v0.5.1"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
+      changed_matrix: ${{ steps.plan.outputs.changed_matrix }}
+      unchanged_matrix: ${{ steps.plan.outputs.unchanged_matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build release plan
+        id: plan
+        shell: bash
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python <<'PY'
+          import json
+          import os
+          import subprocess
+          release_tag = os.environ.get("INPUT_RELEASE_TAG") or os.environ["GITHUB_REF_NAME"]
+          configs = [
+              {
+                  "image": "ampere-spark",
+                  "context": "docker/spark/raw_etl",
+                  "file": "docker/spark/raw_etl/Dockerfile",
+                  "paths": [
+                      "docker/spark/raw_etl/",
+                      ".github/workflows/build-ampere-spark.yml",
+                  ],
+              },
+              {
+                  "image": "ampere-silver-dbt",
+                  "context": ".",
+                  "file": "docker/silver_dbt/Dockerfile",
+                  "paths": [
+                      "dbt/",
+                      "docker/silver_dbt/",
+                      ".github/workflows/build-ampere-silver-dbt.yml",
+                  ],
+              },
+              {
+                  "image": "init-source-preparation",
+                  "context": "docker/init_source_preparation",
+                  "file": "docker/init_source_preparation/Dockerfile",
+                  "paths": [
+                      "docker/init_source_preparation/",
+                      ".github/workflows/build-init-source-preparation.yml",
+                  ],
+              },
+              {
+                  "image": "order-data-generator",
+                  "context": "docker/order_data_generator",
+                  "file": "docker/order_data_generator/Dockerfile",
+                  "paths": [
+                      "docker/order_data_generator/",
+                      ".github/workflows/build-order-data-generator.yml",
+                  ],
+              },
+          ]
+
+          tags = subprocess.check_output(
+              ["git", "tag", "--sort=-v:refname"],
+              text=True,
+          ).splitlines()
+          previous_tag = next((tag for tag in tags if tag.startswith("v") and tag != release_tag), "")
+
+          changed = []
+          unchanged = []
+
+          if previous_tag:
+              diff_output = subprocess.check_output(
+                  ["git", "diff", "--name-only", f"{previous_tag}..HEAD"],
+                  text=True,
+              )
+              changed_files = [line.strip() for line in diff_output.splitlines() if line.strip()]
+          else:
+              changed_files = []
+
+          for config in configs:
+              if not previous_tag:
+                  changed.append(config)
+                  continue
+
+              is_changed = any(
+                  any(
+                      path == prefix.rstrip("/") or path.startswith(prefix)
+                      for prefix in config["paths"]
+                  )
+                  for path in changed_files
+              )
+              (changed if is_changed else unchanged).append(config)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"release_tag={release_tag}\n")
+              fh.write(f"previous_tag={previous_tag}\n")
+              fh.write(f"changed_matrix={json.dumps(changed, separators=(',', ':'))}\n")
+              fh.write(f"unchanged_matrix={json.dumps(unchanged, separators=(',', ':'))}\n")
+          PY
+
+  build-changed:
+    needs: plan
+    if: ${{ needs.plan.outputs.changed_matrix != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.changed_matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate silver dbt project
+        if: ${{ matrix.image == 'ampere-silver-dbt' }}
+        run: |
+          test -f dbt/dbt_project.yml || {
+            echo "Missing dbt/dbt_project.yml. The silver image is built from repo root and requires the dbt project." >&2
+            exit 1
+          }
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ needs.plan.outputs.release_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  retag-unchanged:
+    needs: plan
+    if: ${{ needs.plan.outputs.unchanged_matrix != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.unchanged_matrix) }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy existing image digest to release tag
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+          RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+          PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
+        run: |
+          SOURCE_TAG="${PREVIOUS_TAG:-latest}"
+          SOURCE_REF="ghcr.io/${OWNER}/${IMAGE}:${SOURCE_TAG}"
+          TARGET_REF="ghcr.io/${OWNER}/${IMAGE}:${RELEASE_TAG}"
+          docker buildx imagetools create --tag "${TARGET_REF}" "${SOURCE_REF}"
+          docker buildx imagetools inspect "${TARGET_REF}"
