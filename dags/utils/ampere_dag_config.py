@@ -452,7 +452,6 @@ class BronzeCleanupDagConfig:
     client_memory_limit: str
     max_active_runs: int
     max_active_tasks: int
-    chunk_size: int
 
 
 def load_bronze_cleanup_dag_config() -> BronzeCleanupDagConfig:
@@ -502,11 +501,7 @@ def load_bronze_cleanup_dag_config() -> BronzeCleanupDagConfig:
             Variable.get("bronze_cleanup_dag_max_active_runs", default="1")
         ),
         max_active_tasks=int(
-            Variable.get("bronze_cleanup_dag_max_active_tasks", default="2")
-        ),
-        chunk_size=max(
-            int(Variable.get("bronze_cleanup_chunk_size", default="3")),
-            1,
+            Variable.get("bronze_cleanup_dag_max_active_tasks", default="1")
         ),
     )
 
