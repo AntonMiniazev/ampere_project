@@ -13,6 +13,7 @@ DEFAULT_SPARK_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 DEFAULT_SPARK_SERVICE_ACCOUNT = "spark-operator-spark"
 DEFAULT_MINIO_ENDPOINT = "http://minio.ampere.svc.cluster.local:9000"
 
+
 def get_optional_variable(name: str) -> str | None:
     """Return a trimmed Airflow variable value or None when unset or blank."""
     value = Variable.get(name, default=None)
@@ -32,7 +33,9 @@ def get_optional_nonnegative_int_variable(name: str) -> int | None:
 
 def get_release_version() -> str:
     """Return the shared release version used as the default image tag."""
-    return Variable.get("ampere_release_version", default=DEFAULT_RELEASE_VERSION).strip()
+    return Variable.get(
+        "ampere_release_version", default=DEFAULT_RELEASE_VERSION
+    ).strip()
 
 
 def resolve_release_image(
@@ -225,7 +228,9 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         executor_memory_overhead_facts_events=Variable.get(
             "spark_executor_memory_overhead_facts_events", default="512m"
         ),
-        jdbc_fetchsize=max(int(Variable.get("spark_jdbc_fetchsize", default="10000")), 1),
+        jdbc_fetchsize=max(
+            int(Variable.get("spark_jdbc_fetchsize", default="10000")), 1
+        ),
         shuffle_partitions=int(
             Variable.get("spark_sql_shuffle_partitions", default="4")
         ),
@@ -471,7 +476,7 @@ def load_silver_dag_config() -> SilverDagConfig:
         node_selector={
             "kubernetes.io/hostname": Variable.get(
                 "silver_runtime_node",
-                default="ampere-k8s-node3",
+                default="ampere-k8s-node4",
             )
         },
         minio_endpoint=minio_endpoint,
@@ -496,15 +501,21 @@ def load_silver_dag_config() -> SilverDagConfig:
         run_uc_mapping_generation=Variable.get(
             "run_uc_mapping_generation",
             default="true",
-        ).strip().lower(),
+        )
+        .strip()
+        .lower(),
         run_bronze_preflight=Variable.get(
             "run_bronze_preflight",
             default="true",
-        ).strip().lower(),
+        )
+        .strip()
+        .lower(),
         run_bronze_preflight_delta_scan=Variable.get(
             "run_bronze_preflight_delta_scan",
             default="true",
-        ).strip().lower(),
+        )
+        .strip()
+        .lower(),
         dbt_target=Variable.get("silver_dbt_target", default="prod"),
         dbt_threads=Variable.get("silver_dbt_threads", default="4"),
         dbt_command=Variable.get(
