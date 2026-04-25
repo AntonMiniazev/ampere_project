@@ -50,12 +50,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--snapshot-tables",
-        required=True,
+        default="",
         help="Comma-separated snapshot table names.",
     )
     parser.add_argument(
         "--maintenance-tables",
-        required=True,
+        default="",
         help="Comma-separated mutable-dim/fact/event table names.",
     )
     return parser.parse_args()
@@ -155,7 +155,7 @@ def _optimize_and_vacuum(
 
 
 def main() -> None:
-    """Connect to Spark Connect and execute Bronze retention sequentially."""
+    """Connect to Spark Connect and execute the requested cleanup table chunk."""
     setup_logging()
     logger = logging.getLogger(APP_NAME)
     args = _parse_args()
@@ -166,10 +166,10 @@ def main() -> None:
     snapshot_tables = parse_table_list(args.snapshot_tables)
     maintenance_tables = parse_table_list(args.maintenance_tables)
 
-    if not snapshot_tables:
-        raise ValueError("--snapshot-tables must contain at least one table.")
-    if not maintenance_tables:
-        raise ValueError("--maintenance-tables must contain at least one table.")
+    if not snapshot_tables and not maintenance_tables:
+        raise ValueError(
+            "At least one of --snapshot-tables or --maintenance-tables is required."
+        )
 
     logger.info(
         "Starting Bronze cleanup via %s for run_date=%s cutoff=%s",
@@ -190,23 +190,25 @@ def main() -> None:
             tables=snapshot_tables + maintenance_tables,
             logger=logger,
         )
-        _delete_old_snapshots(
-            spark,
-            catalog=args.uc_catalog,
-            schema=args.uc_bronze_schema,
-            tables=snapshot_tables,
-            cutoff=cutoff,
-            retention_hours=retention_hours,
-            logger=logger,
-        )
-        _optimize_and_vacuum(
-            spark,
-            catalog=args.uc_catalog,
-            schema=args.uc_bronze_schema,
-            tables=maintenance_tables,
-            retention_hours=retention_hours,
-            logger=logger,
-        )
+        if snapshot_tables:
+            _delete_old_snapshots(
+                spark,
+                catalog=args.uc_catalog,
+                schema=args.uc_bronze_schema,
+                tables=snapshot_tables,
+                cutoff=cutoff,
+                retention_hours=retention_hours,
+                logger=logger,
+            )
+        if maintenance_tables:
+            _optimize_and_vacuum(
+                spark,
+                catalog=args.uc_catalog,
+                schema=args.uc_bronze_schema,
+                tables=maintenance_tables,
+                retention_hours=retention_hours,
+                logger=logger,
+            )
     finally:
         spark.stop()
 
