@@ -71,6 +71,43 @@ def _describe_columns(spark: SparkSession, fqtn: str) -> set[str]:
     }
 
 
+def _registered_uc_tables(
+    spark: SparkSession,
+    *,
+    catalog: str,
+    schema: str,
+) -> set[str]:
+    """Return table names registered in the configured UC schema."""
+    rows = spark.sql(
+        f"SHOW TABLES IN {_quote_ident(catalog)}.{_quote_ident(schema)}"
+    ).collect()
+    return {str(row.tableName) for row in rows if row.tableName}
+
+
+def _validate_uc_tables(
+    spark: SparkSession,
+    *,
+    catalog: str,
+    schema: str,
+    tables: list[str],
+    logger: logging.Logger,
+) -> None:
+    """Fail before cleanup if expected Bronze tables are absent from UC."""
+    registered = _registered_uc_tables(spark, catalog=catalog, schema=schema)
+    missing = [table for table in tables if table not in registered]
+    if missing:
+        raise ValueError(
+            f"Bronze cleanup expected UC tables missing from "
+            f"{catalog}.{schema}: {missing}"
+        )
+    logger.info(
+        "Validated %s cleanup tables in UC schema %s.%s",
+        len(tables),
+        catalog,
+        schema,
+    )
+
+
 def _delete_old_snapshots(
     spark: SparkSession,
     *,
@@ -146,6 +183,13 @@ def main() -> None:
         .getOrCreate()
     )
     try:
+        _validate_uc_tables(
+            spark,
+            catalog=args.uc_catalog,
+            schema=args.uc_bronze_schema,
+            tables=snapshot_tables + maintenance_tables,
+            logger=logger,
+        )
         _delete_old_snapshots(
             spark,
             catalog=args.uc_catalog,

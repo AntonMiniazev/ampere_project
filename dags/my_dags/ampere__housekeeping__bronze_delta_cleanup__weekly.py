@@ -69,7 +69,7 @@ minio_secret_key = Secret(
 with DAG(
     dag_id=DAG_ID,
     default_args=standard_default_args(),
-    schedule="0 7 * * 0",
+    schedule=None,
     start_date=datetime(2025, 8, 24),
     tags=[
         "layer:housekeeping",
@@ -107,9 +107,9 @@ with DAG(
         service_account_name=DAG_CONFIG.service_account,
         node_selector=DAG_CONFIG.node_selector,
         secrets=[minio_access_key, minio_secret_key],
-        # Use spark-submit so the Spark image adds its bundled PySpark and
-        # Py4J libraries to PYTHONPATH before the cleanup client imports them.
-        cmds=["/opt/spark/bin/spark-submit", "/opt/spark/app/bronze_cleanup_connect.py"],
+        # Run as a Spark Connect client. Do not use spark-submit here because
+        # it injects spark.master=local[*], which conflicts with remote().
+        cmds=["python3", "/opt/spark/app/bronze_cleanup_connect.py"],
         arguments=[
             "--spark-remote",
             DAG_CONFIG.spark_remote,

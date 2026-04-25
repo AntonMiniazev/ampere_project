@@ -199,15 +199,15 @@ with DAG(
         op_args=["##### done #####"],
     )
 
-    # Bronze cleanup is a separate Spark Connect DAG. It is downstream of the
-    # silver trigger with ALL_DONE so weekly retention still runs after bronze
-    # or silver failures, while successful runs clean after silver finishes.
+    # Bronze cleanup is triggered by this pipeline only. The trigger waits for
+    # completion so the bronze pipeline run stays open until cleanup finishes
+    # or is skipped by the cleanup DAG's Sunday/force gate.
     trigger_cleanup = TriggerDagRunOperator(
         task_id="trigger__housekeeping__bronze_delta_cleanup__weekly",
         trigger_dag_id="ampere__housekeeping__bronze_delta_cleanup__weekly",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
-        wait_for_completion=False,
+        wait_for_completion=True,
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
