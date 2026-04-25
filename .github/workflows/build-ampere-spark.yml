@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - "docker/spark/raw_etl/**"
-      - ".github/workflows/build-ampere-spark.yml"
   workflow_dispatch:
 
 permissions:

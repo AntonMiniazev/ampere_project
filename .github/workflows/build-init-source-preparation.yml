@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - "docker/init_source_preparation/**"
-      - ".github/workflows/build-init-source-preparation.yml"
   workflow_dispatch:
 
 permissions:

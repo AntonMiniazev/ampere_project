@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - "docker/order_data_generator/**"
-      - ".github/workflows/build-order-data-generator.yml"
   workflow_dispatch:
 
 permissions:
