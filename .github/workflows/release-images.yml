@@ -48,7 +48,6 @@ jobs:
                   "file": "docker/spark/raw_etl/Dockerfile",
                   "paths": [
                       "docker/spark/raw_etl/",
-                      ".github/workflows/build-ampere-spark.yml",
                   ],
               },
               {
@@ -58,7 +57,6 @@ jobs:
                   "paths": [
                       "dbt/",
                       "docker/silver_dbt/",
-                      ".github/workflows/build-ampere-silver-dbt.yml",
                   ],
               },
               {
@@ -67,7 +65,6 @@ jobs:
                   "file": "docker/init_source_preparation/Dockerfile",
                   "paths": [
                       "docker/init_source_preparation/",
-                      ".github/workflows/build-init-source-preparation.yml",
                   ],
               },
               {
@@ -76,7 +73,6 @@ jobs:
                   "file": "docker/order_data_generator/Dockerfile",
                   "paths": [
                       "docker/order_data_generator/",
-                      ".github/workflows/build-order-data-generator.yml",
                   ],
               },
           ]

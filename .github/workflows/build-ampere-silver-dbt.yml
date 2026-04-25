@@ -1,13 +1,6 @@
 name: Build ampere-silver-dbt image
 
 on:
-  push:
-    branches:
-      - master
-      - main
-    paths:
-      - "dbt/**"
-      - "docker/silver_dbt/**"
   workflow_dispatch:
 
 permissions:

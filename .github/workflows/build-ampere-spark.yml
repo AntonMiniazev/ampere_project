@@ -1,12 +1,6 @@
 name: Build ampere-spark image
 
 on:
-  push:
-    branches:
-      - master
-      - main
-    paths:
-      - "docker/spark/raw_etl/**"
   workflow_dispatch:
 
 permissions:

@@ -1,12 +1,6 @@
 name: Build order data generation image
 
 on:
-  push:
-    branches:
-      - master
-      - main
-    paths:
-      - "docker/order_data_generator/**"
   workflow_dispatch:
 
 permissions:

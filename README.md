@@ -79,6 +79,13 @@ Default image resolution:
 - `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>`
 - `ghcr.io/antonminiazev/ampere-silver-dbt:<ampere_release_version>`
 
+Images are published through `.github/workflows/release-images.yml` when a
+`v*` release tag is pushed, or when that workflow is run manually with a release
+tag. The release workflow compares the new release with the previous `v*` tag,
+rebuilds only images whose source directories changed, and re-tags unchanged
+images to the new release tag. The per-image build workflows are manual
+maintenance tools and do not run automatically on branch pushes.
+
 ---
 
 <p align="center">
