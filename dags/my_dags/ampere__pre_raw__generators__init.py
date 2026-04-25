@@ -9,7 +9,6 @@ from utils.ampere_dag_config import get_optional_variable, load_pre_raw_dag_conf
 
 DAG_ID = "ampere__pre_raw__generators__init"
 DAG_CONFIG = load_pre_raw_dag_config(
-    image_name="source_preparation",
     repository="ghcr.io/antonminiazev/init-source-preparation",
 )
 

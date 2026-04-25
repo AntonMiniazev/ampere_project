@@ -37,7 +37,9 @@ Launch this image via your Airflow DAG, passing the same environment variables.
 
 ## Image tagging (GitHub Actions)
 
-Image tag is read from `docker/image_tags.json` using key `source_preparation`.
+Image version comes from the shared repo release tag `v*`.
+Branch pushes rebuild this image only when `docker/init_source_preparation/**` changes.
+Airflow selects the runtime tag through variable `ampere_release_version`.
 
 ## Autovacuum and indexing notes
 

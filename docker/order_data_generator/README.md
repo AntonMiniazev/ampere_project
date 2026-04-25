@@ -53,7 +53,9 @@ docker run --rm \
 
 ## Image tagging (GitHub Actions)
 
-Image tag is read from `docker/image_tags.json` using key `orders_clients_generation`.
+Image version comes from the shared repo release tag `v*`.
+Branch pushes rebuild this image only when `docker/order_data_generator/**` changes.
+Airflow selects the runtime tag through variable `ampere_release_version`.
 
 ## Autovacuum and indexing notes
 

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import json
 from pathlib import Path
-from typing import Any
 
 from airflow.sdk import Variable
 
@@ -14,18 +12,6 @@ DEFAULT_RELEASE_VERSION = "latest"
 DEFAULT_SPARK_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 DEFAULT_SPARK_SERVICE_ACCOUNT = "spark-operator-spark"
 DEFAULT_MINIO_ENDPOINT = "http://minio.ampere.svc.cluster.local:9000"
-
-
-def load_json_variable(name: str, default: Any) -> Any:
-    """Read a JSON-like Airflow variable while tolerating invalid string payloads."""
-    raw_value = Variable.get(name, default=default)
-    if isinstance(raw_value, str):
-        try:
-            return json.loads(raw_value)
-        except json.JSONDecodeError:
-            return default
-    return raw_value
-
 
 def get_optional_variable(name: str) -> str | None:
     """Return a trimmed Airflow variable value or None when unset or blank."""
@@ -51,36 +37,15 @@ def get_release_version() -> str:
 
 def resolve_release_image(
     repository: str,
-    *,
-    override_variable: str | None = None,
-    legacy_map_key: str | None = None,
 ) -> str:
-    """Resolve an image from override variable, legacy map, or shared release version."""
-    if override_variable:
-        value = get_optional_variable(override_variable)
-        if value:
-            if "/" in value:
-                return value
-            return f"{repository}:{value}"
-
+    """Resolve an image from the shared Airflow release version."""
     release_version = get_release_version()
-    if release_version:
-        return f"{repository}:{release_version}"
-
-    if legacy_map_key is None:
-        return f"{repository}:{DEFAULT_RELEASE_VERSION}"
-
-    image_map = load_json_variable("ghcr_images", {})
-    image_tag = image_map.get(legacy_map_key, DEFAULT_RELEASE_VERSION)
-    return f"{repository}:{image_tag}"
+    return f"{repository}:{release_version or DEFAULT_RELEASE_VERSION}"
 
 
 def resolve_spark_image() -> str:
-    """Resolve the Spark image from override variable or shared release version."""
-    return resolve_release_image(
-        "ghcr.io/antonminiazev/ampere-spark",
-        override_variable="ampere-spark-image",
-    )
+    """Resolve the Spark image from the shared release version."""
+    return resolve_release_image("ghcr.io/antonminiazev/ampere-spark")
 
 
 def minio_ssl_enabled(endpoint: str) -> str:
@@ -133,7 +98,7 @@ class PreRawDagConfig:
     pg_work_mem: str
 
 
-def load_pre_raw_dag_config(image_name: str, repository: str) -> PreRawDagConfig:
+def load_pre_raw_dag_config(repository: str) -> PreRawDagConfig:
     """Load shared KubernetesPodOperator settings for pre-raw generator DAGs."""
     return PreRawDagConfig(
         namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
@@ -142,7 +107,7 @@ def load_pre_raw_dag_config(image_name: str, repository: str) -> PreRawDagConfig
                 "source_prep_node", default="ampere-k8s-node4"
             )
         },
-        image=resolve_release_image(repository, legacy_map_key=image_name),
+        image=resolve_release_image(repository),
         pg_work_mem=Variable.get("pg_work_mem", default="64MB"),
     )
 
@@ -186,7 +151,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     Produced config fields:
     - spark_namespace: Kubernetes namespace where SparkApplication objects run. Default `ampere`.
     - service_account: Spark driver service account used by the operator pods. Default `spark-operator-spark`.
-    - image: Spark container image used for the raw landing app. Defaults to `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>` and falls back to `ampere-spark-image` only when an explicit override is needed.
+    - image: Spark container image used for the raw landing app. Defaults to `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>`.
     - image_pull_policy: Kubernetes image pull policy for the Spark pods. Default `IfNotPresent`.
     - pg_host: PostgreSQL host used by JDBC extraction. Default `postgres-service`.
     - pg_port: PostgreSQL port used by JDBC extraction. Default `5432`.
@@ -323,7 +288,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     Produced config fields:
     - spark_namespace: Kubernetes namespace where SparkApplication objects run. Default `ampere`.
     - service_account: Spark driver service account used by the operator pods. Default `spark-operator-spark`.
-    - image: Spark container image used for the bronze app. Defaults to `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>` and falls back to `ampere-spark-image` only when an explicit override is needed.
+    - image: Spark container image used for the bronze app. Defaults to `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>`.
     - image_pull_policy: Kubernetes image pull policy for the Spark pods. Default `IfNotPresent`.
     - minio_endpoint: MinIO/S3 endpoint used by Spark S3A IO. Default `http://minio.ampere.svc.cluster.local:9000`.
     - minio_conn_id: Airflow connection id used for MinIO registry existence checks. Default `minio_conn`.
@@ -497,10 +462,7 @@ def load_silver_dag_config() -> SilverDagConfig:
     minio_use_ssl = Variable.get("minio_s3_use_ssl", default="true").strip().lower()
     return SilverDagConfig(
         namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
-        image=resolve_release_image(
-            "ghcr.io/antonminiazev/ampere-silver-dbt",
-            override_variable="ampere_silver_dbt_image",
-        ),
+        image=resolve_release_image("ghcr.io/antonminiazev/ampere-silver-dbt"),
         image_pull_policy=Variable.get("image_pull_policy", default="IfNotPresent"),
         service_account=Variable.get(
             "spark_service_account",

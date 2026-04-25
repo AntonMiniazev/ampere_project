@@ -10,7 +10,6 @@ from utils.ampere_dag_config import load_pre_raw_dag_config
 
 DAG_ID = "ampere__pre_raw__generators__daily"
 DAG_CONFIG = load_pre_raw_dag_config(
-    image_name="orders_clients_generation",
     repository="ghcr.io/antonminiazev/order-data-generator",
 )
 
