@@ -202,25 +202,25 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         minio_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
         output_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
-        driver_core_request=Variable.get("spark_driver_core_request", default="250m"),
+        driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
         driver_memory=Variable.get("spark_driver_memory", default="2500m"),
         driver_memory_overhead=Variable.get(
-            "spark_driver_memory_overhead", default="512m"
+            "spark_driver_memory_overhead", default="768m"
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
-            "spark_executor_core_request", default="250m"
+            "spark_executor_core_request", default="400m"
         ),
-        executor_memory=Variable.get("spark_executor_memory", default="1536m"),
+        executor_memory=Variable.get("spark_executor_memory", default="2000m"),
         executor_memory_overhead=Variable.get(
-            "spark_executor_memory_overhead", default="384m"
+            "spark_executor_memory_overhead", default="512m"
         ),
         executor_instances=int(Variable.get("spark_executor_instances", default="4")),
         executor_instances_snapshots=int(
-            Variable.get("spark_executor_instances_snapshots", default="2")
+            Variable.get("spark_executor_instances_snapshots", default="3")
         ),
         executor_instances_facts_events=int(
-            Variable.get("spark_executor_instances_facts_events", default="2")
+            Variable.get("spark_executor_instances_facts_events", default="3")
         ),
         executor_memory_facts_events=Variable.get(
             "spark_executor_memory_facts_events", default="1536m"
@@ -235,7 +235,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
             Variable.get("spark_sql_shuffle_partitions", default="4")
         ),
         max_active_tasks=int(
-            Variable.get("spark_source_to_raw_max_active_tasks", default="2")
+            Variable.get("spark_source_to_raw_max_active_tasks", default="3")
         ),
         template_paths=spark_template_paths(anchor_file),
     )
