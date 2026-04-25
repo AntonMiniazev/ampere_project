@@ -11,6 +11,7 @@ Current focus: stabilizing raw landing, keeping bronze resource tuning healthy, 
 - docker/ — container images (generators, Spark ETL, silver dbt runtime).
 - dbt/ — active silver dbt models and tests.
 - project_images/ — diagrams [outdated].
+- .github/workflows/ — CI image build and release-tag workflows.
 
 ## Architecture Summary
 1) Pre-raw generators -> PostgreSQL (source schema)
@@ -66,6 +67,17 @@ Deployment reference: follow the completed infra runbook from https://github.com
 - [ ] Persist dbt artifacts (manifest/run_results)
 - [x] dbt tests and silver model contracts in project
 - [ ] Pipeline status dashboard
+
+## Image Versioning Workflow
+
+Runtime image selection is tied to one Airflow variable:
+- `ampere_release_version`
+
+Default image resolution:
+- `ghcr.io/antonminiazev/init-source-preparation:<ampere_release_version>`
+- `ghcr.io/antonminiazev/order-data-generator:<ampere_release_version>`
+- `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>`
+- `ghcr.io/antonminiazev/ampere-silver-dbt:<ampere_release_version>`
 
 ---
 

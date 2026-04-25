@@ -12,6 +12,7 @@ from etl_utils import (
     exists,
     get_env,
     list_dirs,
+    parse_table_list,
     parse_optional_datetime,
     partition_info,
     read_json,
@@ -224,6 +225,27 @@ def _apply_group_shuffle(
         )
 
 
+def _run_bronze_maintenance(
+    spark: SparkSession,
+    *,
+    catalog: str,
+    schema: str,
+    tables: list[str],
+    logger: logging.Logger,
+) -> None:
+    """Run OPTIMIZE and VACUUM for the selected bronze tables."""
+    for table in tables:
+        fqtn = f"`{catalog}`.`{schema}`.`{table}`"
+        if not spark.catalog.tableExists(f"{catalog}.{schema}.{table}"):
+            raise ValueError(f"Bronze maintenance target is missing from UC: {fqtn}")
+        logger.info("Starting OPTIMIZE for %s", fqtn)
+        spark.sql(f"OPTIMIZE {fqtn}").collect()
+        logger.info("Completed OPTIMIZE for %s", fqtn)
+        logger.info("Starting VACUUM RETAIN 168 HOURS for %s", fqtn)
+        spark.sql(f"VACUUM {fqtn} RETAIN 168 HOURS").collect()
+        logger.info("Completed VACUUM RETAIN 168 HOURS for %s", fqtn)
+
+
 def main() -> None:
     """Apply raw landing batches to bronze Delta tables.
 
@@ -241,6 +263,7 @@ def main() -> None:
 
     args = parse_bronze_args()
     uc_enabled = parse_bool_flag(args.uc_enabled, default=True)
+    maintenance_only = parse_bool_flag(args.maintenance_only, default=False)
     uc_catalog = (args.uc_catalog or "").strip()
     uc_bronze_schema = (args.uc_bronze_schema or "bronze").strip()
     uc_ops_schema = (args.uc_ops_schema or "ops").strip()
@@ -250,11 +273,20 @@ def main() -> None:
         raise ValueError("--uc-catalog is required when --uc-enabled=true.")
     run_date_str = args.run_date or date.today().isoformat()
     run_date = date.fromisoformat(run_date_str)
+    maintenance_tables = parse_table_list(args.maintenance_tables)
 
     # Step 2: Normalize group config and shuffle settings.
     # This decides how many groups run and which shuffle override each group gets.
     # The expected outcome is a structured list of groups ready for execution.
-    groups, default_tables, using_groups_config = resolve_bronze_groups(args)
+    groups = []
+    default_tables = None
+    using_groups_config = False
+    if not maintenance_only:
+        groups, default_tables, using_groups_config = resolve_bronze_groups(args)
+    elif not maintenance_tables:
+        raise ValueError(
+            "--maintenance-tables is required when --maintenance-only=true."
+        )
 
     minio_endpoint = get_env(
         "MINIO_S3_ENDPOINT", "http://minio.ampere.svc.cluster.local:9000"
@@ -264,7 +296,12 @@ def main() -> None:
     if not minio_access_key or not minio_secret_key:
         raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
 
-    if using_groups_config:
+    if maintenance_only:
+        logger.info(
+            "Starting bronze maintenance for %s",
+            ",".join(maintenance_tables),
+        )
+    elif using_groups_config:
         group_names = ",".join([g.get("group", "group") for g in groups])
         logger.info(
             "Starting bronze load for %s groups (%s), run_date=%s",
@@ -293,6 +330,17 @@ def main() -> None:
     ensure_uc_schema(spark, uc_catalog, uc_bronze_schema, logger)
     ensure_uc_schema(spark, uc_catalog, uc_ops_schema, logger)
     logger.info("UC-only bronze apply enabled: bronze targets and registry are resolved from UC.")
+
+    if maintenance_only:
+        _run_bronze_maintenance(
+            spark,
+            catalog=uc_catalog,
+            schema=uc_bronze_schema,
+            tables=maintenance_tables,
+            logger=logger,
+        )
+        spark.stop()
+        return
 
     # Step 4: Load the registry table to track applied batches.
     # This drives idempotency and prevents duplicate loads per partition.

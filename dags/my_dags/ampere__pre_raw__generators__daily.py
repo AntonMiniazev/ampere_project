@@ -1,9 +1,9 @@
 from datetime import datetime
 
 from airflow import DAG
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_pre_raw_dag_config

@@ -4,13 +4,13 @@ from datetime import datetime
 import logging
 
 from airflow import DAG
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import BranchPythonOperator
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 
 from utils.ampere_dag_config import (
@@ -26,6 +26,13 @@ DAG_ID = "ampere__bronze__landing_to_delta__daily"
 DAG_CONFIG = load_bronze_dag_config(__file__)
 SPARK_APP_TEMPLATE = "raw_to_bronze_template_uc.yaml"
 REGISTRY_INIT_TEMPLATE = "bronze_registry_init_uc.yaml"
+BRONZE_MAINTENANCE_TABLES = [
+    "order_product",
+    "orders",
+    "payments",
+    "order_status_history",
+    "delivery_tracking",
+]
 
 
 def _parse_s3_path(path_str: str) -> tuple[str, str]:
@@ -140,7 +147,23 @@ def _base_params() -> dict:
         "uc_token": DAG_CONFIG.uc_token,
         "uc_auth_type": DAG_CONFIG.uc_auth_type,
         "uc_catalog_impl": DAG_CONFIG.uc_catalog_impl,
+        "maintenance_only": "false",
+        "maintenance_tables": "",
     }
+
+
+def _is_truthy(value: str | None) -> bool:
+    """Parse an optional Airflow variable into a boolean flag."""
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _select_bronze_optimization_task(**context) -> str:
+    """Choose whether the bronze maintenance SparkApplication should run."""
+    optimization_enabled = _is_truthy(get_optional_variable("bronze_optimization"))
+    logical_dt = context["dag_run"].logical_date or context["dag_run"].run_after
+    if optimization_enabled or logical_dt.weekday() in {2, 6}:
+        return "run__sparkapp__bronze_optimization"
+    return "skip__sparkapp__bronze_optimization"
 
 
 def _resolve_lookback_overrides() -> dict[str, int | None]:
@@ -216,7 +239,7 @@ with DAG(
     group_map = {group["group"]: group for group in stream_groups}
     for name, group in group_map.items():
         if name == "snapshots":
-            group["shuffle_partitions"] = 1
+            group["shuffle_partitions"] = DAG_CONFIG.shuffle_partitions
         elif name in {"facts", "events"}:
             group["shuffle_partitions"] = DAG_CONFIG.shuffle_partitions_facts_events
             group["files_max_partition_bytes"] = (
@@ -255,6 +278,45 @@ with DAG(
     )
     registry_ready = EmptyOperator(
         task_id="run__sparkapp__registry_ready",
+        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
+    )
+    optimization_branch = BranchPythonOperator(
+        task_id="run__sparkapp__bronze_optimization_check",
+        python_callable=_select_bronze_optimization_task,
+    )
+    skip_optimization_task = EmptyOperator(
+        task_id="skip__sparkapp__bronze_optimization",
+    )
+
+    optimization_params = {
+        **base_params,
+        "group": "bronze-optimization",
+        "stream": "bronze-optimization",
+        "tables": "",
+        "table_config": {},
+        "groups_config": [],
+        "mode": "snapshot",
+        "partition_key": "snapshot_date",
+        "event_date_column": "",
+        "lookback_days": 0,
+        "app_name": "raw-to-bronze-optimization",
+        "executor_instances": 1,
+        "executor_memory": DAG_CONFIG.executor_memory_snapshots,
+        "executor_memory_overhead": DAG_CONFIG.executor_memory_overhead,
+        "shuffle_partitions": DAG_CONFIG.shuffle_partitions,
+        "maintenance_only": "true",
+        "maintenance_tables": ",".join(BRONZE_MAINTENANCE_TABLES),
+    }
+    bronze_optimization_task = SparkKubernetesOperator(
+        task_id="run__sparkapp__bronze_optimization",
+        namespace=DAG_CONFIG.spark_namespace,
+        application_file=SPARK_APP_TEMPLATE,
+        params=optimization_params,
+        kubernetes_conn_id="kubernetes_default",
+        do_xcom_push=False,
+    )
+    optimization_ready = EmptyOperator(
+        task_id="run__sparkapp__bronze_optimization_ready",
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
     )
 
@@ -315,12 +377,20 @@ with DAG(
     start_batch_task >> registry_check
     registry_check >> skip_registry_task >> registry_ready
     registry_check >> init_registry_task >> registry_ready
+    bronze_terminal_task = registry_ready
     if snapshots_task and facts_events_task:
         # Run bronze groups sequentially so each SparkApplication can consume
         # a larger share of node4 memory/CPU without competing with the other.
-        registry_ready >> snapshots_task >> facts_events_task >> done_task
+        registry_ready >> snapshots_task >> facts_events_task
+        bronze_terminal_task = facts_events_task
     elif snapshots_task:
-        registry_ready >> snapshots_task >> done_task
+        registry_ready >> snapshots_task
+        bronze_terminal_task = snapshots_task
     elif facts_events_task:
-        registry_ready >> facts_events_task >> done_task
+        registry_ready >> facts_events_task
+        bronze_terminal_task = facts_events_task
+    bronze_terminal_task >> optimization_branch
+    optimization_branch >> skip_optimization_task >> optimization_ready
+    optimization_branch >> bronze_optimization_task >> optimization_ready
+    optimization_ready >> done_task
     done_task >> trigger_silver

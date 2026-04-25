@@ -51,6 +51,10 @@ spec:
     - {{ params.app_name }}
     - --image
     - {{ params.image }}
+    - --maintenance-only
+    - "{{ params.maintenance_only }}"
+    - --maintenance-tables
+    - "{{ params.maintenance_tables }}"
   sparkConf:
     # Bronze jobs need Delta + UC + object-storage libraries, but they should
     # not prepend the whole Ivy cache to the classpath. Pin the small set of

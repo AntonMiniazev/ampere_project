@@ -311,9 +311,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - executor_memory_facts_events: Executor memory override for the facts/events SparkApplication. Default `2560m`.
     - executor_memory_overhead_facts_events: Executor memory overhead override for the facts/events SparkApplication. Default `768m`.
     - executor_node_selector: Kubernetes node hostname used for executor placement. Default `ampere-k8s-node4`.
-    - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `1`.
+    - shuffle_partitions: Default spark.sql.shuffle.partitions value. Default `2`.
     - shuffle_partitions_facts_events: Shuffle partition override for facts/events. Default `8`.
-    - shuffle_partitions_mutable_dims: Shuffle partition override for mutable dims. Default `1`.
+    - shuffle_partitions_mutable_dims: Shuffle partition override for mutable dims. Default `2`.
     - files_max_partition_bytes_facts_events: File split size override for facts/events scans. Default `8m`.
     - files_open_cost_bytes_facts_events: File open cost override for facts/events scans. Default `4m`.
     - adaptive_coalesce_facts_events: Adaptive partition coalescing flag for facts/events. Default `false`.
@@ -387,13 +387,13 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "spark_executor_node_selector", default="ampere-k8s-node4"
         ),
         shuffle_partitions=int(
-            Variable.get("spark_sql_shuffle_partitions", default="1")
+            Variable.get("spark_sql_shuffle_partitions", default="2")
         ),
         shuffle_partitions_facts_events=int(
             Variable.get("spark_sql_shuffle_partitions_facts_events", default="8")
         ),
         shuffle_partitions_mutable_dims=int(
-            Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="1")
+            Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="2")
         ),
         files_max_partition_bytes_facts_events=Variable.get(
             "spark_sql_files_max_partition_bytes_facts_events", default="8m"

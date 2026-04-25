@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 
 from airflow import DAG
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
     SparkKubernetesOperator,
 )
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 
 from utils.ampere_dag_config import (
     get_optional_nonnegative_int_variable,
