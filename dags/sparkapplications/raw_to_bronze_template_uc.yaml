@@ -55,7 +55,7 @@ spec:
     # Bronze jobs need Delta + UC + object-storage libraries, but they should
     # not prepend the whole Ivy cache to the classpath. Pin the small set of
     # jars we rely on so Spark 4.0.1 keeps using its matching Hadoop runtime.
-    spark.jars: "local:///opt/spark/ivy/jars/org.apache.hadoop_hadoop-aws-3.4.1.jar,local:///opt/spark/ivy/jars/software.amazon.awssdk_bundle-2.24.6.jar,local:///opt/spark/ivy/delta-spark_2.13-4.0.1.jar,local:///opt/spark/ivy/delta-storage-4.0.1.jar,local:///opt/spark/ivy/unitycatalog-spark_2.13-0.3.1.jar,local:///opt/spark/ivy/unitycatalog-client-0.3.1.jar"
+    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.1.jar,local:///opt/spark/ivy/bundle-2.24.6.jar,local:///opt/spark/ivy/delta-spark_2.13-4.0.1.jar,local:///opt/spark/ivy/delta-storage-4.0.1.jar,local:///opt/spark/ivy/unitycatalog-spark_2.13-0.3.1.jar,local:///opt/spark/ivy/unitycatalog-client-0.3.1.jar"
     spark.ui.enabled: "false"
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"

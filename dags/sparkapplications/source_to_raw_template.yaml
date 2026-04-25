@@ -61,7 +61,7 @@ spec:
     # Keep Spark on the image's built-in Hadoop runtime and add only the jars
     # this job actually needs. Avoid wildcard Ivy classpaths because old cached
     # jars can shadow Spark's bundled Hadoop classes after restarts/redeploys.
-    spark.jars: "local:///opt/spark/ivy/jars/org.apache.hadoop_hadoop-aws-3.4.1.jar,local:///opt/spark/ivy/jars/software.amazon.awssdk_bundle-2.24.6.jar,local:///opt/spark/ivy/postgresql-42.7.3.jar"
+    spark.jars: "local:///opt/spark/ivy/hadoop-aws-3.4.1.jar,local:///opt/spark/ivy/bundle-2.24.6.jar,local:///opt/spark/ivy/postgresql-42.7.3.jar"
     spark.ui.enabled: "false"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"
