@@ -9,7 +9,7 @@ Responsibilities:
 - generate and validate bronze source mapping from UC metadata before dbt runs;
 - validate `publish`-tagged silver model schemas against Unity Catalog;
 - publish validated silver tables as Delta tables to the durable silver bucket;
-- validate published silver Delta tables against Unity Catalog;
+- check published silver Delta locations against Unity Catalog;
 - persist dbt artifacts to the silver ops bucket;
 - provide the entrypoint used later by Airflow and GitHub Actions image builds.
 
@@ -58,7 +58,7 @@ Default runtime contract:
 
 DuckDB memory and spill-directory values are rendered as connection-time `config_options`. They must be applied before extensions or queries touch temporary storage.
 
-Airflow full rebuild defaults are intentionally more conservative than daily refresh: `silver_full_rebuild_dbt_threads=1`, `silver_full_rebuild_duckdb_memory_limit=5GB`, `silver_full_rebuild_dbt_memory_request=8Gi`, and `silver_full_rebuild_dbt_memory_limit=10Gi`. Kubernetes schedules the pod from the memory request, while the memory limit remains the maximum runtime allowance.
+Airflow full rebuild defaults use moderate parallelism while keeping node4 scheduling practical: `silver_full_rebuild_dbt_threads=2`, `silver_full_rebuild_duckdb_memory_limit=6GB`, `silver_full_rebuild_dbt_memory_request=5Gi`, and `silver_full_rebuild_dbt_memory_limit=10Gi`. Kubernetes schedules the pod from the memory request, while the memory limit remains the maximum runtime allowance.
 
 This image scaffold assumes the silver authoring project lives in the repo-root `dbt/` folder.
 
@@ -69,7 +69,7 @@ Runtime sequence in entrypoint:
 4. run dbt command.
 5. validate each planned published table against existing UC metadata when `RUN_SILVER_UC_REGISTRATION=true`.
 6. publish `publish`-tagged model tables to `SILVER_EXTERNAL_ROOT` as Delta tables; dimensions are replaced, fact/event tables are written one date partition at a time to keep Arrow and Delta writer memory bounded.
-7. validate published silver Delta tables against existing UC metadata when `RUN_SILVER_UC_REGISTRATION=true`.
+7. check published silver Delta locations are readable and match existing UC locations/formats when `RUN_SILVER_UC_REGISTRATION=true`.
 8. upload dbt artifacts to `SILVER_DBT_ARTIFACT_ROOT`.
 
 Mapping and preflight helpers:
@@ -101,5 +101,5 @@ Fallback behavior:
 - if `RUN_UC_MAPPING_GENERATION=false`, an existing mapping at `BRONZE_SOURCE_MAPPING_PATH` can be reused, but freshness checks still apply;
 - if `RUN_BRONZE_PREFLIGHT_DELTA_SCAN=false`, only mapping structure/freshness is validated (no storage read probe).
 - if `RUN_SILVER_PUBLISH=false`, dbt tables remain local to the runtime DuckDB file and are not copied to MinIO.
-- if `RUN_SILVER_UC_REGISTRATION=false`, Delta tables are published but UC metadata validation is skipped.
+- if `RUN_SILVER_UC_REGISTRATION=false`, Delta tables are published but UC pre-publish validation and post-publish location checks are skipped.
 - if `RUN_DBT_ARTIFACT_UPLOAD=false`, dbt artifacts remain local to the runtime container.

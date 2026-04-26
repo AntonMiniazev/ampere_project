@@ -113,7 +113,7 @@ if [[ "${RUN_SILVER_PUBLISH}" == "true" ]]; then
 fi
 
 if [[ "${RUN_SILVER_PUBLISH}" == "true" && "${RUN_SILVER_UC_REGISTRATION}" == "true" ]]; then
-  log "validate silver tables against UC"
+  log "check published silver Delta locations"
   python /app/scripts/register_silver_uc_tables.py \
     --publish-manifest-path "${SILVER_PUBLISH_MANIFEST_PATH}"
 fi

@@ -624,14 +624,14 @@ def load_silver_dag_config() -> SilverDagConfig:
         ),
         full_rebuild_dbt_threads=Variable.get(
             "silver_full_rebuild_dbt_threads",
-            default="1",
+            default="2",
         ),
         run_mode=Variable.get("silver_run_mode", default="daily_refresh"),
         lookback_days=Variable.get("silver_lookback_days", default="7"),
         duckdb_memory_limit=Variable.get("silver_duckdb_memory_limit", default="7GB"),
         full_rebuild_duckdb_memory_limit=Variable.get(
             "silver_full_rebuild_duckdb_memory_limit",
-            default="5GB",
+            default="6GB",
         ),
         duckdb_temp_directory=Variable.get(
             "silver_duckdb_temp_directory",
@@ -674,7 +674,7 @@ def load_silver_dag_config() -> SilverDagConfig:
         ),
         full_rebuild_memory_request=Variable.get(
             "silver_full_rebuild_dbt_memory_request",
-            default="8Gi",
+            default="5Gi",
         ),
         full_rebuild_memory_limit=Variable.get(
             "silver_full_rebuild_dbt_memory_limit",
