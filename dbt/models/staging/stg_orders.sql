@@ -4,6 +4,26 @@ with source_data as (
     select *
     from {{ source('bronze', 'orders') }}
     where {{ ampere_silver_date_window_predicate('order_date') }}
+        or id in (
+            select distinct order_id
+            from {{ source('bronze', 'order_product') }}
+            where {{ ampere_silver_date_window_predicate('order_date') }}
+        )
+        or id in (
+            select distinct order_id
+            from {{ source('bronze', 'payments') }}
+            where {{ ampere_silver_date_window_predicate('payment_date') }}
+        )
+        or id in (
+            select distinct order_id
+            from {{ source('bronze', 'order_status_history') }}
+            where {{ ampere_silver_date_window_predicate('status_datetime') }}
+        )
+        or id in (
+            select distinct order_id
+            from {{ source('bronze', 'delivery_tracking') }}
+            where {{ ampere_silver_date_window_predicate('status_datetime') }}
+        )
 ),
 deduped as (
     select
