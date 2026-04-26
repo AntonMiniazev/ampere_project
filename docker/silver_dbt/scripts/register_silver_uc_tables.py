@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -65,38 +66,89 @@ def delta_storage_options() -> dict[str, str]:
     return options
 
 
-def uc_column_type(dtype: pa.DataType) -> tuple[str, str, str]:
-    if pa.types.is_boolean(dtype):
+def arrow_type_name(dtype: Any) -> str:
+    """Return a normalized type name for PyArrow and arro3 schema types."""
+    return re.sub(r"[^a-z0-9]+", "", str(dtype).strip().lower())
+
+
+def is_pyarrow_type(check: Any, dtype: Any) -> bool:
+    """Run a PyArrow type predicate and treat non-PyArrow types as no match."""
+    try:
+        return bool(check(dtype))
+    except (AttributeError, TypeError):
+        return False
+
+
+def decimal_precision_scale(dtype: Any) -> tuple[int, int]:
+    """Extract decimal precision/scale from PyArrow or arro3 decimal types."""
+    precision = getattr(dtype, "precision", None)
+    scale = getattr(dtype, "scale", None)
+    if precision is not None and scale is not None:
+        return int(precision), int(scale)
+    numbers = re.findall(r"\d+", str(dtype).lower())
+    if len(numbers) >= 2:
+        precision_text, scale_text = numbers[-2:]
+        return int(precision_text), int(scale_text)
+    return 38, 18
+
+
+def uc_column_type(dtype: Any) -> tuple[str, str, str]:
+    """Map PyArrow or arro3 type to Unity Catalog column metadata fields."""
+    normalized = arrow_type_name(dtype)
+    if is_pyarrow_type(pa.types.is_boolean, dtype) or normalized in {"bool", "boolean"}:
         return ("BOOLEAN", "BOOLEAN", json.dumps({"name": "boolean"}))
-    if pa.types.is_int8(dtype) or pa.types.is_int16(dtype):
+    if (
+        is_pyarrow_type(pa.types.is_int8, dtype)
+        or is_pyarrow_type(pa.types.is_int16, dtype)
+        or normalized in {"int8", "int16"}
+    ):
         return ("SHORT", "SMALLINT", json.dumps({"name": "short"}))
-    if pa.types.is_int32(dtype):
+    if is_pyarrow_type(pa.types.is_int32, dtype) or normalized in {"int32"}:
         return ("INT", "INT", json.dumps({"name": "integer"}))
-    if pa.types.is_int64(dtype):
+    if is_pyarrow_type(pa.types.is_int64, dtype) or normalized in {"int64"}:
         return ("LONG", "BIGINT", json.dumps({"name": "long"}))
-    if pa.types.is_float16(dtype) or pa.types.is_float32(dtype):
+    if (
+        is_pyarrow_type(pa.types.is_float16, dtype)
+        or is_pyarrow_type(pa.types.is_float32, dtype)
+        or normalized in {"float16", "float32"}
+    ):
         return ("FLOAT", "FLOAT", json.dumps({"name": "float"}))
-    if pa.types.is_float64(dtype):
+    if is_pyarrow_type(pa.types.is_float64, dtype) or normalized in {"float64", "double"}:
         return ("DOUBLE", "DOUBLE", json.dumps({"name": "double"}))
-    if pa.types.is_decimal(dtype):
+    if is_pyarrow_type(pa.types.is_decimal, dtype) or normalized.startswith("decimal"):
+        precision, scale = decimal_precision_scale(dtype)
         return (
             "DECIMAL",
-            f"DECIMAL({dtype.precision},{dtype.scale})",
+            f"DECIMAL({precision},{scale})",
             json.dumps(
                 {
                     "name": "decimal",
-                    "precision": int(dtype.precision),
-                    "scale": int(dtype.scale),
+                    "precision": precision,
+                    "scale": scale,
                 }
             ),
         )
-    if pa.types.is_string(dtype) or pa.types.is_large_string(dtype):
+    if (
+        is_pyarrow_type(pa.types.is_string, dtype)
+        or is_pyarrow_type(pa.types.is_large_string, dtype)
+        or normalized in {"string", "largestring", "utf8", "largeutf8"}
+    ):
         return ("STRING", "STRING", json.dumps({"name": "string"}))
-    if pa.types.is_binary(dtype) or pa.types.is_large_binary(dtype):
+    if (
+        is_pyarrow_type(pa.types.is_binary, dtype)
+        or is_pyarrow_type(pa.types.is_large_binary, dtype)
+        or normalized in {"binary", "largebinary"}
+    ):
         return ("BINARY", "BINARY", json.dumps({"name": "binary"}))
-    if pa.types.is_date32(dtype) or pa.types.is_date64(dtype):
+    if (
+        is_pyarrow_type(pa.types.is_date32, dtype)
+        or is_pyarrow_type(pa.types.is_date64, dtype)
+        or normalized.startswith("date")
+    ):
         return ("DATE", "DATE", json.dumps({"name": "date"}))
-    if pa.types.is_timestamp(dtype):
+    if is_pyarrow_type(pa.types.is_timestamp, dtype) or normalized.startswith(
+        "timestamp"
+    ):
         return ("TIMESTAMP", "TIMESTAMP", json.dumps({"name": "timestamp"}))
     return ("STRING", "STRING", json.dumps({"name": "string"}))
 
