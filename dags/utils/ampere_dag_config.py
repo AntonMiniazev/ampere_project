@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from airflow.hooks.base import BaseHook
 from airflow.sdk import Variable
 
 DEFAULT_PROJECT_START_DATE = datetime(2025, 8, 24)
@@ -12,6 +13,7 @@ DEFAULT_RELEASE_VERSION = "latest"
 DEFAULT_SPARK_IMAGE = "ghcr.io/antonminiazev/ampere-spark:latest"
 DEFAULT_SPARK_SERVICE_ACCOUNT = "spark-operator-spark"
 DEFAULT_MINIO_ENDPOINT = "http://minio.ampere.svc.cluster.local:9000"
+DEFAULT_ETL_NODE = "ampere-k8s-node4"
 
 
 def get_optional_variable(name: str) -> str | None:
@@ -54,6 +56,15 @@ def resolve_spark_image() -> str:
 def minio_ssl_enabled(endpoint: str) -> str:
     """Translate an endpoint URL into SparkApplication's string SSL flag."""
     return "true" if endpoint.startswith("https://") else "false"
+
+
+def resolve_minio_endpoint(conn_id: str = "minio_conn") -> str:
+    """Resolve the MinIO endpoint URL from the shared Airflow connection."""
+    connection = BaseHook.get_connection(conn_id)
+    endpoint = (connection.extra_dejson or {}).get("endpoint_url")
+    if endpoint:
+        return str(endpoint).strip().rstrip("/")
+    return DEFAULT_MINIO_ENDPOINT
 
 
 def strip_url_scheme(value: str) -> str:
@@ -106,9 +117,7 @@ def load_pre_raw_dag_config(repository: str) -> PreRawDagConfig:
     return PreRawDagConfig(
         namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
         node_selector={
-            "kubernetes.io/hostname": Variable.get(
-                "source_prep_node", default="ampere-k8s-node4"
-            )
+            "kubernetes.io/hostname": DEFAULT_ETL_NODE,
         },
         image=resolve_release_image(repository),
         pg_work_mem=Variable.get("pg_work_mem", default="64MB"),
@@ -182,6 +191,8 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - max_active_tasks: Airflow max_active_tasks limit for the DAG. Default `1`.
     - template_paths: Template search paths for SparkApplication YAML rendering. Default is derived from `anchor_file` plus `dags/sparkapplications`.
     """
+    minio_conn_id = Variable.get("minio_conn_id", default="minio_conn")
+    minio_endpoint = resolve_minio_endpoint(minio_conn_id)
     return RawLandingDagConfig(
         spark_namespace=Variable.get("spark_namespace", default=DEFAULT_NAMESPACE),
         service_account=Variable.get(
@@ -195,10 +206,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         pg_database=Variable.get("pg_database", default="ampere_db"),
         schema=Variable.get("pg_schema", default="source"),
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
-        minio_endpoint=Variable.get(
-            "minio_s3_endpoint",
-            default=DEFAULT_MINIO_ENDPOINT,
-        ),
+        minio_endpoint=minio_endpoint,
         minio_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
         output_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
@@ -341,6 +349,8 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         if bronze_prefix
         else f"s3a://{bronze_bucket}/ops/bronze_apply_registry"
     )
+    minio_conn_id = Variable.get("minio_conn_id", default="minio_conn")
+    minio_endpoint = resolve_minio_endpoint(minio_conn_id)
     return BronzeDagConfig(
         spark_namespace=Variable.get("spark_namespace", default=DEFAULT_NAMESPACE),
         service_account=Variable.get(
@@ -349,11 +359,8 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         ),
         image=resolve_spark_image(),
         image_pull_policy=Variable.get("image_pull_policy", default="IfNotPresent"),
-        minio_endpoint=Variable.get(
-            "minio_s3_endpoint",
-            default=DEFAULT_MINIO_ENDPOINT,
-        ),
-        minio_conn_id=Variable.get("minio_conn_id", default="minio_conn"),
+        minio_endpoint=minio_endpoint,
+        minio_conn_id=minio_conn_id,
         schema=Variable.get("pg_schema", default="source"),
         raw_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
         raw_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
@@ -529,14 +536,18 @@ class SilverDagConfig:
     dbt_target: str
     dbt_threads: str
     dbt_command: str
+    cpu_request: str
+    cpu_limit: str
+    memory_request: str
+    memory_limit: str
     max_active_runs: int
 
 
 def load_silver_dag_config() -> SilverDagConfig:
     """Load shared silver dbt-runtime DAG constants from Airflow variables."""
-    raw_minio_endpoint = Variable.get("minio_s3_endpoint", default="s3.minio.local")
+    raw_minio_endpoint = resolve_minio_endpoint()
     minio_endpoint = strip_url_scheme(raw_minio_endpoint)
-    minio_use_ssl = Variable.get("minio_s3_use_ssl", default="true").strip().lower()
+    minio_use_ssl = minio_ssl_enabled(raw_minio_endpoint)
     return SilverDagConfig(
         namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
         image=resolve_release_image("ghcr.io/antonminiazev/ampere-silver-dbt"),
@@ -546,10 +557,7 @@ def load_silver_dag_config() -> SilverDagConfig:
             default=DEFAULT_SPARK_SERVICE_ACCOUNT,
         ),
         node_selector={
-            "kubernetes.io/hostname": Variable.get(
-                "silver_runtime_node",
-                default="ampere-k8s-node4",
-            )
+            "kubernetes.io/hostname": DEFAULT_ETL_NODE,
         },
         minio_endpoint=minio_endpoint,
         minio_use_ssl=minio_use_ssl,
@@ -594,5 +602,9 @@ def load_silver_dag_config() -> SilverDagConfig:
             "silver_dbt_command",
             default="dbt build",
         ),
+        cpu_request=Variable.get("silver_dbt_cpu_request", default="500m"),
+        cpu_limit=Variable.get("silver_dbt_cpu_limit", default="4"),
+        memory_request=Variable.get("silver_dbt_memory_request", default="2Gi"),
+        memory_limit=Variable.get("silver_dbt_memory_limit", default="10Gi"),
         max_active_runs=int(Variable.get("silver_dag_max_active_runs", default="1")),
     )

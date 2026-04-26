@@ -82,8 +82,14 @@ with DAG(
         },
         arguments=[DAG_CONFIG.dbt_command],
         container_resources=V1ResourceRequirements(
-            requests={"cpu": "500m", "memory": "2Gi"},
-            limits={"cpu": "2", "memory": "6Gi"},
+            requests={
+                "cpu": DAG_CONFIG.cpu_request,
+                "memory": DAG_CONFIG.memory_request,
+            },
+            limits={
+                "cpu": DAG_CONFIG.cpu_limit,
+                "memory": DAG_CONFIG.memory_limit,
+            },
         ),
         get_logs=True,
         is_delete_operator_pod=True,

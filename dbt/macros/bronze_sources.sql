@@ -8,8 +8,8 @@
     {{ return('') }}
   {% endif %}
 
-  {% set endpoint_raw = env_var('MINIO_S3_ENDPOINT', 's3.minio.local') | trim %}
-  {% set use_ssl = (env_var('MINIO_S3_USE_SSL', 'true') | lower) in ['1', 'true', 'yes', 'y', 'on'] %}
+  {% set endpoint_raw = env_var('MINIO_S3_ENDPOINT', 'minio.ampere.svc.cluster.local:9000') | trim %}
+  {% set use_ssl = (env_var('MINIO_S3_USE_SSL', 'false') | lower) in ['1', 'true', 'yes', 'y', 'on'] %}
   {% if endpoint_raw.startswith('https://') %}
     {% set endpoint = endpoint_raw[8:] %}
     {% set use_ssl = true %}
