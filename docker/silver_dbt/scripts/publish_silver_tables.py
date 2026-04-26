@@ -9,7 +9,9 @@ from typing import Any
 
 import boto3
 import duckdb
+import pyarrow as pa
 from botocore.exceptions import ClientError
+from deltalake import write_deltalake
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +38,14 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("SILVER_RUN_MODE", "daily_refresh"),
         choices=["daily_refresh", "full_rebuild"],
         help="Silver run mode used to choose full or differential publish behavior.",
+    )
+    parser.add_argument(
+        "--local-manifest-output",
+        default=os.getenv(
+            "SILVER_PUBLISH_MANIFEST_PATH",
+            "/app/artifacts/silver_publish_manifest.json",
+        ),
+        help="Local copy of the publish manifest for downstream runtime steps.",
     )
     return parser.parse_args()
 
@@ -78,6 +88,21 @@ def s3_client() -> Any:
     )
 
 
+def delta_storage_options() -> dict[str, str]:
+    endpoint = endpoint_url()
+    options = {
+        "AWS_ENDPOINT_URL": endpoint,
+        "AWS_ACCESS_KEY_ID": os.getenv("MINIO_ACCESS_KEY", ""),
+        "AWS_SECRET_ACCESS_KEY": os.getenv("MINIO_SECRET_KEY", ""),
+        "AWS_REGION": os.getenv("MINIO_S3_REGION", "us-east-1"),
+        "AWS_S3_FORCE_PATH_STYLE": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    if endpoint.startswith("http://"):
+        options["AWS_ALLOW_HTTP"] = "true"
+    return options
+
+
 def ensure_bucket(client: Any, bucket: str) -> None:
     try:
         client.head_bucket(Bucket=bucket)
@@ -88,6 +113,15 @@ def ensure_bucket(client: Any, bucket: str) -> None:
         client.create_bucket(Bucket=bucket)
 
 
+def prefix_has_delta_log(client: Any, bucket: str, table_prefix: str) -> bool:
+    response = client.list_objects_v2(
+        Bucket=bucket,
+        Prefix=f"{table_prefix.rstrip('/')}/_delta_log/",
+        MaxKeys=1,
+    )
+    return bool(response.get("Contents"))
+
+
 def delete_prefix(client: Any, bucket: str, prefix: str) -> None:
     paginator = client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -96,35 +130,10 @@ def delete_prefix(client: Any, bucket: str, prefix: str) -> None:
             client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
 
 
-def delete_partition_values(
-    client: Any,
-    bucket: str,
-    table_prefix: str,
-    partition_values: list[str],
-) -> None:
-    for partition_value in partition_values:
-        partition_prefix = f"{table_prefix}/{PUBLISH_PARTITION_COLUMN}={partition_value}/"
-        delete_prefix(client, bucket, partition_prefix)
-
-
-def configure_duckdb_s3(connection: duckdb.DuckDBPyConnection) -> None:
-    endpoint = endpoint_url()
-    endpoint_without_scheme = endpoint.removeprefix("http://").removeprefix("https://")
-    use_ssl = endpoint.startswith("https://")
-    region = os.getenv("MINIO_S3_REGION", "us-east-1")
-    access_key = os.getenv("MINIO_ACCESS_KEY", "")
-    secret_key = os.getenv("MINIO_SECRET_KEY", "")
-
-    connection.execute("install httpfs")
-    connection.execute("load httpfs")
-    connection.execute("set s3_region = ?", [region])
-    connection.execute("set s3_url_style = 'path'")
-    connection.execute("set s3_endpoint = ?", [endpoint_without_scheme])
-    connection.execute(f"set s3_use_ssl = {'true' if use_ssl else 'false'}")
-    if access_key:
-        connection.execute("set s3_access_key_id = ?", [access_key])
-    if secret_key:
-        connection.execute("set s3_secret_access_key = ?", [secret_key])
+def clean_legacy_non_delta_prefix(client: Any, bucket: str, table_prefix: str) -> None:
+    if prefix_has_delta_log(client, bucket, table_prefix):
+        return
+    delete_prefix(client, bucket, table_prefix.rstrip("/") + "/")
 
 
 def publish_models(manifest_path: Path) -> list[dict[str, str]]:
@@ -147,11 +156,14 @@ def write_publish_manifest(
     bucket: str,
     root_prefix: str,
     rows: list[dict[str, Any]],
+    local_manifest_output: Path,
 ) -> None:
     body = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "tables": rows,
     }
+    local_manifest_output.parent.mkdir(parents=True, exist_ok=True)
+    local_manifest_output.write_text(json.dumps(body, indent=2), encoding="utf-8")
     key = "/".join(part for part in [root_prefix, "_publish_manifest.json"] if part)
     client.put_object(
         Bucket=bucket,
@@ -177,11 +189,37 @@ def partition_values(
     return [row[0] for row in rows]
 
 
+def relation_as_arrow(
+    connection: duckdb.DuckDBPyConnection,
+    relation_name: str,
+    partition_column: str | None = None,
+) -> pa.Table:
+    if partition_column:
+        return connection.sql(
+            f"""
+            select
+                *,
+                cast({partition_column} as date) as {PUBLISH_PARTITION_COLUMN}
+            from {relation_name}
+            """
+        ).fetch_arrow_table()
+    return connection.sql(f"select * from {relation_name}").fetch_arrow_table()
+
+
+def partition_predicate(partition_values_to_replace: list[str]) -> str | None:
+    if not partition_values_to_replace:
+        return None
+    values = ", ".join(f"'{value}'" for value in partition_values_to_replace)
+    return f"{PUBLISH_PARTITION_COLUMN} in ({values})"
+
+
 def publish_partitioned_model(
     connection: duckdb.DuckDBPyConnection,
     client: Any,
     bucket: str,
     table_prefix: str,
+    storage_options: dict[str, str],
+    target_uri: str,
     model_name: str,
     relation_name: str,
     partition_column: str,
@@ -189,30 +227,35 @@ def publish_partitioned_model(
 ) -> dict[str, Any]:
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
     date_partitions = partition_values(connection, relation_name, partition_column)
-    target_uri = f"s3://{bucket}/{table_prefix}"
+    if not date_partitions:
+        print(f"Skipped {model_name}: no rows to publish")
+        return {
+            "model_name": model_name,
+            "relation_name": relation_name,
+            "row_count": row_count,
+            "data_uri": target_uri,
+            "publish_mode": "delta_partitioned",
+            "partition_column": partition_column,
+            "publish_partition_column": PUBLISH_PARTITION_COLUMN,
+            "partition_values": [],
+        }
 
     if run_mode == "full_rebuild":
-        delete_prefix(client, bucket, table_prefix + "/")
-    else:
-        delete_partition_values(
-            client,
-            bucket,
-            table_prefix,
-            date_partitions,
+        clean_legacy_non_delta_prefix(client, bucket, table_prefix)
+    elif not prefix_has_delta_log(client, bucket, table_prefix):
+        raise RuntimeError(
+            f"{model_name} is not a Delta table yet. Run the silver full rebuild "
+            "before daily partition refresh."
         )
 
-    connection.execute(
-        f"""
-        copy (
-            select
-                *,
-                cast({partition_column} as date) as {PUBLISH_PARTITION_COLUMN}
-            from {relation_name}
-        )
-        to ?
-        (format parquet, partition_by ({PUBLISH_PARTITION_COLUMN}))
-        """,
-        [target_uri],
+    write_deltalake(
+        target_uri,
+        relation_as_arrow(connection, relation_name, partition_column),
+        mode="overwrite",
+        partition_by=[PUBLISH_PARTITION_COLUMN],
+        schema_mode="overwrite" if run_mode == "full_rebuild" else None,
+        storage_options=storage_options,
+        predicate=partition_predicate(date_partitions) if run_mode != "full_rebuild" else None,
     )
     print(
         f"Published {model_name}: rows={row_count} partitions={len(date_partitions)} uri={target_uri}"
@@ -222,7 +265,7 @@ def publish_partitioned_model(
         "relation_name": relation_name,
         "row_count": row_count,
         "data_uri": target_uri,
-        "publish_mode": "partitioned",
+        "publish_mode": "delta_partitioned",
         "partition_column": partition_column,
         "publish_partition_column": PUBLISH_PARTITION_COLUMN,
         "partition_values": date_partitions,
@@ -234,16 +277,19 @@ def publish_replacement_model(
     client: Any,
     bucket: str,
     table_prefix: str,
+    storage_options: dict[str, str],
+    target_uri: str,
     model_name: str,
     relation_name: str,
 ) -> dict[str, Any]:
-    object_key = f"{table_prefix}/data.parquet"
-    target_uri = f"s3://{bucket}/{object_key}"
-    delete_prefix(client, bucket, table_prefix + "/")
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
-    connection.execute(
-        f"copy (select * from {relation_name}) to ? (format parquet)",
-        [target_uri],
+    clean_legacy_non_delta_prefix(client, bucket, table_prefix)
+    write_deltalake(
+        target_uri,
+        relation_as_arrow(connection, relation_name),
+        mode="overwrite",
+        schema_mode="overwrite",
+        storage_options=storage_options,
     )
     print(f"Published {model_name}: rows={row_count} uri={target_uri}")
     return {
@@ -251,7 +297,7 @@ def publish_replacement_model(
         "relation_name": relation_name,
         "row_count": row_count,
         "data_uri": target_uri,
-        "publish_mode": "replacement",
+        "publish_mode": "delta_replacement",
     }
 
 
@@ -261,18 +307,19 @@ def main() -> None:
     bucket, root_prefix = split_s3_uri(args.external_root)
     client = s3_client()
     ensure_bucket(client, bucket)
+    storage_options = delta_storage_options()
 
     models = publish_models(manifest_path)
     if not models:
         raise SystemExit("No publish-tagged dbt models were found in manifest.")
 
     connection = duckdb.connect(args.duckdb_path, read_only=False)
-    configure_duckdb_s3(connection)
 
     published_rows: list[dict[str, Any]] = []
     for model in models:
         model_name = model["model_name"]
         table_prefix = "/".join(part for part in [root_prefix, model_name] if part)
+        target_uri = f"s3://{bucket}/{table_prefix}"
         relation_name = model["relation_name"]
         partition_column = PARTITIONED_PUBLISH_MODELS.get(model_name)
         if partition_column:
@@ -282,6 +329,8 @@ def main() -> None:
                     client,
                     bucket,
                     table_prefix,
+                    storage_options,
+                    target_uri,
                     model_name,
                     relation_name,
                     partition_column,
@@ -295,12 +344,20 @@ def main() -> None:
                     client,
                     bucket,
                     table_prefix,
+                    storage_options,
+                    target_uri,
                     model_name,
                     relation_name,
                 )
             )
 
-    write_publish_manifest(client, bucket, root_prefix, published_rows)
+    write_publish_manifest(
+        client,
+        bucket,
+        root_prefix,
+        published_rows,
+        Path(args.local_manifest_output),
+    )
     print(f"Published {len(published_rows)} silver table(s) to {args.external_root}")
 
 

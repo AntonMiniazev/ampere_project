@@ -544,6 +544,7 @@ class SilverDagConfig:
     silver_external_root: str
     silver_artifact_root: str
     run_silver_publish: str
+    run_silver_uc_registration: str
     run_dbt_artifact_upload: str
     cpu_request: str
     cpu_limit: str
@@ -631,6 +632,12 @@ def load_silver_dag_config() -> SilverDagConfig:
             default="s3://ampere-silver-ops/dbt",
         ),
         run_silver_publish=Variable.get("run_silver_publish", default="true")
+        .strip()
+        .lower(),
+        run_silver_uc_registration=Variable.get(
+            "run_silver_uc_registration",
+            default="true",
+        )
         .strip()
         .lower(),
         run_dbt_artifact_upload=Variable.get(

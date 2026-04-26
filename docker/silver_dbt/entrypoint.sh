@@ -17,9 +17,11 @@ log() { printf '[silver-dbt] %s\n' "$*"; }
 : "${RUN_BRONZE_PREFLIGHT:=true}"
 : "${RUN_BRONZE_PREFLIGHT_DELTA_SCAN:=true}"
 : "${RUN_SILVER_PUBLISH:=true}"
+: "${RUN_SILVER_UC_REGISTRATION:=true}"
 : "${RUN_DBT_ARTIFACT_UPLOAD:=true}"
 : "${SILVER_RUN_MODE:=daily_refresh}"
 : "${SILVER_LOOKBACK_DAYS:=7}"
+: "${SILVER_PUBLISH_MANIFEST_PATH:=/app/artifacts/silver_publish_manifest.json}"
 
 export PATH="/app/.venv/bin:${PATH}"
 export BRONZE_SOURCE_NAME BRONZE_SOURCE_SCHEMA
@@ -106,7 +108,14 @@ if [[ "${RUN_SILVER_PUBLISH}" == "true" ]]; then
   python /app/scripts/publish_silver_tables.py \
     --duckdb-path "${DUCKDB_PATH}" \
     --manifest-path "${DBT_PROJECT_DIR}/target/manifest.json" \
-    --run-mode "${SILVER_RUN_MODE}"
+    --run-mode "${SILVER_RUN_MODE}" \
+    --local-manifest-output "${SILVER_PUBLISH_MANIFEST_PATH}"
+fi
+
+if [[ "${RUN_SILVER_PUBLISH}" == "true" && "${RUN_SILVER_UC_REGISTRATION}" == "true" ]]; then
+  log "register silver tables in UC"
+  python /app/scripts/register_silver_uc_tables.py \
+    --publish-manifest-path "${SILVER_PUBLISH_MANIFEST_PATH}"
 fi
 
 if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" ]]; then

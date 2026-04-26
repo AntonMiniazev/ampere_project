@@ -7,7 +7,8 @@ Responsibilities:
 - package the repo-root `dbt/` project into the image;
 - render `profiles.yml` from runtime environment variables;
 - generate and validate bronze source mapping from UC metadata before dbt runs;
-- publish `publish`-tagged silver tables to the durable silver bucket;
+- publish `publish`-tagged silver tables as Delta tables to the durable silver bucket;
+- register published silver Delta tables in Unity Catalog;
 - persist dbt artifacts to the silver ops bucket;
 - provide the entrypoint used later by Airflow and GitHub Actions image builds.
 
@@ -50,6 +51,7 @@ Default runtime contract:
 - dbt artifact root: `SILVER_DBT_ARTIFACT_ROOT`, default `s3://ampere-silver-ops/dbt`
 - silver run mode: `SILVER_RUN_MODE`, default `daily_refresh`; `full_rebuild` disables lookback filtering
 - daily lookback window: `SILVER_LOOKBACK_DAYS`, default `7`
+- silver UC registration: `RUN_SILVER_UC_REGISTRATION`, default `true`
 - bundled helper scripts path: `/app/scripts`
 - bronze source access is path-agnostic in SQL (`source()` only) and resolved at runtime via generated mapping views.
 
@@ -62,8 +64,9 @@ Runtime sequence in entrypoint:
 2. generate UC bronze metadata mapping (`generate_bronze_source_mapping.py`);
 3. validate mapping coverage/freshness + optional `delta_scan` smoke (`validate_bronze_sources.py`);
 4. run dbt command.
-5. publish `publish`-tagged model tables to `SILVER_EXTERNAL_ROOT`; dimensions are replaced, fact/event tables are date-partitioned for daily refresh.
-6. upload dbt artifacts to `SILVER_DBT_ARTIFACT_ROOT`.
+5. publish `publish`-tagged model tables to `SILVER_EXTERNAL_ROOT` as Delta tables; dimensions are replaced, fact/event tables are date-partitioned for daily refresh.
+6. register missing published silver Delta tables in UC when `RUN_SILVER_UC_REGISTRATION=true`.
+7. upload dbt artifacts to `SILVER_DBT_ARTIFACT_ROOT`.
 
 Mapping and preflight helpers:
 
@@ -94,4 +97,5 @@ Fallback behavior:
 - if `RUN_UC_MAPPING_GENERATION=false`, an existing mapping at `BRONZE_SOURCE_MAPPING_PATH` can be reused, but freshness checks still apply;
 - if `RUN_BRONZE_PREFLIGHT_DELTA_SCAN=false`, only mapping structure/freshness is validated (no storage read probe).
 - if `RUN_SILVER_PUBLISH=false`, dbt tables remain local to the runtime DuckDB file and are not copied to MinIO.
+- if `RUN_SILVER_UC_REGISTRATION=false`, Delta tables are published but missing UC table metadata is not created by the runtime.
 - if `RUN_DBT_ARTIFACT_UPLOAD=false`, dbt artifacts remain local to the runtime container.

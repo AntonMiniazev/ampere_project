@@ -86,6 +86,7 @@ with DAG(
             "SILVER_RUN_MODE": DAG_CONFIG.run_mode,
             "SILVER_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
             "RUN_SILVER_PUBLISH": DAG_CONFIG.run_silver_publish,
+            "RUN_SILVER_UC_REGISTRATION": DAG_CONFIG.run_silver_uc_registration,
             "RUN_DBT_ARTIFACT_UPLOAD": DAG_CONFIG.run_dbt_artifact_upload,
             "LOGICAL_DATE": "{{ ds }}",
         },
