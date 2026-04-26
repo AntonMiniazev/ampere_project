@@ -47,6 +47,8 @@ Default runtime contract:
 - bundled helper scripts path: `/app/scripts`
 - bronze source access is path-agnostic in SQL (`source()` only) and resolved at runtime via generated mapping views.
 
+DuckDB memory and spill-directory values are rendered as connection-time `config_options`. They must be applied before extensions or queries touch temporary storage.
+
 This image scaffold assumes the silver authoring project lives in the repo-root `dbt/` folder.
 
 Runtime sequence in entrypoint:

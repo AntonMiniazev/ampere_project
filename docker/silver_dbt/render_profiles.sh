@@ -34,10 +34,11 @@ ampere_duckdb_project:
         - "json"
         - "aws"
         - "delta"
-      settings:
+      config_options:
         memory_limit: "${DUCKDB_MEMORY_LIMIT}"
         temp_directory: "${DUCKDB_TEMP_DIRECTORY}"
         preserve_insertion_order: false
+      settings:
         s3_region: "us-east-1"
         s3_url_style: "path"
         s3_endpoint: "${RAW_ENDPOINT}"
