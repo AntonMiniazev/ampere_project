@@ -31,6 +31,8 @@ docker run --rm \
   -e BRONZE_SOURCE_SCHEMA=bronze \
   -e BRONZE_SOURCE_MAPPING_PATH=/app/artifacts/bronze_source_mapping.json \
   -e BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS=24 \
+  -e DUCKDB_MEMORY_LIMIT=7GB \
+  -e DUCKDB_TEMP_DIRECTORY=/app/artifacts/duckdb_tmp \
   -e SILVER_EXTERNAL_ROOT=s3://ampere-silver/silver \
   ampere-silver-dbt \
   "dbt build --select stg_clients"
@@ -40,6 +42,8 @@ Default runtime contract:
 - dbt project path: `/app/dbt`
 - generated profiles path: `/app/profiles`
 - local DuckDB path: `/app/artifacts/ampere.duckdb`
+- DuckDB memory cap: `DUCKDB_MEMORY_LIMIT`, default `7GB`
+- DuckDB spill directory: `DUCKDB_TEMP_DIRECTORY`, default `/app/artifacts/duckdb_tmp`
 - bundled helper scripts path: `/app/scripts`
 - bronze source access is path-agnostic in SQL (`source()` only) and resolved at runtime via generated mapping views.
 

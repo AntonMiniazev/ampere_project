@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 select
     order_id,
     sum(quantity) as ordered_quantity,

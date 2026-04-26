@@ -536,6 +536,8 @@ class SilverDagConfig:
     dbt_target: str
     dbt_threads: str
     dbt_command: str
+    duckdb_memory_limit: str
+    duckdb_temp_directory: str
     cpu_request: str
     cpu_limit: str
     memory_request: str
@@ -597,10 +599,15 @@ def load_silver_dag_config() -> SilverDagConfig:
         .strip()
         .lower(),
         dbt_target=Variable.get("silver_dbt_target", default="prod"),
-        dbt_threads=Variable.get("silver_dbt_threads", default="4"),
+        dbt_threads=Variable.get("silver_dbt_threads", default="2"),
         dbt_command=Variable.get(
             "silver_dbt_command",
             default="dbt build",
+        ),
+        duckdb_memory_limit=Variable.get("silver_duckdb_memory_limit", default="7GB"),
+        duckdb_temp_directory=Variable.get(
+            "silver_duckdb_temp_directory",
+            default="/app/artifacts/duckdb_tmp",
         ),
         cpu_request=Variable.get("silver_dbt_cpu_request", default="500m"),
         cpu_limit=Variable.get("silver_dbt_cpu_limit", default="4"),

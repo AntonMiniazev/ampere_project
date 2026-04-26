@@ -5,6 +5,8 @@ set -euo pipefail
 : "${DBT_TARGET:=prod}"
 : "${THREADS:=4}"
 : "${DUCKDB_PATH:=/app/artifacts/ampere.duckdb}"
+: "${DUCKDB_MEMORY_LIMIT:=7GB}"
+: "${DUCKDB_TEMP_DIRECTORY:=/app/artifacts/duckdb_tmp}"
 : "${MINIO_S3_ENDPOINT:=minio.ampere.svc.cluster.local:9000}"
 : "${MINIO_S3_USE_SSL:=false}"
 : "${SILVER_EXTERNAL_ROOT:=s3://ampere-silver/silver}"
@@ -17,6 +19,7 @@ RAW_ENDPOINT="${RAW_ENDPOINT#http://}"
 RAW_ENDPOINT="${RAW_ENDPOINT#https://}"
 
 mkdir -p "${DBT_PROFILES_DIR}"
+mkdir -p "${DUCKDB_TEMP_DIRECTORY}"
 cat > "${DBT_PROFILES_DIR}/profiles.yml" <<YAML
 ampere_duckdb_project:
   target: ${DBT_TARGET}
@@ -32,6 +35,9 @@ ampere_duckdb_project:
         - "aws"
         - "delta"
       settings:
+        memory_limit: "${DUCKDB_MEMORY_LIMIT}"
+        temp_directory: "${DUCKDB_TEMP_DIRECTORY}"
+        preserve_insertion_order: false
         s3_region: "us-east-1"
         s3_url_style: "path"
         s3_endpoint: "${RAW_ENDPOINT}"

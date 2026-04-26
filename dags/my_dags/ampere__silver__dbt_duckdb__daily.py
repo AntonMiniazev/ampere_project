@@ -79,6 +79,8 @@ with DAG(
             "RUN_BRONZE_PREFLIGHT_DELTA_SCAN": DAG_CONFIG.run_bronze_preflight_delta_scan,
             "DBT_TARGET": DAG_CONFIG.dbt_target,
             "THREADS": DAG_CONFIG.dbt_threads,
+            "DUCKDB_MEMORY_LIMIT": DAG_CONFIG.duckdb_memory_limit,
+            "DUCKDB_TEMP_DIRECTORY": DAG_CONFIG.duckdb_temp_directory,
         },
         arguments=[DAG_CONFIG.dbt_command],
         container_resources=V1ResourceRequirements(
