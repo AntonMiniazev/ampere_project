@@ -674,7 +674,7 @@ def load_silver_dag_config() -> SilverDagConfig:
         ),
         full_rebuild_memory_request=Variable.get(
             "silver_full_rebuild_dbt_memory_request",
-            default="8Gi",
+            default="6Gi",
         ),
         full_rebuild_memory_limit=Variable.get(
             "silver_full_rebuild_dbt_memory_limit",
