@@ -12,9 +12,6 @@ select
     dt.delivery_status_id,
     dt.delivery_status,
     dt.status_datetime,
-    dt._bronze_last_run_id,
-    dt._bronze_last_apply_ts,
-    dt._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from {{ ref('stg_delivery_tracking') }} as dt
 left join {{ ref('fact_orders') }} as fo

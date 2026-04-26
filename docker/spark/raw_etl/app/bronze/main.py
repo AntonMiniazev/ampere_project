@@ -400,7 +400,6 @@ def main() -> None:
                     table_registry.orderBy(F.col("apply_ts_utc").desc()).limit(1).collect()
                 )
                 if latest_row:
-                    expected_schema_hash = latest_row[0].schema_hash
                     expected_contract_version = latest_row[0].contract_version
             has_registry_rows = bool(latest_row) if registry_df is not None else False
 

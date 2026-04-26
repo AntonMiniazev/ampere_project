@@ -15,7 +15,7 @@ from deltalake import DeltaTable
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Register published silver Delta tables in Unity Catalog."
+        description="Validate published silver Delta tables against Unity Catalog."
     )
     parser.add_argument(
         "--publish-manifest-path",
@@ -101,7 +101,7 @@ def uc_column_type(dtype: pa.DataType) -> tuple[str, str, str]:
     return ("STRING", "STRING", json.dumps({"name": "string"}))
 
 
-def uc_columns(delta_uri: str) -> list[dict[str, Any]]:
+def delta_columns(delta_uri: str) -> list[dict[str, Any]]:
     table = DeltaTable(delta_uri, storage_options=delta_storage_options())
     schema = table.schema().to_arrow()
     columns: list[dict[str, Any]] = []
@@ -125,7 +125,6 @@ def uc_request(
     method: str,
     path: str,
     query: dict[str, str] | None = None,
-    payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     url = f"{base_uri.rstrip('/')}{path}"
     if query:
@@ -136,10 +135,7 @@ def uc_request(
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    data = None
-    if payload is not None:
-        data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    request = Request(url, method=method, headers=headers, data=data)
+    request = Request(url, method=method, headers=headers)
     try:
         with urlopen(request, timeout=60) as response:
             body = response.read().decode("utf-8")
@@ -161,89 +157,111 @@ def uc_request(
     return data_obj
 
 
-def ensure_schema(base_uri: str, catalog: str, schema: str) -> None:
-    response = uc_request(
-        base_uri,
-        "GET",
-        "/api/2.1/unity-catalog/schemas",
-        query={"catalog_name": catalog},
-    )
-    existing = {item["name"] for item in response.get("schemas", [])}
-    if schema in existing:
-        print(f"UC schema exists: {catalog}.{schema}")
-        return
-    uc_request(
-        base_uri,
-        "POST",
-        "/api/2.1/unity-catalog/schemas",
-        payload={
-            "name": schema,
-            "catalog_name": catalog,
-            "comment": "Curated silver layer - dbt models on bronze",
-        },
-    )
-    print(f"UC schema created: {catalog}.{schema}")
-
-
-def table_exists(base_uri: str, catalog: str, schema: str, table_name: str) -> bool:
-    try:
-        uc_request(
-            base_uri,
-            "GET",
-            f"/api/2.1/unity-catalog/tables/{catalog}.{schema}.{table_name}",
-        )
-        return True
-    except FileNotFoundError:
-        return False
-
-
-def create_table(
+def get_uc_table(
     base_uri: str,
     catalog: str,
     schema: str,
     table_name: str,
+) -> dict[str, Any]:
+    try:
+        return uc_request(
+            base_uri,
+            "GET",
+            f"/api/2.1/unity-catalog/tables/{catalog}.{schema}.{table_name}",
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"Missing UC silver table {catalog}.{schema}.{table_name}. "
+            "Initialize or repair UC metadata from "
+            "internal_docs/test/unity_catalog_check/schemas/uc_silver_tables.json "
+            "before running the silver pipeline."
+        ) from exc
+
+
+def normalize_location(value: str) -> str:
+    return value.strip().rstrip("/")
+
+
+def comparable_column(column: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": column.get("name"),
+        "type_name": str(column.get("type_name") or "").upper(),
+        "type_text": str(column.get("type_text") or "").lower(),
+        "position": int(column.get("position") or 0),
+        "nullable": bool(column.get("nullable", True)),
+    }
+
+
+def validate_uc_table(
+    table_name: str,
     storage_location: str,
+    uc_payload: dict[str, Any],
 ) -> None:
-    uc_request(
-        base_uri,
-        "POST",
-        "/api/2.1/unity-catalog/tables",
-        payload={
-            "name": table_name,
-            "catalog_name": catalog,
-            "schema_name": schema,
-            "table_type": "EXTERNAL",
-            "data_source_format": "DELTA",
-            "storage_location": storage_location,
-            "columns": uc_columns(storage_location),
-            "comment": f"Silver table: {table_name}",
-        },
-    )
-    print(f"UC table created: {catalog}.{schema}.{table_name}")
+    errors: list[str] = []
+    if str(uc_payload.get("table_type") or "").upper() != "EXTERNAL":
+        errors.append(f"table_type={uc_payload.get('table_type')!r}, expected EXTERNAL")
+    if str(uc_payload.get("data_source_format") or "").upper() != "DELTA":
+        errors.append(
+            "data_source_format="
+            f"{uc_payload.get('data_source_format')!r}, expected DELTA"
+        )
+    if normalize_location(str(uc_payload.get("storage_location") or "")) != normalize_location(
+        storage_location
+    ):
+        errors.append(
+            "storage_location="
+            f"{uc_payload.get('storage_location')!r}, expected {storage_location!r}"
+        )
+
+    uc_columns = [
+        comparable_column(column)
+        for column in sorted(
+            uc_payload.get("columns") or [],
+            key=lambda item: int(item.get("position") or 0),
+        )
+    ]
+    actual_columns = [comparable_column(column) for column in delta_columns(storage_location)]
+    if uc_columns != actual_columns:
+        errors.append(
+            "column contract mismatch: "
+            f"uc={uc_columns!r} actual_delta={actual_columns!r}"
+        )
+
+    if errors:
+        joined_errors = "; ".join(errors)
+        raise RuntimeError(f"UC contract validation failed for {table_name}: {joined_errors}")
 
 
 def main() -> None:
     args = parse_args()
     if not args.uc_api_uri:
-        raise SystemExit("UC_API_URI is required for silver UC registration.")
+        raise SystemExit("UC_API_URI is required for silver UC validation.")
 
     publish_manifest = json.loads(
         Path(args.publish_manifest_path).read_text(encoding="utf-8")
     )
-    ensure_schema(args.uc_api_uri, args.catalog, args.schema)
-
+    failures = []
     for table in publish_manifest.get("tables", []):
         table_name = table["model_name"]
         storage_location = table["data_uri"]
-        if table_exists(args.uc_api_uri, args.catalog, args.schema, table_name):
-            print(f"UC table exists: {args.catalog}.{args.schema}.{table_name}")
-            continue
-        create_table(
-            args.uc_api_uri,
-            args.catalog,
-            args.schema,
-            table_name,
-            storage_location,
+        try:
+            uc_payload = get_uc_table(
+                args.uc_api_uri,
+                args.catalog,
+                args.schema,
+                table_name,
+            )
+            validate_uc_table(table_name, storage_location, uc_payload)
+            print(f"UC contract valid: {args.catalog}.{args.schema}.{table_name}")
+        except Exception as exc:  # noqa: BLE001
+            failures.append(str(exc))
+            print(f"UC contract invalid: {args.catalog}.{args.schema}.{table_name}: {exc}")
+
+    if failures:
+        raise SystemExit(
+            "Silver UC validation failed. Repair UC metadata from the JSON contract "
+            "or adjust the dbt model/publish schema before rerunning.\n"
+            + "\n".join(failures)
         )
 
 

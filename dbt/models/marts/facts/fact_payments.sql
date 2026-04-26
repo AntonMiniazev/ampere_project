@@ -9,9 +9,6 @@ select
     p.payment_method,
     p.payment_status,
     fo.latest_order_status,
-    p._bronze_last_run_id,
-    p._bronze_last_apply_ts,
-    p._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from {{ ref('stg_payments') }} as p
 left join {{ ref('fact_orders') }} as fo

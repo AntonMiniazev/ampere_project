@@ -18,9 +18,6 @@ select
     p.product_name,
     p.category_id,
     p.category_name,
-    a._bronze_last_run_id,
-    a._bronze_last_apply_ts,
-    a._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from latest_assortment as a
 left join {{ ref('dim_stores') }} as s

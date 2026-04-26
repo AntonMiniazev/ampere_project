@@ -15,9 +15,6 @@ select
     ls.latest_order_status,
     ls.latest_status_datetime,
     cast(abs(o.total_amount - coalesce(v.line_sales_amount, 0)) < 0.01 as boolean) as amount_matches_lines,
-    o._bronze_last_run_id,
-    o._bronze_last_apply_ts,
-    o._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from {{ ref('stg_orders') }} as o
 left join {{ ref('dim_clients') }} as c

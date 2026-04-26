@@ -537,9 +537,11 @@ class SilverDagConfig:
     dbt_threads: str
     dbt_command: str
     full_rebuild_dbt_command: str
+    full_rebuild_dbt_threads: str
     run_mode: str
     lookback_days: str
     duckdb_memory_limit: str
+    full_rebuild_duckdb_memory_limit: str
     duckdb_temp_directory: str
     silver_external_root: str
     silver_artifact_root: str
@@ -550,6 +552,10 @@ class SilverDagConfig:
     cpu_limit: str
     memory_request: str
     memory_limit: str
+    full_rebuild_cpu_request: str
+    full_rebuild_cpu_limit: str
+    full_rebuild_memory_request: str
+    full_rebuild_memory_limit: str
     max_active_runs: int
 
 
@@ -616,9 +622,17 @@ def load_silver_dag_config() -> SilverDagConfig:
             "silver_full_rebuild_dbt_command",
             default="dbt build --full-refresh",
         ),
+        full_rebuild_dbt_threads=Variable.get(
+            "silver_full_rebuild_dbt_threads",
+            default="1",
+        ),
         run_mode=Variable.get("silver_run_mode", default="daily_refresh"),
         lookback_days=Variable.get("silver_lookback_days", default="7"),
         duckdb_memory_limit=Variable.get("silver_duckdb_memory_limit", default="7GB"),
+        full_rebuild_duckdb_memory_limit=Variable.get(
+            "silver_full_rebuild_duckdb_memory_limit",
+            default="5GB",
+        ),
         duckdb_temp_directory=Variable.get(
             "silver_duckdb_temp_directory",
             default="/app/artifacts/duckdb_tmp",
@@ -650,5 +664,21 @@ def load_silver_dag_config() -> SilverDagConfig:
         cpu_limit=Variable.get("silver_dbt_cpu_limit", default="4"),
         memory_request=Variable.get("silver_dbt_memory_request", default="2Gi"),
         memory_limit=Variable.get("silver_dbt_memory_limit", default="10Gi"),
+        full_rebuild_cpu_request=Variable.get(
+            "silver_full_rebuild_dbt_cpu_request",
+            default="1",
+        ),
+        full_rebuild_cpu_limit=Variable.get(
+            "silver_full_rebuild_dbt_cpu_limit",
+            default="4",
+        ),
+        full_rebuild_memory_request=Variable.get(
+            "silver_full_rebuild_dbt_memory_request",
+            default="10Gi",
+        ),
+        full_rebuild_memory_limit=Variable.get(
+            "silver_full_rebuild_dbt_memory_limit",
+            default="10Gi",
+        ),
         max_active_runs=int(Variable.get("silver_dag_max_active_runs", default="1")),
     )

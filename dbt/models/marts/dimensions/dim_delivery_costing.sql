@@ -17,9 +17,6 @@ select
     dc.delivery_type_id,
     dt.courier_type,
     dc.tariff,
-    dc._bronze_last_run_id,
-    dc._bronze_last_apply_ts,
-    dc._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from latest_delivery_costing as dc
 left join {{ ref('dim_zones') }} as z

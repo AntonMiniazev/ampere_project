@@ -18,9 +18,6 @@ select
     c.avg_cost,
     c.valid_from,
     c.valid_to,
-    c._bronze_last_run_id,
-    c._bronze_last_apply_ts,
-    c._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from current_costing as c
 left join {{ ref('dim_products') }} as p

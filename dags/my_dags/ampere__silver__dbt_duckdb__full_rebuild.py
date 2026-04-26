@@ -78,8 +78,8 @@ with DAG(
             "RUN_BRONZE_PREFLIGHT": DAG_CONFIG.run_bronze_preflight,
             "RUN_BRONZE_PREFLIGHT_DELTA_SCAN": DAG_CONFIG.run_bronze_preflight_delta_scan,
             "DBT_TARGET": DAG_CONFIG.dbt_target,
-            "THREADS": DAG_CONFIG.dbt_threads,
-            "DUCKDB_MEMORY_LIMIT": DAG_CONFIG.duckdb_memory_limit,
+            "THREADS": DAG_CONFIG.full_rebuild_dbt_threads,
+            "DUCKDB_MEMORY_LIMIT": DAG_CONFIG.full_rebuild_duckdb_memory_limit,
             "DUCKDB_TEMP_DIRECTORY": DAG_CONFIG.duckdb_temp_directory,
             "SILVER_EXTERNAL_ROOT": DAG_CONFIG.silver_external_root,
             "SILVER_DBT_ARTIFACT_ROOT": DAG_CONFIG.silver_artifact_root,
@@ -93,12 +93,12 @@ with DAG(
         arguments=[DAG_CONFIG.full_rebuild_dbt_command],
         container_resources=V1ResourceRequirements(
             requests={
-                "cpu": DAG_CONFIG.cpu_request,
-                "memory": DAG_CONFIG.memory_request,
+                "cpu": DAG_CONFIG.full_rebuild_cpu_request,
+                "memory": DAG_CONFIG.full_rebuild_memory_request,
             },
             limits={
-                "cpu": DAG_CONFIG.cpu_limit,
-                "memory": DAG_CONFIG.memory_limit,
+                "cpu": DAG_CONFIG.full_rebuild_cpu_limit,
+                "memory": DAG_CONFIG.full_rebuild_memory_limit,
             },
         ),
         get_logs=True,

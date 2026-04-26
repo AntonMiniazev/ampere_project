@@ -19,9 +19,6 @@ select
     p.selection_weight,
     p.valid_from,
     p.valid_to,
-    p._bronze_last_run_id,
-    p._bronze_last_apply_ts,
-    p._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from current_products as p
 left join {{ ref('dim_product_categories') }} as c

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 from datetime import datetime, timezone
@@ -12,6 +13,12 @@ import duckdb
 import pyarrow as pa
 from botocore.exceptions import ClientError
 from deltalake import write_deltalake
+from register_silver_uc_tables import (
+    comparable_column,
+    get_uc_table,
+    normalize_location,
+    uc_column_type,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,6 +65,11 @@ PARTITIONED_PUBLISH_MODELS = {
     "fact_delivery_tracking": "status_datetime",
 }
 PUBLISH_PARTITION_COLUMN = "_silver_partition_date"
+BRONZE_LINEAGE_COLUMNS = {
+    "_bronze_last_run_id",
+    "_bronze_last_apply_ts",
+    "_bronze_last_manifest_path",
+}
 
 
 def split_s3_uri(uri: str) -> tuple[str, str]:
@@ -189,21 +201,141 @@ def partition_values(
     return [row[0] for row in rows]
 
 
+def publish_columns(
+    connection: duckdb.DuckDBPyConnection,
+    relation_name: str,
+) -> list[str]:
+    """Return relation columns excluding Bronze-only lineage metadata."""
+    cursor = connection.execute(f"select * from {relation_name} limit 0")
+    return [
+        item[0]
+        for item in cursor.description
+        if item[0] not in BRONZE_LINEAGE_COLUMNS
+    ]
+
+
+def select_column_sql(
+    connection: duckdb.DuckDBPyConnection,
+    relation_name: str,
+) -> str:
+    """Return SQL projection for published columns only."""
+    return ",\n                ".join(
+        f'"{column}"' for column in publish_columns(connection, relation_name)
+    )
+
+
 def relation_as_arrow(
     connection: duckdb.DuckDBPyConnection,
     relation_name: str,
     partition_column: str | None = None,
+    where_clause: str | None = None,
 ) -> pa.Table:
+    where_sql = f"where {where_clause}" if where_clause else ""
+    select_columns = select_column_sql(connection, relation_name)
     if partition_column:
         return connection.sql(
             f"""
             select
-                *,
+                {select_columns},
                 cast({partition_column} as date) as {PUBLISH_PARTITION_COLUMN}
             from {relation_name}
+            {where_sql}
             """
-        ).fetch_arrow_table()
-    return connection.sql(f"select * from {relation_name}").fetch_arrow_table()
+        ).to_arrow_table()
+    return connection.sql(
+        f"select {select_columns} from {relation_name} {where_sql}"
+    ).to_arrow_table()
+
+
+def relation_uc_columns(
+    connection: duckdb.DuckDBPyConnection,
+    relation_name: str,
+    partition_column: str | None,
+) -> list[dict[str, Any]]:
+    """Build UC-comparable columns from the zero-row publish projection."""
+    select_columns = select_column_sql(connection, relation_name)
+    if partition_column:
+        query = f"""
+            select
+                {select_columns},
+                cast({partition_column} as date) as {PUBLISH_PARTITION_COLUMN}
+            from {relation_name}
+            limit 0
+        """
+    else:
+        query = f"select {select_columns} from {relation_name} limit 0"
+    schema = connection.sql(query).to_arrow_table().schema
+    columns = []
+    for position, field in enumerate(schema, start=1):
+        type_name, type_text, type_json = uc_column_type(field.type)
+        columns.append(
+            {
+                "name": field.name,
+                "type_name": type_name,
+                "type_text": type_text,
+                "type_json": type_json,
+                "position": position,
+                "nullable": bool(field.nullable),
+            }
+        )
+    return columns
+
+
+def validate_publish_contract(
+    connection: duckdb.DuckDBPyConnection,
+    model_name: str,
+    relation_name: str,
+    target_uri: str,
+    partition_column: str | None,
+) -> None:
+    """Validate the planned publish schema against deployed UC metadata."""
+    if os.getenv("RUN_SILVER_UC_REGISTRATION", "true").strip().lower() != "true":
+        return
+    uc_api_uri = os.getenv("UC_API_URI", "").strip()
+    if not uc_api_uri:
+        raise RuntimeError("UC_API_URI is required for silver publish contract validation.")
+    catalog = os.getenv("SILVER_UC_CATALOG", os.getenv("BRONZE_UC_CATALOG", "ampere"))
+    schema = os.getenv("SILVER_UC_SCHEMA", "silver")
+    uc_payload = get_uc_table(uc_api_uri, catalog, schema, model_name)
+
+    errors: list[str] = []
+    if str(uc_payload.get("table_type") or "").upper() != "EXTERNAL":
+        errors.append(f"table_type={uc_payload.get('table_type')!r}, expected EXTERNAL")
+    if str(uc_payload.get("data_source_format") or "").upper() != "DELTA":
+        errors.append(
+            "data_source_format="
+            f"{uc_payload.get('data_source_format')!r}, expected DELTA"
+        )
+    if normalize_location(str(uc_payload.get("storage_location") or "")) != normalize_location(
+        target_uri
+    ):
+        errors.append(
+            "storage_location="
+            f"{uc_payload.get('storage_location')!r}, expected {target_uri!r}"
+        )
+
+    uc_columns = [
+        comparable_column(column)
+        for column in sorted(
+            uc_payload.get("columns") or [],
+            key=lambda item: int(item.get("position") or 0),
+        )
+    ]
+    planned_columns = [
+        comparable_column(column)
+        for column in relation_uc_columns(connection, relation_name, partition_column)
+    ]
+    if uc_columns != planned_columns:
+        errors.append(
+            "column contract mismatch: "
+            f"uc={uc_columns!r} planned_publish={planned_columns!r}"
+        )
+    if errors:
+        raise RuntimeError(
+            f"Silver publish contract validation failed for {model_name}: "
+            + "; ".join(errors)
+        )
+    print(f"UC publish contract valid: {catalog}.{schema}.{model_name}")
 
 
 def partition_predicate(partition_values_to_replace: list[str]) -> str | None:
@@ -211,6 +343,39 @@ def partition_predicate(partition_values_to_replace: list[str]) -> str | None:
         return None
     values = ", ".join(f"'{value}'" for value in partition_values_to_replace)
     return f"{PUBLISH_PARTITION_COLUMN} in ({values})"
+
+
+def write_partitioned_delta(
+    connection: duckdb.DuckDBPyConnection,
+    target_uri: str,
+    relation_name: str,
+    partition_column: str,
+    partition_value: str,
+    storage_options: dict[str, str],
+    mode: str,
+    schema_mode: str | None = None,
+    predicate: str | None = None,
+) -> None:
+    """Write one date partition from DuckDB to Delta to cap Arrow memory peaks."""
+    arrow_table = relation_as_arrow(
+        connection,
+        relation_name,
+        partition_column,
+        where_clause=f"cast({partition_column} as date) = date '{partition_value}'",
+    )
+    try:
+        write_deltalake(
+            target_uri,
+            arrow_table,
+            mode=mode,
+            partition_by=[PUBLISH_PARTITION_COLUMN],
+            schema_mode=schema_mode,
+            storage_options=storage_options,
+            predicate=predicate,
+        )
+    finally:
+        del arrow_table
+        gc.collect()
 
 
 def publish_partitioned_model(
@@ -227,6 +392,13 @@ def publish_partitioned_model(
 ) -> dict[str, Any]:
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
     date_partitions = partition_values(connection, relation_name, partition_column)
+    validate_publish_contract(
+        connection,
+        model_name,
+        relation_name,
+        target_uri,
+        partition_column,
+    )
     if not date_partitions:
         print(f"Skipped {model_name}: no rows to publish")
         return {
@@ -248,15 +420,27 @@ def publish_partitioned_model(
             "before daily partition refresh."
         )
 
-    write_deltalake(
-        target_uri,
-        relation_as_arrow(connection, relation_name, partition_column),
-        mode="overwrite",
-        partition_by=[PUBLISH_PARTITION_COLUMN],
-        schema_mode="overwrite" if run_mode == "full_rebuild" else None,
-        storage_options=storage_options,
-        predicate=partition_predicate(date_partitions) if run_mode != "full_rebuild" else None,
-    )
+    for index, partition_value in enumerate(date_partitions, start=1):
+        if run_mode == "full_rebuild":
+            mode = "overwrite" if index == 1 else "append"
+            schema_mode = "overwrite" if index == 1 else None
+            predicate = None
+        else:
+            mode = "overwrite"
+            schema_mode = None
+            predicate = partition_predicate([partition_value])
+
+        write_partitioned_delta(
+            connection,
+            target_uri,
+            relation_name,
+            partition_column,
+            partition_value,
+            storage_options,
+            mode,
+            schema_mode,
+            predicate,
+        )
     print(
         f"Published {model_name}: rows={row_count} partitions={len(date_partitions)} uri={target_uri}"
     )
@@ -283,14 +467,20 @@ def publish_replacement_model(
     relation_name: str,
 ) -> dict[str, Any]:
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
+    validate_publish_contract(connection, model_name, relation_name, target_uri, None)
     clean_legacy_non_delta_prefix(client, bucket, table_prefix)
-    write_deltalake(
-        target_uri,
-        relation_as_arrow(connection, relation_name),
-        mode="overwrite",
-        schema_mode="overwrite",
-        storage_options=storage_options,
-    )
+    arrow_table = relation_as_arrow(connection, relation_name)
+    try:
+        write_deltalake(
+            target_uri,
+            arrow_table,
+            mode="overwrite",
+            schema_mode="overwrite",
+            storage_options=storage_options,
+        )
+    finally:
+        del arrow_table
+        gc.collect()
     print(f"Published {model_name}: rows={row_count} uri={target_uri}")
     return {
         "model_name": model_name,

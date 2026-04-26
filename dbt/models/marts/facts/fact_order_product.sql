@@ -11,9 +11,6 @@ select
     op.quantity,
     op.sales_price,
     cast(op.quantity * op.sales_price as decimal(14, 4)) as line_sales_amount,
-    op._bronze_last_run_id,
-    op._bronze_last_apply_ts,
-    op._bronze_last_manifest_path,
     {{ ampere_silver_lineage_columns() }}
 from {{ ref('stg_order_product') }} as op
 left join {{ ref('fact_orders') }} as fo
