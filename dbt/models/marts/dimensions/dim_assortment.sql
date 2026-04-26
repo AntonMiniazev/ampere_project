@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 with latest_assortment as (
     select *
     from {{ ref('stg_assortment') }}

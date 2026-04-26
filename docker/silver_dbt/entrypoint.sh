@@ -16,6 +16,10 @@ log() { printf '[silver-dbt] %s\n' "$*"; }
 : "${RUN_UC_MAPPING_GENERATION:=true}"
 : "${RUN_BRONZE_PREFLIGHT:=true}"
 : "${RUN_BRONZE_PREFLIGHT_DELTA_SCAN:=true}"
+: "${RUN_SILVER_PUBLISH:=true}"
+: "${RUN_DBT_ARTIFACT_UPLOAD:=true}"
+: "${SILVER_RUN_MODE:=daily_refresh}"
+: "${SILVER_LOOKBACK_DAYS:=7}"
 
 export PATH="/app/.venv/bin:${PATH}"
 export BRONZE_SOURCE_NAME BRONZE_SOURCE_SCHEMA
@@ -95,4 +99,19 @@ grep -Eq "(^|[[:space:]])--fail-fast([[:space:]]|$)" <<<"${RAW_ARGS}" || RAW_ARG
 
 log "dbt version: $("${DBT_BIN}" --version | head -n1)"
 log "exec: ${DBT_BIN} ${RAW_ARGS}"
-exec bash -lc "${DBT_BIN} ${RAW_ARGS}"
+bash -lc "${DBT_BIN} ${RAW_ARGS}"
+
+if [[ "${RUN_SILVER_PUBLISH}" == "true" ]]; then
+  log "publish silver tables"
+  python /app/scripts/publish_silver_tables.py \
+    --duckdb-path "${DUCKDB_PATH}" \
+    --manifest-path "${DBT_PROJECT_DIR}/target/manifest.json" \
+    --run-mode "${SILVER_RUN_MODE}"
+fi
+
+if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" ]]; then
+  log "upload dbt artifacts"
+  python /app/scripts/upload_dbt_artifacts.py \
+    --artifacts-dir "${DBT_PROJECT_DIR}/target" \
+    --log-file "${DBT_LOG_PATH}/dbt.log"
+fi

@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 with latest_delivery_costing as (
     select *
     from {{ ref('stg_delivery_costing') }}

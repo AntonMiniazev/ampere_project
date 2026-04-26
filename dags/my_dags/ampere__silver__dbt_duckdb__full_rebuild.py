@@ -10,7 +10,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
 
-DAG_ID = "ampere__silver__dbt_duckdb__daily"
+DAG_ID = "ampere__silver__dbt_duckdb__full_rebuild"
 DAG_CONFIG = load_silver_dag_config()
 
 
@@ -39,23 +39,23 @@ with DAG(
         "system:dbt",
         "system:duckdb",
         "system:minio",
-        "mode:daily",
+        "mode:full-rebuild",
     ],
     catchup=False,
-    max_active_runs=DAG_CONFIG.max_active_runs,
+    max_active_runs=1,
 ) as dag:
-    # Boundary marker before silver runtime container starts.
+    # Boundary marker before the full silver rebuild container starts.
     start_task = PythonOperator(
-        task_id="run__silver__start",
+        task_id="run__silver__full_rebuild__start",
         python_callable=print,
-        op_args=["##### startSilver #####"],
+        op_args=["##### startSilverFullRebuild #####"],
     )
 
-    # Execute silver dbt runtime in one container so staging + marts share one
-    # DuckDB workspace file for the full invocation.
+    # Full rebuild scans the complete bronze history and replaces published
+    # silver outputs, while preserving the same runtime and source preflight.
     run_silver_dbt = KubernetesPodOperator(
-        task_id="run__silver__dbt_build",
-        name="ampere-silver-dbt",
+        task_id="run__silver__dbt_full_rebuild",
+        name="ampere-silver-dbt-full-rebuild",
         namespace=DAG_CONFIG.namespace,
         image=DAG_CONFIG.image,
         image_pull_policy=DAG_CONFIG.image_pull_policy,
@@ -83,13 +83,13 @@ with DAG(
             "DUCKDB_TEMP_DIRECTORY": DAG_CONFIG.duckdb_temp_directory,
             "SILVER_EXTERNAL_ROOT": DAG_CONFIG.silver_external_root,
             "SILVER_DBT_ARTIFACT_ROOT": DAG_CONFIG.silver_artifact_root,
-            "SILVER_RUN_MODE": DAG_CONFIG.run_mode,
+            "SILVER_RUN_MODE": "full_rebuild",
             "SILVER_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
             "RUN_SILVER_PUBLISH": DAG_CONFIG.run_silver_publish,
             "RUN_DBT_ARTIFACT_UPLOAD": DAG_CONFIG.run_dbt_artifact_upload,
             "LOGICAL_DATE": "{{ ds }}",
         },
-        arguments=[DAG_CONFIG.dbt_command],
+        arguments=[DAG_CONFIG.full_rebuild_dbt_command],
         container_resources=V1ResourceRequirements(
             requests={
                 "cpu": DAG_CONFIG.cpu_request,
@@ -104,11 +104,11 @@ with DAG(
         is_delete_operator_pod=True,
     )
 
-    # Boundary marker after silver build and tests finish.
+    # Boundary marker after full rebuild and publish finish.
     done_task = PythonOperator(
-        task_id="run__silver__done",
+        task_id="run__silver__full_rebuild__done",
         python_callable=print,
-        op_args=["##### doneSilver #####"],
+        op_args=["##### doneSilverFullRebuild #####"],
     )
 
     start_task >> run_silver_dbt >> done_task

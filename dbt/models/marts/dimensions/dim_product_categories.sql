@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 select
     category_id,
     category_name,

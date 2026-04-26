@@ -1,3 +1,5 @@
+{{ config(tags=['event']) }}
+
 select
     concat_ws('|', cast(dt.order_id as varchar), cast(dt.status_datetime as varchar)) as fact_delivery_tracking_key,
     dt.order_id,

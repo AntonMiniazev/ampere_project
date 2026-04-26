@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 select
     delivery_type_id,
     courier_type,

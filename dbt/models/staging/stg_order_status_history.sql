@@ -1,7 +1,9 @@
 {{ config(materialized='table') }}
 
 with source_data as (
-    select * from {{ source('bronze', 'order_status_history') }}
+    select *
+    from {{ source('bronze', 'order_status_history') }}
+    where {{ ampere_silver_date_window_predicate('status_datetime') }}
 ),
 deduped as (
     select

@@ -1,7 +1,9 @@
 {{ config(materialized='table') }}
 
 with source_data as (
-    select * from {{ source('bronze', 'payments') }}
+    select *
+    from {{ source('bronze', 'payments') }}
+    where {{ ampere_silver_date_window_predicate('payment_date') }}
 ),
 deduped as (
     select

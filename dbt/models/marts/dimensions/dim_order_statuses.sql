@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 select
     order_status_id,
     order_status,

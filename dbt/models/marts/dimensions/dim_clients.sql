@@ -1,3 +1,5 @@
+{{ config(tags=['mutable_dimension']) }}
+
 select
     c.client_id,
     c.client_full_name,

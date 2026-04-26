@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 select
     z.zone_id,
     z.store_id,

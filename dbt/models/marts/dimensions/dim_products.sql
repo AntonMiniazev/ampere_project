@@ -1,3 +1,5 @@
+{{ config(tags=['mutable_dimension']) }}
+
 with current_products as (
     select
         *,

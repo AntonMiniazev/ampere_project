@@ -1,3 +1,5 @@
+{{ config(tags=['event']) }}
+
 select
     concat_ws('|', cast(osh.order_id as varchar), cast(osh.status_datetime as varchar)) as fact_order_status_history_key,
     osh.order_id,

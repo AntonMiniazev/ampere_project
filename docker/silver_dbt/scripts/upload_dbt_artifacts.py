@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import ClientError
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,6 +33,16 @@ def split_s3_uri(uri: str) -> tuple[str, str]:
     return bucket, prefix.rstrip("/")
 
 
+def ensure_bucket(client, bucket: str) -> None:
+    try:
+        client.head_bucket(Bucket=bucket)
+    except ClientError as exc:
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code not in {"404", "NoSuchBucket"}:
+            raise
+        client.create_bucket(Bucket=bucket)
+
+
 def main() -> None:
     args = parse_args()
     artifacts_dir = Path(args.artifacts_dir)
@@ -56,6 +67,7 @@ def main() -> None:
         region_name="us-east-1",
         use_ssl=use_ssl,
     )
+    ensure_bucket(s3_client, bucket)
 
     upload_files = [
         artifacts_dir / "manifest.json",

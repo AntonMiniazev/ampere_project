@@ -7,6 +7,7 @@ Responsibilities:
 - package the repo-root `dbt/` project into the image;
 - render `profiles.yml` from runtime environment variables;
 - generate and validate bronze source mapping from UC metadata before dbt runs;
+- publish `publish`-tagged silver tables to the durable silver bucket;
 - persist dbt artifacts to the silver ops bucket;
 - provide the entrypoint used later by Airflow and GitHub Actions image builds.
 
@@ -34,6 +35,7 @@ docker run --rm \
   -e DUCKDB_MEMORY_LIMIT=7GB \
   -e DUCKDB_TEMP_DIRECTORY=/app/artifacts/duckdb_tmp \
   -e SILVER_EXTERNAL_ROOT=s3://ampere-silver/silver \
+  -e SILVER_DBT_ARTIFACT_ROOT=s3://ampere-silver-ops/dbt \
   ampere-silver-dbt \
   "dbt build --select stg_clients"
 ```
@@ -44,6 +46,10 @@ Default runtime contract:
 - local DuckDB path: `/app/artifacts/ampere.duckdb`
 - DuckDB memory cap: `DUCKDB_MEMORY_LIMIT`, default `7GB`
 - DuckDB spill directory: `DUCKDB_TEMP_DIRECTORY`, default `/app/artifacts/duckdb_tmp`
+- durable silver table root: `SILVER_EXTERNAL_ROOT`, default `s3://ampere-silver/silver`
+- dbt artifact root: `SILVER_DBT_ARTIFACT_ROOT`, default `s3://ampere-silver-ops/dbt`
+- silver run mode: `SILVER_RUN_MODE`, default `daily_refresh`; `full_rebuild` disables lookback filtering
+- daily lookback window: `SILVER_LOOKBACK_DAYS`, default `7`
 - bundled helper scripts path: `/app/scripts`
 - bronze source access is path-agnostic in SQL (`source()` only) and resolved at runtime via generated mapping views.
 
@@ -56,6 +62,8 @@ Runtime sequence in entrypoint:
 2. generate UC bronze metadata mapping (`generate_bronze_source_mapping.py`);
 3. validate mapping coverage/freshness + optional `delta_scan` smoke (`validate_bronze_sources.py`);
 4. run dbt command.
+5. publish `publish`-tagged model tables to `SILVER_EXTERNAL_ROOT`; dimensions are replaced, fact/event tables are date-partitioned for daily refresh.
+6. upload dbt artifacts to `SILVER_DBT_ARTIFACT_ROOT`.
 
 Mapping and preflight helpers:
 
@@ -85,3 +93,5 @@ Fallback behavior:
 - if mapping is missing required tables, duplicated, or stale, entrypoint fails before dbt starts;
 - if `RUN_UC_MAPPING_GENERATION=false`, an existing mapping at `BRONZE_SOURCE_MAPPING_PATH` can be reused, but freshness checks still apply;
 - if `RUN_BRONZE_PREFLIGHT_DELTA_SCAN=false`, only mapping structure/freshness is validated (no storage read probe).
+- if `RUN_SILVER_PUBLISH=false`, dbt tables remain local to the runtime DuckDB file and are not copied to MinIO.
+- if `RUN_DBT_ARTIFACT_UPLOAD=false`, dbt artifacts remain local to the runtime container.

@@ -1,3 +1,5 @@
+{{ config(tags=['snapshot_dimension']) }}
+
 select
     store_id,
     city,

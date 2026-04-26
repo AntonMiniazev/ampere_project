@@ -1,3 +1,5 @@
+{{ config(tags=['mutable_dimension']) }}
+
 select
     dr.delivery_resource_id,
     dr.delivery_resource_name,

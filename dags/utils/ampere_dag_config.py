@@ -536,8 +536,15 @@ class SilverDagConfig:
     dbt_target: str
     dbt_threads: str
     dbt_command: str
+    full_rebuild_dbt_command: str
+    run_mode: str
+    lookback_days: str
     duckdb_memory_limit: str
     duckdb_temp_directory: str
+    silver_external_root: str
+    silver_artifact_root: str
+    run_silver_publish: str
+    run_dbt_artifact_upload: str
     cpu_request: str
     cpu_limit: str
     memory_request: str
@@ -604,11 +611,34 @@ def load_silver_dag_config() -> SilverDagConfig:
             "silver_dbt_command",
             default="dbt build",
         ),
+        full_rebuild_dbt_command=Variable.get(
+            "silver_full_rebuild_dbt_command",
+            default="dbt build --full-refresh",
+        ),
+        run_mode=Variable.get("silver_run_mode", default="daily_refresh"),
+        lookback_days=Variable.get("silver_lookback_days", default="7"),
         duckdb_memory_limit=Variable.get("silver_duckdb_memory_limit", default="7GB"),
         duckdb_temp_directory=Variable.get(
             "silver_duckdb_temp_directory",
             default="/app/artifacts/duckdb_tmp",
         ),
+        silver_external_root=Variable.get(
+            "silver_external_root",
+            default="s3://ampere-silver/silver",
+        ),
+        silver_artifact_root=Variable.get(
+            "silver_dbt_artifact_root",
+            default="s3://ampere-silver-ops/dbt",
+        ),
+        run_silver_publish=Variable.get("run_silver_publish", default="true")
+        .strip()
+        .lower(),
+        run_dbt_artifact_upload=Variable.get(
+            "run_dbt_artifact_upload",
+            default="true",
+        )
+        .strip()
+        .lower(),
         cpu_request=Variable.get("silver_dbt_cpu_request", default="500m"),
         cpu_limit=Variable.get("silver_dbt_cpu_limit", default="4"),
         memory_request=Variable.get("silver_dbt_memory_request", default="2Gi"),

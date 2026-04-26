@@ -27,3 +27,24 @@ selectors:
     definition:
       method: tag
       value: publish
+
+  - name: silver_snapshot_dimensions
+    description: Silver dimensions derived from bronze snapshot tables.
+    definition:
+      method: tag
+      value: snapshot_dimension
+
+  - name: silver_mutable_dimensions
+    description: Silver dimensions derived from bronze mutable_dims tables.
+    definition:
+      method: tag
+      value: mutable_dimension
+
+  - name: silver_facts_events
+    description: Silver transactional facts and event facts with daily lookback filtering.
+    definition:
+      union:
+        - method: tag
+          value: fact
+        - method: tag
+          value: event
