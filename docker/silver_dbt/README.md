@@ -58,7 +58,7 @@ Default runtime contract:
 
 DuckDB memory and spill-directory values are rendered as connection-time `config_options`. They must be applied before extensions or queries touch temporary storage.
 
-Airflow full rebuild defaults are intentionally more conservative than daily refresh: `silver_full_rebuild_dbt_threads=1`, `silver_full_rebuild_duckdb_memory_limit=5GB`, `silver_full_rebuild_dbt_memory_request=10Gi`, and `silver_full_rebuild_dbt_memory_limit=10Gi`.
+Airflow full rebuild defaults are intentionally more conservative than daily refresh: `silver_full_rebuild_dbt_threads=1`, `silver_full_rebuild_duckdb_memory_limit=5GB`, `silver_full_rebuild_dbt_memory_request=8Gi`, and `silver_full_rebuild_dbt_memory_limit=10Gi`. Kubernetes schedules the pod from the memory request, while the memory limit remains the maximum runtime allowance.
 
 This image scaffold assumes the silver authoring project lives in the repo-root `dbt/` folder.
 
