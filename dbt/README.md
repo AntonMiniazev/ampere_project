@@ -60,6 +60,7 @@ dbt build --selector silver_staging --project-dir ./dbt --profiles-dir ./dbt_pro
 - View definitions are created in `on-run-start` by `ampere_prepare_bronze_sources()` from generated UC metadata mapping.
 - Silver model SQL remains path-agnostic and uses `source()` only.
 - Large transactional staging models are materialized as DuckDB tables so tests, intermediate rollups, and fact models reuse one prepared relation instead of repeatedly scanning bronze Delta files.
+- `stg_order_product` intentionally avoids an extra silver hash-deduplication pass; the curated fact uniqueness test remains the grain guard.
 - `int_order_value_rollup` and `int_orders_latest_status` are materialized as tables because they are shared by facts and tests.
 - Required runtime variables:
   - `BRONZE_SOURCE_NAME` (default `bronze`)

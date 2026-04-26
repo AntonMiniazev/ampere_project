@@ -160,7 +160,7 @@ models:
         tests: [not_null, positive_number]
 
   - name: stg_order_product
-    description: Order line items deduplicated to order, product, and order-date grain.
+    description: Order line items normalized from the bronze fact table without an extra silver hash-deduplication pass.
     columns:
       - name: order_id
         tests:
