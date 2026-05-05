@@ -6,6 +6,7 @@ from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import Variable
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
@@ -87,6 +88,25 @@ with DAG(
             "SILVER_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
             "RUN_SILVER_PUBLISH": DAG_CONFIG.run_silver_publish,
             "RUN_SILVER_UC_REGISTRATION": DAG_CONFIG.run_silver_uc_registration,
+            "GOLD_SOURCE_MODE": "ref",
+            "GOLD_EXTERNAL_ROOT": Variable.get(
+                "gold_external_root", default="s3://ampere-gold/gold"
+            ),
+            "GOLD_DBT_ARTIFACT_ROOT": Variable.get(
+                "gold_dbt_artifact_root", default="s3://ampere-gold-ops/dbt"
+            ),
+            "GOLD_RUN_MODE": "full_rebuild",
+            "GOLD_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
+            "GOLD_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
+            "GOLD_UC_SCHEMA": Variable.get("spark_uc_gold_schema", default="gold"),
+            "RUN_GOLD_PUBLISH": Variable.get("run_gold_publish", default="true")
+            .strip()
+            .lower(),
+            "RUN_GOLD_UC_REGISTRATION": Variable.get(
+                "run_gold_uc_registration", default="true"
+            )
+            .strip()
+            .lower(),
             "RUN_DBT_ARTIFACT_UPLOAD": DAG_CONFIG.run_dbt_artifact_upload,
             "LOGICAL_DATE": "{{ ds }}",
         },

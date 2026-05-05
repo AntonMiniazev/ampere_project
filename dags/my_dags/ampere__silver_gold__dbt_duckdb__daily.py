@@ -11,7 +11,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
 
-DAG_ID = "ampere__silver__dbt_duckdb__daily"
+DAG_ID = "ampere__silver_gold__dbt_duckdb__daily"
 DAG_CONFIG = load_silver_dag_config()
 
 
@@ -36,7 +36,9 @@ with DAG(
     schedule=None,
     start_date=datetime(2025, 8, 24),
     tags=[
+        "layer:silver_gold",
         "layer:silver",
+        "layer:gold",
         "system:dbt",
         "system:duckdb",
         "system:minio",
@@ -45,18 +47,18 @@ with DAG(
     catchup=False,
     max_active_runs=DAG_CONFIG.max_active_runs,
 ) as dag:
-    # Boundary marker before silver runtime container starts.
+    # Boundary marker before the combined silver and gold runtime starts.
     start_task = PythonOperator(
-        task_id="run__silver__start",
+        task_id="run__silver_gold__start",
         python_callable=print,
-        op_args=["##### startSilver #####"],
+        op_args=["##### startSilverGold #####"],
     )
 
-    # Execute silver dbt runtime in one container so staging + marts share one
-    # DuckDB workspace file for the full invocation.
+    # Execute silver and gold in one container so gold can reuse freshly built
+    # silver relations from the same DuckDB workspace.
     run_silver_dbt = KubernetesPodOperator(
-        task_id="run__silver__dbt_build",
-        name="ampere-dbt-silver",
+        task_id="run__silver_gold__dbt_build",
+        name="ampere-dbt-silver-gold",
         namespace=DAG_CONFIG.namespace,
         image=DAG_CONFIG.image,
         image_pull_policy=DAG_CONFIG.image_pull_policy,
@@ -91,6 +93,9 @@ with DAG(
             "GOLD_SOURCE_MODE": "ref",
             "GOLD_EXTERNAL_ROOT": Variable.get(
                 "gold_external_root", default="s3://ampere-gold/gold"
+            ),
+            "GOLD_DBT_ARTIFACT_ROOT": Variable.get(
+                "gold_dbt_artifact_root", default="s3://ampere-gold-ops/dbt"
             ),
             "GOLD_RUN_MODE": DAG_CONFIG.run_mode,
             "GOLD_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
@@ -127,11 +132,11 @@ with DAG(
         is_delete_operator_pod=True,
     )
 
-    # Boundary marker after silver build and tests finish.
+    # Boundary marker after silver and gold build/publish steps finish.
     done_task = PythonOperator(
-        task_id="run__silver__done",
+        task_id="run__silver_gold__done",
         python_callable=print,
-        op_args=["##### doneSilver #####"],
+        op_args=["##### doneSilverGold #####"],
     )
 
     start_task >> run_silver_dbt >> done_task

@@ -42,6 +42,7 @@ docker run --rm \
   -e DUCKDB_TEMP_DIRECTORY=/app/artifacts/duckdb_tmp \
   -e SILVER_EXTERNAL_ROOT=s3://ampere-silver/silver \
   -e SILVER_DBT_ARTIFACT_ROOT=s3://ampere-silver-ops/dbt \
+  -e GOLD_DBT_ARTIFACT_ROOT=s3://ampere-gold-ops/dbt \
   ampere-dbt \
   "dbt build --select stg_clients"
 ```
@@ -53,7 +54,8 @@ Default runtime contract:
 - DuckDB memory cap: `DUCKDB_MEMORY_LIMIT`, default `7GB` for daily runs and `5GB` for the Airflow full rebuild DAG
 - DuckDB spill directory: `DUCKDB_TEMP_DIRECTORY`, default `/app/artifacts/duckdb_tmp`
 - durable silver table root: `SILVER_EXTERNAL_ROOT`, default `s3://ampere-silver/silver`
-- dbt artifact root: `SILVER_DBT_ARTIFACT_ROOT`, default `s3://ampere-silver-ops/dbt`
+- silver dbt artifact root: `SILVER_DBT_ARTIFACT_ROOT`, default `s3://ampere-silver-ops/dbt`
+- gold dbt artifact root: `GOLD_DBT_ARTIFACT_ROOT`, default `s3://ampere-gold-ops/dbt`
 - silver run mode: `SILVER_RUN_MODE`, default `daily_refresh`; `full_rebuild` disables lookback filtering
 - daily lookback window: `SILVER_LOOKBACK_DAYS`, default `7`
 - silver UC registration: `RUN_SILVER_UC_REGISTRATION`, default `true`
@@ -74,13 +76,14 @@ Runtime sequence in entrypoint:
 3. validate mapping coverage/freshness + optional `delta_scan` smoke (`validate_bronze_sources.py`);
 4. run dbt command.
 5. validate each planned published table against existing UC metadata when `RUN_SILVER_UC_REGISTRATION=true`.
-6. publish `publish`-tagged model tables to `SILVER_EXTERNAL_ROOT` as Delta tables; dimensions are replaced, fact/event tables are written one date partition at a time to keep Arrow and Delta writer memory bounded.
+6. publish `publish`-tagged model tables to the layer external root as Delta tables; replacement models are overwritten and partitioned models are written one date partition at a time to keep Arrow and Delta writer memory bounded. If daily mode finds a missing partitioned Delta table, the publish step automatically bootstraps that layer with full-rebuild publish mode for the run.
 7. check published silver Delta locations are readable and match existing UC locations/formats when `RUN_SILVER_UC_REGISTRATION=true`.
-8. upload dbt artifacts to `SILVER_DBT_ARTIFACT_ROOT`.
+8. upload dbt artifacts and `silver_publish_manifest.json` to `SILVER_DBT_ARTIFACT_ROOT` when silver publish is enabled.
+9. upload dbt artifacts and `gold_publish_manifest.json` to `GOLD_DBT_ARTIFACT_ROOT` when gold publish is enabled.
 
-Gold runs use this same image and call dbt with gold selectors. Gold publish
-and UC validation hooks can be enabled later as dedicated runtime scripts, the
-same way silver publish and silver UC registration are wired today.
+Gold runs use this same image and call dbt with gold selectors. Gold publish,
+UC validation, and artifact upload use the same shared runtime scripts with
+layer-specific roots.
 
 Mapping and preflight helpers:
 

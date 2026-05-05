@@ -11,7 +11,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
 
-DAG_ID = "ampere__gold__dbt_duckdb__daily"
+DAG_ID = "ampere__gold__refresh_from_silver__adhoc"
 DAG_CONFIG = load_silver_dag_config()
 
 
@@ -40,20 +40,20 @@ with DAG(
         "system:dbt",
         "system:duckdb",
         "system:minio",
-        "mode:daily",
+        "mode:adhoc",
     ],
     catchup=False,
     max_active_runs=1,
 ) as dag:
     start_task = PythonOperator(
-        task_id="run__gold__start",
+        task_id="run__gold__refresh_from_silver__start",
         python_callable=print,
-        op_args=["##### startGold #####"],
+        op_args=["##### startGoldRefreshFromSilver #####"],
     )
 
     run_gold_dbt = KubernetesPodOperator(
-        task_id="run__gold__dbt_build",
-        name="ampere-dbt-gold",
+        task_id="run__gold__dbt_refresh_from_silver",
+        name="ampere-dbt-gold-refresh-from-silver",
         namespace=DAG_CONFIG.namespace,
         image=DAG_CONFIG.image,
         image_pull_policy=DAG_CONFIG.image_pull_policy,
@@ -99,6 +99,9 @@ with DAG(
             "GOLD_EXTERNAL_ROOT": Variable.get(
                 "gold_external_root", default="s3://ampere-gold/gold"
             ),
+            "GOLD_DBT_ARTIFACT_ROOT": Variable.get(
+                "gold_dbt_artifact_root", default="s3://ampere-gold-ops/dbt"
+            ),
             "GOLD_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
             "GOLD_UC_SCHEMA": Variable.get("spark_uc_gold_schema", default="gold"),
             "GOLD_RUN_MODE": "daily_refresh",
@@ -141,9 +144,9 @@ with DAG(
     )
 
     done_task = PythonOperator(
-        task_id="run__gold__done",
+        task_id="run__gold__refresh_from_silver__done",
         python_callable=print,
-        op_args=["##### doneGold #####"],
+        op_args=["##### doneGoldRefreshFromSilver #####"],
     )
 
     start_task >> run_gold_dbt >> done_task

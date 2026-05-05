@@ -31,9 +31,11 @@ log() { printf '[ampere-dbt] %s\n' "$*"; }
 : "${SILVER_RUN_MODE:=daily_refresh}"
 : "${SILVER_LOOKBACK_DAYS:=7}"
 : "${SILVER_PUBLISH_MANIFEST_PATH:=/app/artifacts/silver_publish_manifest.json}"
+: "${SILVER_DBT_ARTIFACT_ROOT:=s3://ampere-silver-ops/dbt}"
 : "${GOLD_RUN_MODE:=daily_refresh}"
 : "${GOLD_LOOKBACK_DAYS:=${SILVER_LOOKBACK_DAYS}}"
 : "${GOLD_PUBLISH_MANIFEST_PATH:=/app/artifacts/gold_publish_manifest.json}"
+: "${GOLD_DBT_ARTIFACT_ROOT:=s3://ampere-gold-ops/dbt}"
 
 export PATH="/app/.venv/bin:${PATH}"
 export BRONZE_SOURCE_NAME BRONZE_SOURCE_SCHEMA
@@ -176,9 +178,28 @@ if [[ "${RUN_GOLD_PUBLISH}" == "true" && "${RUN_GOLD_UC_REGISTRATION}" == "true"
     --schema "${GOLD_UC_SCHEMA:-gold}"
 fi
 
-if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" ]]; then
+if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" && "${RUN_SILVER_PUBLISH}" == "true" ]]; then
+  log "upload silver dbt artifacts"
+  python /app/scripts/upload_dbt_artifacts.py \
+    --artifacts-dir "${DBT_PROJECT_DIR}/target" \
+    --log-file "${DBT_LOG_PATH}/dbt.log" \
+    --upload-root "${SILVER_DBT_ARTIFACT_ROOT}" \
+    --extra-file "${SILVER_PUBLISH_MANIFEST_PATH}"
+fi
+
+if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" && "${RUN_GOLD_PUBLISH}" == "true" ]]; then
+  log "upload gold dbt artifacts"
+  python /app/scripts/upload_dbt_artifacts.py \
+    --artifacts-dir "${DBT_PROJECT_DIR}/target" \
+    --log-file "${DBT_LOG_PATH}/dbt.log" \
+    --upload-root "${GOLD_DBT_ARTIFACT_ROOT}" \
+    --extra-file "${GOLD_PUBLISH_MANIFEST_PATH}"
+fi
+
+if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" && "${RUN_SILVER_PUBLISH}" != "true" && "${RUN_GOLD_PUBLISH}" != "true" ]]; then
   log "upload dbt artifacts"
   python /app/scripts/upload_dbt_artifacts.py \
     --artifacts-dir "${DBT_PROJECT_DIR}/target" \
-    --log-file "${DBT_LOG_PATH}/dbt.log"
+    --log-file "${DBT_LOG_PATH}/dbt.log" \
+    --upload-root "${DBT_ARTIFACT_ROOT:-${SILVER_DBT_ARTIFACT_ROOT}}"
 fi

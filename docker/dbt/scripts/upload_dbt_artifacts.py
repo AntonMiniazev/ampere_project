@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Upload dbt artifacts to the silver ops bucket."
+        description="Upload dbt artifacts to a layer ops bucket."
     )
     parser.add_argument(
         "--artifacts-dir",
@@ -22,6 +22,20 @@ def parse_args() -> argparse.Namespace:
         "--log-file",
         default="/app/logs/dbt.log",
         help="Optional dbt log file to upload with the artifacts.",
+    )
+    parser.add_argument(
+        "--upload-root",
+        default=os.getenv(
+            "DBT_ARTIFACT_ROOT",
+            os.getenv("SILVER_DBT_ARTIFACT_ROOT", "s3://ampere-silver-ops/dbt"),
+        ),
+        help="S3 root where artifacts are uploaded.",
+    )
+    parser.add_argument(
+        "--extra-file",
+        action="append",
+        default=[],
+        help="Additional local file to upload, such as a layer publish manifest.",
     )
     return parser.parse_args()
 
@@ -47,7 +61,7 @@ def main() -> None:
     args = parse_args()
     artifacts_dir = Path(args.artifacts_dir)
     log_file = Path(args.log_file)
-    upload_root = os.getenv("SILVER_DBT_ARTIFACT_ROOT", "s3://ampere-silver-ops/dbt")
+    upload_root = args.upload_root
     logical_date = os.getenv("LOGICAL_DATE", "unknown-date")
 
     run_results = json.loads((artifacts_dir / "run_results.json").read_text(encoding="utf-8"))
@@ -76,6 +90,10 @@ def main() -> None:
     ]
     if log_file.exists():
         upload_files.append(log_file)
+    for extra_file in args.extra_file:
+        file_path = Path(extra_file)
+        if file_path.exists():
+            upload_files.append(file_path)
 
     uploaded: list[str] = []
     for file_path in upload_files:

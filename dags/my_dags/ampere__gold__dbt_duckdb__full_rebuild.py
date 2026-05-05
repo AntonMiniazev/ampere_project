@@ -100,6 +100,9 @@ with DAG(
             "GOLD_EXTERNAL_ROOT": Variable.get(
                 "gold_external_root", default="s3://ampere-gold/gold"
             ),
+            "GOLD_DBT_ARTIFACT_ROOT": Variable.get(
+                "gold_dbt_artifact_root", default="s3://ampere-gold-ops/dbt"
+            ),
             "GOLD_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
             "GOLD_UC_SCHEMA": Variable.get("spark_uc_gold_schema", default="gold"),
             "GOLD_RUN_MODE": "full_rebuild",

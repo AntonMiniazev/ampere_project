@@ -214,8 +214,8 @@ with DAG(
     # Trigger silver transformation once bronze finished successfully for the
     # same logical date. This keeps bronze -> silver orchestration automatic.
     trigger_silver = TriggerDagRunOperator(
-        task_id="trigger__silver__dbt_duckdb__daily",
-        trigger_dag_id="ampere__silver__dbt_duckdb__daily",
+        task_id="trigger__silver_gold__dbt_duckdb__daily",
+        trigger_dag_id="ampere__silver_gold__dbt_duckdb__daily",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
         wait_for_completion=True,

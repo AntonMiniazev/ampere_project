@@ -571,6 +571,45 @@ def publish_replacement_model(
     }
 
 
+def table_prefix_for(root_prefix: str, table_name: str) -> str:
+    """Return the object-storage prefix used for one published table."""
+    return "/".join(part for part in [root_prefix, table_name] if part)
+
+
+def choose_effective_run_mode(
+    *,
+    requested_run_mode: str,
+    layer: str,
+    models: list[dict[str, str]],
+    partitioned_models: dict[str, str],
+    client: Any,
+    bucket: str,
+    root_prefix: str,
+) -> str:
+    """Promote first daily publish to full rebuild when partitioned Delta outputs are absent."""
+    if requested_run_mode != "daily_refresh":
+        return requested_run_mode
+
+    missing_delta_tables: list[str] = []
+    for model in models:
+        table_name = model["table_name"]
+        if table_name not in partitioned_models:
+            continue
+        table_prefix = table_prefix_for(root_prefix, table_name)
+        if not prefix_has_delta_log(client, bucket, table_prefix):
+            missing_delta_tables.append(table_name)
+
+    if not missing_delta_tables:
+        return requested_run_mode
+
+    print(
+        f"{layer} daily publish bootstrap: missing Delta log for "
+        f"{', '.join(sorted(missing_delta_tables))}. "
+        "Using full_rebuild publish mode for this run."
+    )
+    return "full_rebuild"
+
+
 def main() -> None:
     args = parse_args()
     layer = args.layer
@@ -588,6 +627,15 @@ def main() -> None:
     models = publish_models(manifest_path, layer)
     if not models:
         raise SystemExit(f"No {layer} publish-tagged dbt models were found in manifest.")
+    effective_run_mode = choose_effective_run_mode(
+        requested_run_mode=run_mode,
+        layer=layer,
+        models=models,
+        partitioned_models=partitioned_models,
+        client=client,
+        bucket=bucket,
+        root_prefix=root_prefix,
+    )
 
     connection = duckdb.connect(args.duckdb_path, read_only=False)
 
@@ -595,7 +643,7 @@ def main() -> None:
     for model in models:
         model_name = model["model_name"]
         table_name = model["table_name"]
-        table_prefix = "/".join(part for part in [root_prefix, table_name] if part)
+        table_prefix = table_prefix_for(root_prefix, table_name)
         target_uri = f"s3://{bucket}/{table_prefix}"
         relation_name = model["relation_name"]
         partition_column = partitioned_models.get(table_name)
@@ -614,7 +662,7 @@ def main() -> None:
                     relation_name,
                     partition_column,
                     publish_partition_column,
-                    run_mode,
+                    effective_run_mode,
                 )
             )
         else:
