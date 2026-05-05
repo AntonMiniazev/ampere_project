@@ -304,7 +304,7 @@ def main() -> None:
     )
     failures = []
     for table in publish_manifest.get("tables", []):
-        table_name = table["model_name"]
+        table_name = table.get("table_name") or table["model_name"]
         storage_location = table["data_uri"]
         try:
             uc_payload = get_uc_table(

@@ -23,7 +23,13 @@ from register_silver_uc_tables import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Publish dbt silver tables from the local DuckDB file to MinIO."
+        description="Publish dbt layer tables from the local DuckDB file to MinIO."
+    )
+    parser.add_argument(
+        "--layer",
+        default=os.getenv("PUBLISH_LAYER", "silver"),
+        choices=["silver", "gold"],
+        help="Layer tag and defaults used for publish discovery and UC validation.",
     )
     parser.add_argument(
         "--duckdb-path",
@@ -37,39 +43,70 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--external-root",
-        default=os.getenv("SILVER_EXTERNAL_ROOT", "s3://ampere-silver/silver"),
-        help="S3 root for durable silver table exports.",
+        default="",
+        help="S3 root for durable table exports. Defaults by layer when omitted.",
     )
     parser.add_argument(
         "--run-mode",
-        default=os.getenv("SILVER_RUN_MODE", "daily_refresh"),
+        default="",
         choices=["daily_refresh", "full_rebuild"],
-        help="Silver run mode used to choose full or differential publish behavior.",
+        help="Run mode used to choose full or differential publish behavior.",
     )
     parser.add_argument(
         "--local-manifest-output",
-        default=os.getenv(
-            "SILVER_PUBLISH_MANIFEST_PATH",
-            "/app/artifacts/silver_publish_manifest.json",
-        ),
+        default="",
         help="Local copy of the publish manifest for downstream runtime steps.",
     )
     return parser.parse_args()
 
 
 PARTITIONED_PUBLISH_MODELS = {
-    "fact_orders": "order_date",
-    "fact_order_product": "order_date",
-    "fact_payments": "payment_date",
-    "fact_order_status_history": "status_datetime",
-    "fact_delivery_tracking": "status_datetime",
+    "silver": {
+        "fact_orders": "order_date",
+        "fact_order_product": "order_date",
+        "fact_payments": "payment_date",
+        "fact_order_status_history": "status_datetime",
+        "fact_delivery_tracking": "status_datetime",
+    },
+    "gold": {
+        "dim_costing": "order_date",
+        "fct_orders_sales": "order_date",
+        "fct_deliveries": "status_datetime",
+        "fct_order_margin": "order_date",
+    },
 }
-PUBLISH_PARTITION_COLUMN = "_silver_partition_date"
+PUBLISH_PARTITION_COLUMNS = {
+    "silver": "_silver_partition_date",
+    "gold": "_gold_partition_date",
+}
 BRONZE_LINEAGE_COLUMNS = {
     "_bronze_last_run_id",
     "_bronze_last_apply_ts",
     "_bronze_last_manifest_path",
 }
+
+
+def default_external_root(layer: str) -> str:
+    if layer == "gold":
+        return os.getenv("GOLD_EXTERNAL_ROOT", "s3://ampere-gold/gold")
+    return os.getenv("SILVER_EXTERNAL_ROOT", "s3://ampere-silver/silver")
+
+
+def default_run_mode(layer: str) -> str:
+    env_name = "GOLD_RUN_MODE" if layer == "gold" else "SILVER_RUN_MODE"
+    return os.getenv(env_name, "daily_refresh")
+
+
+def default_publish_manifest_path(layer: str) -> str:
+    if layer == "gold":
+        return os.getenv(
+            "GOLD_PUBLISH_MANIFEST_PATH",
+            "/app/artifacts/gold_publish_manifest.json",
+        )
+    return os.getenv(
+        "SILVER_PUBLISH_MANIFEST_PATH",
+        "/app/artifacts/silver_publish_manifest.json",
+    )
 
 
 def split_s3_uri(uri: str) -> tuple[str, str]:
@@ -148,19 +185,27 @@ def clean_legacy_non_delta_prefix(client: Any, bucket: str, table_prefix: str) -
     delete_prefix(client, bucket, table_prefix.rstrip("/") + "/")
 
 
-def publish_models(manifest_path: Path) -> list[dict[str, str]]:
+def publish_models(manifest_path: Path, layer: str) -> list[dict[str, str]]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     published: list[dict[str, str]] = []
     for node in manifest.get("nodes", {}).values():
         if node.get("resource_type") != "model":
             continue
-        if "publish" not in node.get("tags", []):
+        tags = node.get("tags", [])
+        if "publish" not in tags or layer not in tags:
             continue
         relation_name = node.get("relation_name")
         model_name = node.get("name")
-        if relation_name and model_name:
-            published.append({"model_name": model_name, "relation_name": relation_name})
-    return sorted(published, key=lambda item: item["model_name"])
+        table_name = node.get("alias") or model_name
+        if relation_name and model_name and table_name:
+            published.append(
+                {
+                    "model_name": model_name,
+                    "table_name": table_name,
+                    "relation_name": relation_name,
+                }
+            )
+    return sorted(published, key=lambda item: item["table_name"])
 
 
 def write_publish_manifest(
@@ -227,6 +272,7 @@ def select_column_sql(
 def relation_as_arrow(
     connection: duckdb.DuckDBPyConnection,
     relation_name: str,
+    publish_partition_column: str,
     partition_column: str | None = None,
     where_clause: str | None = None,
 ) -> pa.Table:
@@ -237,7 +283,7 @@ def relation_as_arrow(
             f"""
             select
                 {select_columns},
-                cast({partition_column} as date) as {PUBLISH_PARTITION_COLUMN}
+                cast({partition_column} as date) as {publish_partition_column}
             from {relation_name}
             {where_sql}
             """
@@ -251,6 +297,7 @@ def relation_uc_columns(
     connection: duckdb.DuckDBPyConnection,
     relation_name: str,
     partition_column: str | None,
+    publish_partition_column: str,
 ) -> list[dict[str, Any]]:
     """Build UC-comparable columns from the zero-row publish projection."""
     select_columns = select_column_sql(connection, relation_name)
@@ -258,7 +305,7 @@ def relation_uc_columns(
         query = f"""
             select
                 {select_columns},
-                cast({partition_column} as date) as {PUBLISH_PARTITION_COLUMN}
+                cast({partition_column} as date) as {publish_partition_column}
             from {relation_name}
             limit 0
         """
@@ -283,20 +330,23 @@ def relation_uc_columns(
 
 def validate_publish_contract(
     connection: duckdb.DuckDBPyConnection,
-    model_name: str,
+    layer: str,
+    table_name: str,
     relation_name: str,
     target_uri: str,
     partition_column: str | None,
+    publish_partition_column: str,
 ) -> None:
     """Validate the planned publish schema against deployed UC metadata."""
-    if os.getenv("RUN_SILVER_UC_REGISTRATION", "true").strip().lower() != "true":
+    validation_env = "RUN_GOLD_UC_REGISTRATION" if layer == "gold" else "RUN_SILVER_UC_REGISTRATION"
+    if os.getenv(validation_env, "true").strip().lower() != "true":
         return
     uc_api_uri = os.getenv("UC_API_URI", "").strip()
     if not uc_api_uri:
-        raise RuntimeError("UC_API_URI is required for silver publish contract validation.")
-    catalog = os.getenv("SILVER_UC_CATALOG", os.getenv("BRONZE_UC_CATALOG", "ampere"))
-    schema = os.getenv("SILVER_UC_SCHEMA", "silver")
-    uc_payload = get_uc_table(uc_api_uri, catalog, schema, model_name)
+        raise RuntimeError(f"UC_API_URI is required for {layer} publish contract validation.")
+    catalog = os.getenv(f"{layer.upper()}_UC_CATALOG", os.getenv("BRONZE_UC_CATALOG", "ampere"))
+    schema = os.getenv(f"{layer.upper()}_UC_SCHEMA", layer)
+    uc_payload = get_uc_table(uc_api_uri, catalog, schema, table_name)
 
     errors: list[str] = []
     if str(uc_payload.get("table_type") or "").upper() != "EXTERNAL":
@@ -323,7 +373,12 @@ def validate_publish_contract(
     ]
     planned_columns = [
         comparable_column(column)
-        for column in relation_uc_columns(connection, relation_name, partition_column)
+        for column in relation_uc_columns(
+            connection,
+            relation_name,
+            partition_column,
+            publish_partition_column,
+        )
     ]
     if uc_columns != planned_columns:
         errors.append(
@@ -332,17 +387,20 @@ def validate_publish_contract(
         )
     if errors:
         raise RuntimeError(
-            f"Silver publish contract validation failed for {model_name}: "
+            f"{layer.capitalize()} publish contract validation failed for {table_name}: "
             + "; ".join(errors)
         )
-    print(f"UC publish contract valid: {catalog}.{schema}.{model_name}")
+    print(f"UC publish contract valid: {catalog}.{schema}.{table_name}")
 
 
-def partition_predicate(partition_values_to_replace: list[str]) -> str | None:
+def partition_predicate(
+    publish_partition_column: str,
+    partition_values_to_replace: list[str],
+) -> str | None:
     if not partition_values_to_replace:
         return None
     values = ", ".join(f"'{value}'" for value in partition_values_to_replace)
-    return f"{PUBLISH_PARTITION_COLUMN} in ({values})"
+    return f"{publish_partition_column} in ({values})"
 
 
 def write_partitioned_delta(
@@ -350,6 +408,7 @@ def write_partitioned_delta(
     target_uri: str,
     relation_name: str,
     partition_column: str,
+    publish_partition_column: str,
     partition_value: str,
     storage_options: dict[str, str],
     mode: str,
@@ -360,6 +419,7 @@ def write_partitioned_delta(
     arrow_table = relation_as_arrow(
         connection,
         relation_name,
+        publish_partition_column,
         partition_column,
         where_clause=f"cast({partition_column} as date) = date '{partition_value}'",
     )
@@ -368,7 +428,7 @@ def write_partitioned_delta(
             target_uri,
             arrow_table,
             mode=mode,
-            partition_by=[PUBLISH_PARTITION_COLUMN],
+            partition_by=[publish_partition_column],
             schema_mode=schema_mode,
             storage_options=storage_options,
             predicate=predicate,
@@ -385,30 +445,36 @@ def publish_partitioned_model(
     table_prefix: str,
     storage_options: dict[str, str],
     target_uri: str,
+    layer: str,
     model_name: str,
+    table_name: str,
     relation_name: str,
     partition_column: str,
+    publish_partition_column: str,
     run_mode: str,
 ) -> dict[str, Any]:
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
     date_partitions = partition_values(connection, relation_name, partition_column)
     validate_publish_contract(
         connection,
-        model_name,
+        layer,
+        table_name,
         relation_name,
         target_uri,
         partition_column,
+        publish_partition_column,
     )
     if not date_partitions:
-        print(f"Skipped {model_name}: no rows to publish")
+        print(f"Skipped {table_name}: no rows to publish")
         return {
             "model_name": model_name,
+            "table_name": table_name,
             "relation_name": relation_name,
             "row_count": row_count,
             "data_uri": target_uri,
             "publish_mode": "delta_partitioned",
             "partition_column": partition_column,
-            "publish_partition_column": PUBLISH_PARTITION_COLUMN,
+            "publish_partition_column": publish_partition_column,
             "partition_values": [],
         }
 
@@ -416,7 +482,7 @@ def publish_partitioned_model(
         clean_legacy_non_delta_prefix(client, bucket, table_prefix)
     elif not prefix_has_delta_log(client, bucket, table_prefix):
         raise RuntimeError(
-            f"{model_name} is not a Delta table yet. Run the silver full rebuild "
+            f"{table_name} is not a Delta table yet. Run the {layer} full rebuild "
             "before daily partition refresh."
         )
 
@@ -428,13 +494,14 @@ def publish_partitioned_model(
         else:
             mode = "overwrite"
             schema_mode = None
-            predicate = partition_predicate([partition_value])
+            predicate = partition_predicate(publish_partition_column, [partition_value])
 
         write_partitioned_delta(
             connection,
             target_uri,
             relation_name,
             partition_column,
+            publish_partition_column,
             partition_value,
             storage_options,
             mode,
@@ -442,16 +509,17 @@ def publish_partitioned_model(
             predicate,
         )
     print(
-        f"Published {model_name}: rows={row_count} partitions={len(date_partitions)} uri={target_uri}"
+        f"Published {table_name}: rows={row_count} partitions={len(date_partitions)} uri={target_uri}"
     )
     return {
         "model_name": model_name,
+        "table_name": table_name,
         "relation_name": relation_name,
         "row_count": row_count,
         "data_uri": target_uri,
         "publish_mode": "delta_partitioned",
         "partition_column": partition_column,
-        "publish_partition_column": PUBLISH_PARTITION_COLUMN,
+        "publish_partition_column": publish_partition_column,
         "partition_values": date_partitions,
     }
 
@@ -463,13 +531,24 @@ def publish_replacement_model(
     table_prefix: str,
     storage_options: dict[str, str],
     target_uri: str,
+    layer: str,
     model_name: str,
+    table_name: str,
     relation_name: str,
+    publish_partition_column: str,
 ) -> dict[str, Any]:
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
-    validate_publish_contract(connection, model_name, relation_name, target_uri, None)
+    validate_publish_contract(
+        connection,
+        layer,
+        table_name,
+        relation_name,
+        target_uri,
+        None,
+        publish_partition_column,
+    )
     clean_legacy_non_delta_prefix(client, bucket, table_prefix)
-    arrow_table = relation_as_arrow(connection, relation_name)
+    arrow_table = relation_as_arrow(connection, relation_name, publish_partition_column)
     try:
         write_deltalake(
             target_uri,
@@ -481,9 +560,10 @@ def publish_replacement_model(
     finally:
         del arrow_table
         gc.collect()
-    print(f"Published {model_name}: rows={row_count} uri={target_uri}")
+    print(f"Published {table_name}: rows={row_count} uri={target_uri}")
     return {
         "model_name": model_name,
+        "table_name": table_name,
         "relation_name": relation_name,
         "row_count": row_count,
         "data_uri": target_uri,
@@ -493,25 +573,32 @@ def publish_replacement_model(
 
 def main() -> None:
     args = parse_args()
+    layer = args.layer
+    external_root = args.external_root or default_external_root(layer)
+    run_mode = args.run_mode or default_run_mode(layer)
+    local_manifest_output = args.local_manifest_output or default_publish_manifest_path(layer)
+    partitioned_models = PARTITIONED_PUBLISH_MODELS[layer]
+    publish_partition_column = PUBLISH_PARTITION_COLUMNS[layer]
     manifest_path = Path(args.manifest_path)
-    bucket, root_prefix = split_s3_uri(args.external_root)
+    bucket, root_prefix = split_s3_uri(external_root)
     client = s3_client()
     ensure_bucket(client, bucket)
     storage_options = delta_storage_options()
 
-    models = publish_models(manifest_path)
+    models = publish_models(manifest_path, layer)
     if not models:
-        raise SystemExit("No publish-tagged dbt models were found in manifest.")
+        raise SystemExit(f"No {layer} publish-tagged dbt models were found in manifest.")
 
     connection = duckdb.connect(args.duckdb_path, read_only=False)
 
     published_rows: list[dict[str, Any]] = []
     for model in models:
         model_name = model["model_name"]
-        table_prefix = "/".join(part for part in [root_prefix, model_name] if part)
+        table_name = model["table_name"]
+        table_prefix = "/".join(part for part in [root_prefix, table_name] if part)
         target_uri = f"s3://{bucket}/{table_prefix}"
         relation_name = model["relation_name"]
-        partition_column = PARTITIONED_PUBLISH_MODELS.get(model_name)
+        partition_column = partitioned_models.get(table_name)
         if partition_column:
             published_rows.append(
                 publish_partitioned_model(
@@ -521,10 +608,13 @@ def main() -> None:
                     table_prefix,
                     storage_options,
                     target_uri,
+                    layer,
                     model_name,
+                    table_name,
                     relation_name,
                     partition_column,
-                    args.run_mode,
+                    publish_partition_column,
+                    run_mode,
                 )
             )
         else:
@@ -536,8 +626,11 @@ def main() -> None:
                     table_prefix,
                     storage_options,
                     target_uri,
+                    layer,
                     model_name,
+                    table_name,
                     relation_name,
+                    publish_partition_column,
                 )
             )
 
@@ -546,9 +639,9 @@ def main() -> None:
         bucket,
         root_prefix,
         published_rows,
-        Path(args.local_manifest_output),
+        Path(local_manifest_output),
     )
-    print(f"Published {len(published_rows)} silver table(s) to {args.external_root}")
+    print(f"Published {len(published_rows)} {layer} table(s) to {external_root}")
 
 
 if __name__ == "__main__":

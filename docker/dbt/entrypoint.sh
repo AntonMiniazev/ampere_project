@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-log() { printf '[silver-dbt] %s\n' "$*"; }
+log() { printf '[ampere-dbt] %s\n' "$*"; }
 
 : "${DBT_PROJECT_DIR:=/app/dbt}"
 : "${DBT_PROFILES_DIR:=/app/profiles}"
@@ -13,23 +13,38 @@ log() { printf '[silver-dbt] %s\n' "$*"; }
 : "${BRONZE_SOURCE_SCHEMA:=bronze}"
 : "${BRONZE_SOURCE_MAPPING_PATH:=/app/artifacts/bronze_source_mapping.json}"
 : "${BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS:=24}"
+: "${SILVER_SOURCE_NAME:=silver}"
+: "${SILVER_SOURCE_SCHEMA:=silver}"
+: "${SILVER_SOURCE_MAPPING_PATH:=/app/artifacts/silver_source_mapping.json}"
+: "${SILVER_SOURCE_MAPPING_MAX_AGE_HOURS:=24}"
 : "${RUN_UC_MAPPING_GENERATION:=true}"
+: "${RUN_SILVER_SOURCE_MAPPING_GENERATION:=false}"
 : "${RUN_BRONZE_PREFLIGHT:=true}"
 : "${RUN_BRONZE_PREFLIGHT_DELTA_SCAN:=true}"
+: "${RUN_SILVER_SOURCE_PREFLIGHT:=false}"
+: "${RUN_SILVER_SOURCE_PREFLIGHT_DELTA_SCAN:=true}"
 : "${RUN_SILVER_PUBLISH:=true}"
 : "${RUN_SILVER_UC_REGISTRATION:=true}"
+: "${RUN_GOLD_PUBLISH:=false}"
+: "${RUN_GOLD_UC_REGISTRATION:=true}"
 : "${RUN_DBT_ARTIFACT_UPLOAD:=true}"
 : "${SILVER_RUN_MODE:=daily_refresh}"
 : "${SILVER_LOOKBACK_DAYS:=7}"
 : "${SILVER_PUBLISH_MANIFEST_PATH:=/app/artifacts/silver_publish_manifest.json}"
+: "${GOLD_RUN_MODE:=daily_refresh}"
+: "${GOLD_LOOKBACK_DAYS:=${SILVER_LOOKBACK_DAYS}}"
+: "${GOLD_PUBLISH_MANIFEST_PATH:=/app/artifacts/gold_publish_manifest.json}"
 
 export PATH="/app/.venv/bin:${PATH}"
 export BRONZE_SOURCE_NAME BRONZE_SOURCE_SCHEMA
 export BRONZE_SOURCE_MAPPING_PATH BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS
+export SILVER_SOURCE_NAME SILVER_SOURCE_SCHEMA
+export SILVER_SOURCE_MAPPING_PATH SILVER_SOURCE_MAPPING_MAX_AGE_HOURS
 
 mkdir -p "$(dirname "${DUCKDB_PATH}")"
 mkdir -p "${DBT_LOG_PATH}"
 mkdir -p "$(dirname "${BRONZE_SOURCE_MAPPING_PATH}")"
+mkdir -p "$(dirname "${SILVER_SOURCE_MAPPING_PATH}")"
 
 if [ ! -f "${DBT_PROJECT_DIR}/dbt_project.yml" ]; then
   log "dbt project file not found at ${DBT_PROJECT_DIR}/dbt_project.yml"
@@ -53,6 +68,16 @@ if [[ "${RUN_UC_MAPPING_GENERATION}" == "true" ]]; then
     --output "${BRONZE_SOURCE_MAPPING_PATH}"
 fi
 
+if [[ "${RUN_SILVER_SOURCE_MAPPING_GENERATION}" == "true" ]]; then
+  log "generate silver source mapping from UC"
+  python /app/scripts/generate_bronze_source_mapping.py \
+    --project-dir "${DBT_PROJECT_DIR}" \
+    --source-name "${SILVER_SOURCE_NAME}" \
+    --output "${SILVER_SOURCE_MAPPING_PATH}" \
+    --catalog "${SILVER_UC_CATALOG:-${BRONZE_UC_CATALOG:-ampere}}" \
+    --schema "${SILVER_UC_SCHEMA:-silver}"
+fi
+
 if [[ "${RUN_BRONZE_PREFLIGHT}" == "true" ]]; then
   log "validate bronze source mapping"
   VALIDATE_ARGS=(
@@ -65,6 +90,20 @@ if [[ "${RUN_BRONZE_PREFLIGHT}" == "true" ]]; then
     VALIDATE_ARGS+=(--skip-delta-scan)
   fi
   python /app/scripts/validate_bronze_sources.py "${VALIDATE_ARGS[@]}"
+fi
+
+if [[ "${RUN_SILVER_SOURCE_PREFLIGHT}" == "true" ]]; then
+  log "validate silver source mapping"
+  SILVER_VALIDATE_ARGS=(
+    --project-dir "${DBT_PROJECT_DIR}"
+    --source-name "${SILVER_SOURCE_NAME}"
+    --mapping-path "${SILVER_SOURCE_MAPPING_PATH}"
+    --max-age-hours "${SILVER_SOURCE_MAPPING_MAX_AGE_HOURS}"
+  )
+  if [[ "${RUN_SILVER_SOURCE_PREFLIGHT_DELTA_SCAN}" != "true" ]]; then
+    SILVER_VALIDATE_ARGS+=(--skip-delta-scan)
+  fi
+  python /app/scripts/validate_bronze_sources.py "${SILVER_VALIDATE_ARGS[@]}"
 fi
 
 DBT_BIN="/app/.venv/bin/dbt"
@@ -106,6 +145,7 @@ bash -lc "${DBT_BIN} ${RAW_ARGS}"
 if [[ "${RUN_SILVER_PUBLISH}" == "true" ]]; then
   log "publish silver tables"
   python /app/scripts/publish_silver_tables.py \
+    --layer silver \
     --duckdb-path "${DUCKDB_PATH}" \
     --manifest-path "${DBT_PROJECT_DIR}/target/manifest.json" \
     --run-mode "${SILVER_RUN_MODE}" \
@@ -116,6 +156,24 @@ if [[ "${RUN_SILVER_PUBLISH}" == "true" && "${RUN_SILVER_UC_REGISTRATION}" == "t
   log "check published silver Delta locations"
   python /app/scripts/register_silver_uc_tables.py \
     --publish-manifest-path "${SILVER_PUBLISH_MANIFEST_PATH}"
+fi
+
+if [[ "${RUN_GOLD_PUBLISH}" == "true" ]]; then
+  log "publish gold tables"
+  python /app/scripts/publish_silver_tables.py \
+    --layer gold \
+    --duckdb-path "${DUCKDB_PATH}" \
+    --manifest-path "${DBT_PROJECT_DIR}/target/manifest.json" \
+    --run-mode "${GOLD_RUN_MODE}" \
+    --local-manifest-output "${GOLD_PUBLISH_MANIFEST_PATH}"
+fi
+
+if [[ "${RUN_GOLD_PUBLISH}" == "true" && "${RUN_GOLD_UC_REGISTRATION}" == "true" ]]; then
+  log "check published gold Delta locations"
+  python /app/scripts/register_silver_uc_tables.py \
+    --publish-manifest-path "${GOLD_PUBLISH_MANIFEST_PATH}" \
+    --catalog "${GOLD_UC_CATALOG:-${BRONZE_UC_CATALOG:-ampere}}" \
+    --schema "${GOLD_UC_SCHEMA:-gold}"
 fi
 
 if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" ]]; then

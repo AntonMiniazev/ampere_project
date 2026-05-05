@@ -11,7 +11,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
 
-DAG_ID = "ampere__silver__dbt_duckdb__daily"
+DAG_ID = "ampere__gold__dbt_duckdb__daily"
 DAG_CONFIG = load_silver_dag_config()
 
 
@@ -36,27 +36,24 @@ with DAG(
     schedule=None,
     start_date=datetime(2025, 8, 24),
     tags=[
-        "layer:silver",
+        "layer:gold",
         "system:dbt",
         "system:duckdb",
         "system:minio",
         "mode:daily",
     ],
     catchup=False,
-    max_active_runs=DAG_CONFIG.max_active_runs,
+    max_active_runs=1,
 ) as dag:
-    # Boundary marker before silver runtime container starts.
     start_task = PythonOperator(
-        task_id="run__silver__start",
+        task_id="run__gold__start",
         python_callable=print,
-        op_args=["##### startSilver #####"],
+        op_args=["##### startGold #####"],
     )
 
-    # Execute silver dbt runtime in one container so staging + marts share one
-    # DuckDB workspace file for the full invocation.
-    run_silver_dbt = KubernetesPodOperator(
-        task_id="run__silver__dbt_build",
-        name="ampere-dbt-silver",
+    run_gold_dbt = KubernetesPodOperator(
+        task_id="run__gold__dbt_build",
+        name="ampere-dbt-gold",
         namespace=DAG_CONFIG.namespace,
         image=DAG_CONFIG.image,
         image_pull_policy=DAG_CONFIG.image_pull_policy,
@@ -70,32 +67,46 @@ with DAG(
             "UC_API_URI": DAG_CONFIG.uc_api_uri,
             "UC_TOKEN": DAG_CONFIG.uc_token,
             "BRONZE_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
-            "BRONZE_UC_SCHEMA": DAG_CONFIG.bronze_uc_schema,
-            "BRONZE_SOURCE_NAME": DAG_CONFIG.bronze_source_name,
-            "BRONZE_SOURCE_SCHEMA": DAG_CONFIG.bronze_source_schema,
-            "BRONZE_SOURCE_MAPPING_PATH": DAG_CONFIG.bronze_source_mapping_path,
-            "BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS": DAG_CONFIG.bronze_source_mapping_max_age_hours,
-            "RUN_UC_MAPPING_GENERATION": DAG_CONFIG.run_uc_mapping_generation,
-            "RUN_BRONZE_PREFLIGHT": DAG_CONFIG.run_bronze_preflight,
-            "RUN_BRONZE_PREFLIGHT_DELTA_SCAN": DAG_CONFIG.run_bronze_preflight_delta_scan,
-            "DBT_TARGET": DAG_CONFIG.dbt_target,
-            "THREADS": DAG_CONFIG.dbt_threads,
-            "DUCKDB_MEMORY_LIMIT": DAG_CONFIG.duckdb_memory_limit,
-            "DUCKDB_TEMP_DIRECTORY": DAG_CONFIG.duckdb_temp_directory,
-            "SILVER_EXTERNAL_ROOT": DAG_CONFIG.silver_external_root,
-            "SILVER_DBT_ARTIFACT_ROOT": DAG_CONFIG.silver_artifact_root,
-            "SILVER_RUN_MODE": DAG_CONFIG.run_mode,
-            "SILVER_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
-            "RUN_SILVER_PUBLISH": DAG_CONFIG.run_silver_publish,
-            "RUN_SILVER_UC_REGISTRATION": DAG_CONFIG.run_silver_uc_registration,
-            "GOLD_SOURCE_MODE": "ref",
+            "DBT_TARGET": Variable.get("gold_dbt_target", default=DAG_CONFIG.dbt_target),
+            "THREADS": Variable.get("gold_dbt_threads", default="2"),
+            "DUCKDB_MEMORY_LIMIT": Variable.get(
+                "gold_duckdb_memory_limit", default=DAG_CONFIG.duckdb_memory_limit
+            ),
+            "DUCKDB_TEMP_DIRECTORY": Variable.get(
+                "gold_duckdb_temp_directory", default=DAG_CONFIG.duckdb_temp_directory
+            ),
+            "RUN_UC_MAPPING_GENERATION": "false",
+            "RUN_BRONZE_SOURCE_PREPARE": "false",
+            "RUN_BRONZE_PREFLIGHT": "false",
+            "RUN_BRONZE_PREFLIGHT_DELTA_SCAN": "false",
+            "RUN_SILVER_SOURCE_MAPPING_GENERATION": "true",
+            "RUN_SILVER_SOURCE_PREFLIGHT": "true",
+            "RUN_SILVER_SOURCE_PREFLIGHT_DELTA_SCAN": Variable.get(
+                "run_gold_silver_source_preflight_delta_scan",
+                default="true",
+            )
+            .strip()
+            .lower(),
+            "SILVER_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
+            "SILVER_UC_SCHEMA": Variable.get("spark_uc_silver_schema", default="silver"),
+            "SILVER_SOURCE_NAME": "silver",
+            "SILVER_SOURCE_SCHEMA": "silver",
+            "SILVER_SOURCE_MAPPING_PATH": Variable.get(
+                "silver_source_mapping_path",
+                default="/app/artifacts/silver_source_mapping.json",
+            ),
+            "GOLD_SOURCE_MODE": "published_silver",
             "GOLD_EXTERNAL_ROOT": Variable.get(
                 "gold_external_root", default="s3://ampere-gold/gold"
             ),
-            "GOLD_RUN_MODE": DAG_CONFIG.run_mode,
-            "GOLD_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
             "GOLD_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
             "GOLD_UC_SCHEMA": Variable.get("spark_uc_gold_schema", default="gold"),
+            "GOLD_RUN_MODE": "daily_refresh",
+            "GOLD_LOOKBACK_DAYS": Variable.get(
+                "gold_lookback_days", default=DAG_CONFIG.lookback_days
+            ),
+            "RUN_SILVER_PUBLISH": "false",
+            "RUN_SILVER_UC_REGISTRATION": "false",
             "RUN_GOLD_PUBLISH": Variable.get("run_gold_publish", default="true")
             .strip()
             .lower(),
@@ -109,29 +120,30 @@ with DAG(
         },
         arguments=[
             Variable.get(
-                "silver_daily_with_gold_dbt_command",
-                default=DAG_CONFIG.dbt_command,
+                "gold_dbt_command",
+                default="dbt build --select tag:gold",
             )
         ],
         container_resources=V1ResourceRequirements(
             requests={
-                "cpu": DAG_CONFIG.cpu_request,
-                "memory": DAG_CONFIG.memory_request,
+                "cpu": Variable.get("gold_dbt_cpu_request", default=DAG_CONFIG.cpu_request),
+                "memory": Variable.get(
+                    "gold_dbt_memory_request", default=DAG_CONFIG.memory_request
+                ),
             },
             limits={
-                "cpu": DAG_CONFIG.cpu_limit,
-                "memory": DAG_CONFIG.memory_limit,
+                "cpu": Variable.get("gold_dbt_cpu_limit", default=DAG_CONFIG.cpu_limit),
+                "memory": Variable.get("gold_dbt_memory_limit", default=DAG_CONFIG.memory_limit),
             },
         ),
         get_logs=True,
         is_delete_operator_pod=True,
     )
 
-    # Boundary marker after silver build and tests finish.
     done_task = PythonOperator(
-        task_id="run__silver__done",
+        task_id="run__gold__done",
         python_callable=print,
-        op_args=["##### doneSilver #####"],
+        op_args=["##### doneGold #####"],
     )
 
-    start_task >> run_silver_dbt >> done_task
+    start_task >> run_gold_dbt >> done_task

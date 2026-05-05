@@ -16,6 +16,7 @@ vars:
 
 on-run-start:
   - "{{ ampere_prepare_bronze_sources() }}"
+  - "{{ ampere_prepare_silver_sources() }}"
 
 models:
   ampere_duckdb_project:
@@ -39,3 +40,8 @@ models:
         +materialized: table
         +schema: silver
         +tags: ["silver", "fact", "publish"]
+    gold:
+      marts:
+        +materialized: table
+        +schema: gold
+        +tags: ["gold"]

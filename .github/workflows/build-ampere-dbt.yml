@@ -1,4 +1,4 @@
-name: Build ampere-silver-dbt image
+name: Build ampere-dbt image
 
 on:
   workflow_dispatch:
@@ -19,10 +19,10 @@ jobs:
         shell: bash
         run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Validate silver dbt project
+      - name: Validate dbt project
         run: |
           test -f dbt/dbt_project.yml || {
-            echo "Missing dbt/dbt_project.yml. The silver image is built from repo root and requires the dbt project." >&2
+            echo "Missing dbt/dbt_project.yml. The shared dbt image is built from repo root and requires the dbt project." >&2
             exit 1
           }
 
@@ -40,7 +40,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ steps.owner.outputs.value }}/ampere-silver-dbt
+          images: ghcr.io/${{ steps.owner.outputs.value }}/ampere-dbt
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=sha-{{sha}},enable={{is_default_branch}}
@@ -50,7 +50,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/silver_dbt/Dockerfile
+          file: docker/dbt/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

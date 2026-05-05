@@ -566,7 +566,7 @@ def load_silver_dag_config() -> SilverDagConfig:
     minio_use_ssl = minio_ssl_enabled(raw_minio_endpoint)
     return SilverDagConfig(
         namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
-        image=resolve_release_image("ghcr.io/antonminiazev/ampere-silver-dbt"),
+        image=resolve_release_image("ghcr.io/antonminiazev/ampere-dbt"),
         image_pull_policy=Variable.get("image_pull_policy", default="IfNotPresent"),
         service_account=Variable.get(
             "spark_service_account",

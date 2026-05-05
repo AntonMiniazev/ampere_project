@@ -55,3 +55,17 @@ sources:
       - name: delivery_tracking
         description: Bronze event table for delivery tracking.
         loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+  - name: silver
+    description: Published silver Delta tables resolved from UC for gold recovery and rebuild runs.
+    schema: "{{ env_var('SILVER_SOURCE_SCHEMA', 'silver') }}"
+    tables:
+      - name: dim_clients
+      - name: dim_stores
+      - name: dim_zones
+      - name: dim_products
+      - name: dim_costing
+      - name: dim_delivery_resource
+      - name: dim_delivery_costing
+      - name: fact_orders
+      - name: fact_order_product
+      - name: fact_delivery_tracking

@@ -51,12 +51,12 @@ jobs:
                   ],
               },
               {
-                  "image": "ampere-silver-dbt",
+                  "image": "ampere-dbt",
                   "context": ".",
-                  "file": "docker/silver_dbt/Dockerfile",
+                  "file": "docker/dbt/Dockerfile",
                   "paths": [
                       "dbt/",
-                      "docker/silver_dbt/",
+                      "docker/dbt/",
                   ],
               },
               {
@@ -133,11 +133,11 @@ jobs:
         shell: bash
         run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Validate silver dbt project
-        if: ${{ matrix.image == 'ampere-silver-dbt' }}
+      - name: Validate dbt project
+        if: ${{ matrix.image == 'ampere-dbt' }}
         run: |
           test -f dbt/dbt_project.yml || {
-            echo "Missing dbt/dbt_project.yml. The silver image is built from repo root and requires the dbt project." >&2
+            echo "Missing dbt/dbt_project.yml. The shared dbt image is built from repo root and requires the dbt project." >&2
             exit 1
           }
 

@@ -75,18 +75,11 @@
 {%- endmacro %}
 
 
-{% macro ampere_prepare_bronze_sources() -%}
+{% macro ampere_prepare_mapped_sources(source_name, source_schema, mapping_path, label='source') -%}
   {% if not execute %}
     {{ return('') }}
   {% endif %}
   {% do ampere_configure_minio_access() %}
-
-  {% set source_name = env_var('BRONZE_SOURCE_NAME', var('bronze_source_name', 'bronze')) %}
-  {% set source_schema = env_var('BRONZE_SOURCE_SCHEMA', var('bronze_source_schema', 'bronze')) %}
-  {% set mapping_path = env_var(
-    'BRONZE_SOURCE_MAPPING_PATH',
-    var('bronze_source_mapping_path', '/app/artifacts/bronze_source_mapping.json')
-  ) %}
   {% set escaped_mapping_path = ampere_escape_sql_literal(mapping_path) %}
   {% set escaped_source_name = ampere_escape_sql_literal(source_name) %}
 
@@ -129,9 +122,9 @@
       {% do missing_tables.append(table_name) %}
     {% endif %}
   {% endfor %}
-  {% if missing_tables | length > 0 %}
+    {% if missing_tables | length > 0 %}
     {% do exceptions.raise_compiler_error(
-      'Bronze source mapping is missing required tables: '
+      label ~ ' source mapping is missing required tables: '
       ~ (missing_tables | join(', '))
       ~ '. mapping_path=' ~ mapping_path
     ) %}
@@ -139,8 +132,33 @@
 
   {% do log(
     'Prepared ' ~ (mapped_tables | length)
-    ~ ' bronze source views from ' ~ mapping_path,
+    ~ ' ' ~ label ~ ' source views from ' ~ mapping_path,
     info=True
   ) %}
   {{ return('') }}
+{%- endmacro %}
+
+
+{% macro ampere_prepare_bronze_sources() -%}
+  {% if env_var('RUN_BRONZE_SOURCE_PREPARE', 'true') != 'true' %}
+    {{ return('') }}
+  {% endif %}
+  {% set source_name = env_var('BRONZE_SOURCE_NAME', var('bronze_source_name', 'bronze')) %}
+  {% set source_schema = env_var('BRONZE_SOURCE_SCHEMA', var('bronze_source_schema', 'bronze')) %}
+  {% set mapping_path = env_var(
+    'BRONZE_SOURCE_MAPPING_PATH',
+    var('bronze_source_mapping_path', '/app/artifacts/bronze_source_mapping.json')
+  ) %}
+  {{ ampere_prepare_mapped_sources(source_name, source_schema, mapping_path, 'Bronze') }}
+{%- endmacro %}
+
+
+{% macro ampere_prepare_silver_sources() -%}
+  {% if env_var('GOLD_SOURCE_MODE', 'ref') != 'published_silver' %}
+    {{ return('') }}
+  {% endif %}
+  {% set source_name = env_var('SILVER_SOURCE_NAME', 'silver') %}
+  {% set source_schema = env_var('SILVER_SOURCE_SCHEMA', 'silver') %}
+  {% set mapping_path = env_var('SILVER_SOURCE_MAPPING_PATH', '/app/artifacts/silver_source_mapping.json') %}
+  {{ ampere_prepare_mapped_sources(source_name, source_schema, mapping_path, 'Silver') }}
 {%- endmacro %}

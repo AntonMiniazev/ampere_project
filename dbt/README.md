@@ -1,14 +1,16 @@
-# Silver dbt Project
+# Ampere dbt Project
 
-This folder is the single dbt authoring project for silver layer transformations.
+This folder is the shared dbt authoring project for Ampere modeling layers.
+Silver is implemented here now; gold models will be added here as the next
+layer.
 
 Two execution flows are supported.
 
 ## 1. Cluster Flow (target runtime)
 
-Used by `docker/silver_dbt` image and cluster orchestration.
+Used by the shared `docker/dbt` image and cluster orchestration.
 
-- Profile source: generated in container by `docker/silver_dbt/render_profiles.sh`
+- Profile source: generated in container by `docker/dbt/render_profiles.sh`
 - Project dir: `/app/dbt`
 - Profiles dir: `/app/profiles`
 - Target: `prod`
@@ -34,20 +36,20 @@ Use this sequence:
 # PowerShell (Windows): point DuckDB to local workspace file.
 $env:DUCKDB_PATH="dbt/.dbt_local/ampere.duckdb"
 
-python ./docker/silver_dbt/scripts/generate_bronze_source_mapping.py \
+python ./docker/dbt/scripts/generate_bronze_source_mapping.py \
   --project-dir ./dbt \
   --output ./dbt/.dbt_local/bronze_source_mapping.json \
   --uc-api-uri http://ucatalog.local \
   --catalog ampere \
   --schema bronze
 
-python ./docker/silver_dbt/scripts/validate_bronze_sources.py \
+python ./docker/dbt/scripts/validate_bronze_sources.py \
   --project-dir ./dbt \
   --mapping-path ./dbt/.dbt_local/bronze_source_mapping.json \
   --max-age-hours 24
 
 # Optional lightweight smoke:
-python ./docker/silver_dbt/scripts/test_bronze_source_mapping.py
+python ./docker/dbt/scripts/test_bronze_source_mapping.py
 
 dbt parse --project-dir ./dbt --profiles-dir ./dbt_profiles --no-partial-parse
 dbt show --select stg_stores --indirect-selection empty --project-dir ./dbt --profiles-dir ./dbt_profiles --no-partial-parse

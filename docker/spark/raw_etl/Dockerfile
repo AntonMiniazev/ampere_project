@@ -1,4 +1,4 @@
-FROM apache/spark:4.0.1
+FROM apache/spark:4.1.0
 
 ENV PYTHONUNBUFFERED=1
 ENV PYSPARK_PYTHON=python3
@@ -7,7 +7,7 @@ WORKDIR /opt/spark/app
 
 USER root
 ENV HOME=/root
-RUN python3 -m pip install --no-cache-dir --no-deps delta-spark==4.0.1 \
+RUN python3 -m pip install --no-cache-dir --no-deps delta-spark==4.2.0 \
     && python3 -m pip install --no-cache-dir \
         boto3==1.40.18 \
         googleapis-common-protos==1.70.0 \
@@ -15,7 +15,7 @@ RUN python3 -m pip install --no-cache-dir --no-deps delta-spark==4.0.1 \
         grpcio-status==1.76.0 \
         pandas==2.3.3 \
         pyarrow==21.0.0 \
-        pyspark==4.0.1
+        pyspark==4.1.0
 USER 185
 
 RUN mkdir -p /opt/spark/ivy

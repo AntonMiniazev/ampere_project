@@ -1,22 +1,26 @@
-# silver_dbt runtime
+# shared dbt runtime
 
-This directory contains the dedicated runtime package for the silver dbt + DuckDB layer.
+This directory contains the shared dbt + DuckDB runtime package for Ampere
+modeling layers.
+
+Current implemented layers:
+- silver
+- gold (orchestration baseline; model/publish rollout is incremental)
 
 Responsibilities:
 - install dbt runtime dependencies;
 - package the repo-root `dbt/` project into the image;
 - render `profiles.yml` from runtime environment variables;
-- generate and validate bronze source mapping from UC metadata before dbt runs;
-- validate `publish`-tagged silver model schemas against Unity Catalog;
-- publish validated silver tables as Delta tables to the durable silver bucket;
-- check published silver Delta locations against Unity Catalog;
-- persist dbt artifacts to the silver ops bucket;
-- provide the entrypoint used later by Airflow and GitHub Actions image builds.
+- provide a single image build for silver and gold dbt jobs;
+- run the requested dbt command with consistent DuckDB settings;
+- run silver source preflight, publish, and artifact upload, while allowing
+  gold dbt orchestration with layer-specific commands/selectors;
+- provide the entrypoint used by Airflow and GitHub Actions image builds.
 
 Build from repo root:
 
 ```bash
-docker build -f docker/silver_dbt/Dockerfile -t ampere-silver-dbt .
+docker build -f docker/dbt/Dockerfile -t ampere-dbt .
 ```
 
 Run example:
@@ -38,7 +42,7 @@ docker run --rm \
   -e DUCKDB_TEMP_DIRECTORY=/app/artifacts/duckdb_tmp \
   -e SILVER_EXTERNAL_ROOT=s3://ampere-silver/silver \
   -e SILVER_DBT_ARTIFACT_ROOT=s3://ampere-silver-ops/dbt \
-  ampere-silver-dbt \
+  ampere-dbt \
   "dbt build --select stg_clients"
 ```
 
@@ -60,7 +64,9 @@ DuckDB memory and spill-directory values are rendered as connection-time `config
 
 Airflow full rebuild defaults use moderate parallelism while keeping node4 scheduling practical: `silver_full_rebuild_dbt_threads=2`, `silver_full_rebuild_duckdb_memory_limit=6GB`, `silver_full_rebuild_dbt_memory_request=5Gi`, and `silver_full_rebuild_dbt_memory_limit=10Gi`. Kubernetes schedules the pod from the memory request, while the memory limit remains the maximum runtime allowance.
 
-This image scaffold assumes the silver authoring project lives in the repo-root `dbt/` folder.
+This image assumes the shared dbt authoring project lives in the repo-root
+`dbt/` folder. Layer-specific behavior is selected by Airflow DAG command,
+selectors, and environment variables.
 
 Runtime sequence in entrypoint:
 1. render profiles (`render_profiles.sh`);
@@ -71,6 +77,10 @@ Runtime sequence in entrypoint:
 6. publish `publish`-tagged model tables to `SILVER_EXTERNAL_ROOT` as Delta tables; dimensions are replaced, fact/event tables are written one date partition at a time to keep Arrow and Delta writer memory bounded.
 7. check published silver Delta locations are readable and match existing UC locations/formats when `RUN_SILVER_UC_REGISTRATION=true`.
 8. upload dbt artifacts to `SILVER_DBT_ARTIFACT_ROOT`.
+
+Gold runs use this same image and call dbt with gold selectors. Gold publish
+and UC validation hooks can be enabled later as dedicated runtime scripts, the
+same way silver publish and silver UC registration are wired today.
 
 Mapping and preflight helpers:
 

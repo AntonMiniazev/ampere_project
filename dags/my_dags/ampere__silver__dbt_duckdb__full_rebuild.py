@@ -55,7 +55,7 @@ with DAG(
     # silver outputs, while preserving the same runtime and source preflight.
     run_silver_dbt = KubernetesPodOperator(
         task_id="run__silver__dbt_full_rebuild",
-        name="ampere-silver-dbt-full-rebuild",
+        name="ampere-dbt-silver-full-rebuild",
         namespace=DAG_CONFIG.namespace,
         image=DAG_CONFIG.image,
         image_pull_policy=DAG_CONFIG.image_pull_policy,

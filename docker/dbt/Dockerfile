@@ -19,17 +19,17 @@ RUN apt-get update \
 
 RUN python -m venv /app/.venv
 
-COPY docker/silver_dbt/requirements.txt /tmp/requirements.txt
+COPY docker/dbt/requirements.txt /tmp/requirements.txt
 
 RUN /app/.venv/bin/pip install --upgrade pip \
     && /app/.venv/bin/pip install -r /tmp/requirements.txt
 
 COPY dbt /app/dbt
-COPY docker/silver_dbt/scripts /app/scripts
-COPY docker/silver_dbt/entrypoint.sh /usr/local/bin/silver_dbt_entrypoint.sh
-COPY docker/silver_dbt/render_profiles.sh /usr/local/bin/render_profiles.sh
+COPY docker/dbt/scripts /app/scripts
+COPY docker/dbt/entrypoint.sh /usr/local/bin/ampere_dbt_entrypoint.sh
+COPY docker/dbt/render_profiles.sh /usr/local/bin/render_profiles.sh
 
-RUN chmod +x /usr/local/bin/silver_dbt_entrypoint.sh /usr/local/bin/render_profiles.sh \
+RUN chmod +x /usr/local/bin/ampere_dbt_entrypoint.sh /usr/local/bin/render_profiles.sh \
     && mkdir -p /app/artifacts /app/profiles /app/logs
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/silver_dbt_entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/ampere_dbt_entrypoint.sh"]

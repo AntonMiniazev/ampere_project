@@ -48,3 +48,9 @@ selectors:
           value: fact
         - method: tag
           value: event
+
+  - name: gold_models
+    description: Gold serving-layer models tagged for gold orchestration.
+    definition:
+      method: tag
+      value: gold
