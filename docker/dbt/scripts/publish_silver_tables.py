@@ -365,14 +365,14 @@ def validate_publish_contract(
         )
 
     uc_columns = [
-        comparable_column(column)
+        comparable_column(column, include_nullable=False)
         for column in sorted(
             uc_payload.get("columns") or [],
             key=lambda item: int(item.get("position") or 0),
         )
     ]
     planned_columns = [
-        comparable_column(column)
+        comparable_column(column, include_nullable=False)
         for column in relation_uc_columns(
             connection,
             relation_name,

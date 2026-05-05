@@ -244,14 +244,26 @@ def normalize_location(value: str) -> str:
     return value.strip().rstrip("/")
 
 
-def comparable_column(column: dict[str, Any]) -> dict[str, Any]:
-    return {
+def comparable_column(
+    column: dict[str, Any],
+    *,
+    include_nullable: bool = True,
+) -> dict[str, Any]:
+    """Return stable UC column fields for schema comparison.
+
+    DuckDB/Arrow projections often mark selected expressions as nullable even
+    when dbt logic makes them mandatory. Pre-publish checks can opt out of
+    nullable comparison and still enforce name, order, and type.
+    """
+    comparable = {
         "name": column.get("name"),
         "type_name": str(column.get("type_name") or "").upper(),
         "type_text": str(column.get("type_text") or "").lower(),
         "position": int(column.get("position") or 0),
-        "nullable": bool(column.get("nullable", True)),
     }
+    if include_nullable:
+        comparable["nullable"] = bool(column.get("nullable", True))
+    return comparable
 
 
 def validate_uc_table(
