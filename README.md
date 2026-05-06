@@ -76,7 +76,7 @@ Deployment reference: follow the completed infra runbook from https://github.com
 - [x] DAG: dags/my_dags/ampere__raw_landing__postgres_to_landing__daily.py
 - [x] _manifest.json + _SUCCESS
 - [x] State-based watermarks for mutable dims (B2)
-- [ ] Operational tuning (resources, retries, SLA)
+- [x] Operational tuning (resources, retries, SLA)
 
 ### 3) Raw -> Bronze Delta
 - [x] Delta Lake tables in MinIO
