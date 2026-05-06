@@ -22,34 +22,9 @@ Generator:
 List values are comma-separated, e.g. `CHURN_RATES=0.004,0.007`.
 `AVG_ORDERS` is interpreted as a weekly per-client rate and divided by 7 for daily volume.
 
-## CLI usage
+## Runtime shape
 
-```bash
-python -m order_data_generator --run-date 2025-12-23 --seed 123
-```
-
-Optional volume overrides:
-
-```bash
-python -m order_data_generator \
-  --run-date 2025-12-23 \
-  --avg-orders 1.5 --min-orders 1 --max-orders 5 \
-  --avg-products 9 --min-products 4 --max-products 18 \
-  --new-clients-rate-min 0.006 --new-clients-rate-max 0.01 \
-  --churn-rate-min 0.004 --churn-rate-max 0.007
-```
-
-## Docker build/run
-
-```bash
-cd docker/order_data_generator
-docker build -t order-data-generator:latest .
-
-docker run --rm \
-  -e DATABASE_URL="postgresql+psycopg://user:pass@host:5432/ampere_db" \
-  -e SCHEMA_INIT=source \
-  order-data-generator:latest --run-date 2025-12-23 --seed 123
-```
+The generator can run as a Python module in a local environment or as the container image used by Airflow. Runtime arguments control the generation date, deterministic seed, and optional volume overrides; environment variables define PostgreSQL connectivity and default generation settings.
 
 ## Image tagging (GitHub Actions)
 
@@ -59,8 +34,8 @@ Airflow selects the runtime tag through variable `ampere_release_version`.
 
 ## Autovacuum and indexing notes
 
-Indexes should be created once (during init) and maintained by PostgreSQL. Reindexing
-after every generator run is not recommended. Use `pg_stat_user_tables` and
-`pg_stat_all_indexes` to check bloat signals and index usage, and consider occasional
-`REINDEX` if indexes become bloated or unused.
+Indexes are created once during init and maintained by PostgreSQL. Reindexing
+after every generator run is not part of the normal design. `pg_stat_user_tables`
+and `pg_stat_all_indexes` provide bloat and index-usage signals for occasional
+database maintenance.
 

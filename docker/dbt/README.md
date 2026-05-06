@@ -17,36 +17,6 @@ Responsibilities:
   gold dbt orchestration with layer-specific commands/selectors;
 - provide the entrypoint used by Airflow and GitHub Actions image builds.
 
-Build from repo root:
-
-```bash
-docker build -f docker/dbt/Dockerfile -t ampere-dbt .
-```
-
-Run example:
-
-```bash
-docker run --rm \
-  -e MINIO_ACCESS_KEY=<your-minio-access-key> \
-  -e MINIO_SECRET_KEY=<your-minio-secret-key> \
-  -e MINIO_S3_ENDPOINT=minio.ampere.svc.cluster.local:9000 \
-  -e UC_API_URI=http://unity-catalog-unitycatalog-server.unity-catalog.svc.cluster.local:8080 \
-  -e UC_TOKEN=<your-uc-token-or-not-used> \
-  -e BRONZE_UC_CATALOG=ampere \
-  -e BRONZE_UC_SCHEMA=bronze \
-  -e BRONZE_SOURCE_NAME=bronze \
-  -e BRONZE_SOURCE_SCHEMA=bronze \
-  -e BRONZE_SOURCE_MAPPING_PATH=/app/artifacts/bronze_source_mapping.json \
-  -e BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS=24 \
-  -e DUCKDB_MEMORY_LIMIT=5GB \
-  -e DUCKDB_TEMP_DIRECTORY=/app/artifacts/duckdb_tmp \
-  -e SILVER_EXTERNAL_ROOT=s3://ampere-silver/silver \
-  -e SILVER_DBT_ARTIFACT_ROOT=s3://ampere-silver-ops/dbt \
-  -e GOLD_DBT_ARTIFACT_ROOT=s3://ampere-gold-ops/dbt \
-  ampere-dbt \
-  "dbt build --select stg_clients"
-```
-
 Default runtime contract:
 - dbt project path: `/app/dbt`
 - generated profiles path: `/app/profiles`
@@ -85,28 +55,7 @@ Gold runs use this same image and call dbt with gold selectors. Gold publish,
 UC validation, and artifact upload use the same shared runtime scripts with
 layer-specific roots.
 
-Mapping and preflight helpers:
-
-```bash
-python /app/scripts/generate_bronze_source_mapping.py \
-  --project-dir /app/dbt \
-  --output /app/artifacts/bronze_source_mapping.json
-
-python /app/scripts/validate_bronze_sources.py \
-  --project-dir /app/dbt \
-  --mapping-path /app/artifacts/bronze_source_mapping.json \
-  --max-age-hours 24
-
-# Faster smoke when object storage probe is not required:
-python /app/scripts/validate_bronze_sources.py \
-  --project-dir /app/dbt \
-  --mapping-path /app/artifacts/bronze_source_mapping.json \
-  --skip-delta-scan
-
-# Unit smoke for mapping helper logic:
-python /app/scripts/test_bronze_source_mapping.py
-python /app/scripts/upload_dbt_artifacts.py --artifacts-dir /app/dbt/target
-```
+Mapping and preflight helpers are bundled under `/app/scripts`. They generate the Bronze source mapping, validate mapping coverage and freshness, optionally probe Delta storage readability, and upload dbt artifacts after a run.
 
 Fallback behavior:
 - if UC metadata cannot be fetched, entrypoint fails before dbt starts;

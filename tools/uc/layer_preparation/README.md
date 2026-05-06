@@ -12,16 +12,14 @@ Execution outputs:
 - `tools/uc/reports/uc_<layer>_input.json`
 - `tools/uc/reports/uc_<layer>_report.json`
 
-Notebook workflow:
-1. Open `create_uc_layer.ipynb`.
-2. In the first code cell, set `LAYER` to `bronze`, `silver`, or `gold`.
-3. Run all cells.
-4. Review the report under `tools/uc/reports/`.
+Layer creation notebook:
+- `create_uc_layer.ipynb` prepares the selected `bronze`, `silver`, or `gold` layer from the canonical contract.
+- The first code cell contains the layer selection and local execution options.
+- Reports are written under `tools/uc/reports/`.
 
-Inspection workflow:
-1. Open `check_uc_layer.ipynb`.
-2. In the first code cell, set `LAYER`.
-3. Run all cells to list current UC metadata for the selected layer.
+Layer inspection notebook:
+- `check_uc_layer.ipynb` lists current UC metadata for the selected layer.
+- The first code cell contains the layer selection.
 
 The notebooks contain their workflow steps directly and use shared local helpers
 from `tools/py_utils/` for paths, `.env`, UC config, contract loading, and UC API

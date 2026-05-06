@@ -12,28 +12,13 @@ Standalone batch application that bootstraps the Source (Pre-Raw) schema in Post
 - `N_DELIVERY_RESOURCE`: number of delivery resources (default: `700`)
 - `PROJECT_START_DATE`: YYYY-MM-DD base date (default: current date)
 
-## Local run
+## Runtime shape
 
-```bash
-cd docker/init_source_preparation
-export DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/source"
-python -m init_source_preparation
-```
-
-## Docker build/run
-
-```bash
-docker build -t init-source-preparation:latest .
-
-docker run --rm \
-  -e DATABASE_URL="postgresql+psycopg://user:pass@host:5432/source" \
-  -e SCHEMA_INIT=core \
-  init-source-preparation:latest
-```
+The application can run as a Python module in a local environment or as the container image used by Airflow. The same environment variables define database connectivity and generation volume in both modes.
 
 ## Airflow
 
-Launch this image via your Airflow DAG, passing the same environment variables.
+Airflow DAGs use this image with the same environment variable contract.
 
 ## Image tagging (GitHub Actions)
 
@@ -43,5 +28,5 @@ Airflow selects the runtime tag through variable `ampere_release_version`.
 
 ## Autovacuum and indexing notes
 
-Indexes are created during init (see `ddl_init.py`). Keep autovacuum enabled
-and tune it at the Postgres level; avoid reindexing after every generator run.
+Indexes are created during init (see `ddl_init.py`). PostgreSQL autovacuum and
+occasional database-level maintenance handle ongoing table and index upkeep.

@@ -6,6 +6,22 @@ Combination of services based on **_practice-first_** focus rather than actual p
 
 Current focus: operating the Source -> Raw -> Bronze -> Silver -> Gold flow and keeping repository-level dataflow documentation generated from checked-in metadata plus local Unity Catalog snapshots.
 
+```mermaid
+flowchart LR
+    L_SOURCE["Python generator + PostgreSQL<br/>Logic: Synthetic transactions and mutable source rows.<br/>Python, PostgreSQL<br/>PostgreSQL"]
+    L_RAW["Raw landing<br/>Logic: Immutable parquet batches with manifest, success marker, and extract state.<br/>Spark<br/>MinIO, Parquet"]
+    L_BRONZE["Bronze<br/>Logic: Delta apply logic by table behavior: replace snapshots, merge mutable/events, increment facts.<br/>Spark, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
+    L_SILVER["Silver<br/>Logic: dbt cleans types, joins entities, tests relationships, and publishes reusable Delta tables.<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
+    L_GOLD["Gold<br/>Logic: BI marts calculate sales, delivery, product cost, and order margin.<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
+    L_SERVING["Serving / BI<br/>Logic: Dashboards read governed Gold tables only.<br/>BI / serving"]
+
+    L_SOURCE -->|"Spark"| L_RAW
+    L_RAW -->|"Spark + Delta Lake"| L_BRONZE
+    L_BRONZE -->|"DuckDB + dbt"| L_SILVER
+    L_SILVER -->|"DuckDB + dbt + Delta Lake"| L_GOLD
+    L_GOLD -->|"BI / serving"| L_SERVING
+```
+
 ## Project Structure
 - dags/ — Airflow DAGs and SparkApplication templates.
 - docker/ — container images for generators, Spark ETL, and the shared dbt runtime.
@@ -28,23 +44,6 @@ Dataflow documentation is generated from `docs/dataflow/dataflow.yml`, current D
 - Layer responsibilities: `docs/dataflow/generated/layer_responsibilities.md`
 - Unity Catalog inventory: `docs/dataflow/generated/uc_table_inventory.md`
 - Data contracts: `docs/data_contracts/bronze.json`, `docs/data_contracts/silver.json`, `docs/data_contracts/gold.json`
-
-Generate repository-level docs:
-
-```powershell
-py -3 tools\docs\generate_dataflow_docs.py
-```
-
-The canonical metadata/table-schema contract is `tools/uc/contracts/ampere_tables.json`.
-After changing it, regenerate derived DAG runtime config:
-
-```powershell
-py -3 tools\uc\generators\generate_from_contract.py
-```
-
-Unity Catalog is reachable only inside the cluster network. To refresh the data contracts from a Windows development machine, open `tools/uc/data_contract_extraction/extract_uc_table_inventory.ipynb` in VS Code or Jupyter and run all cells. It writes compact per-layer contracts into `docs/data_contracts/` using the same SSH jump-host and UC endpoint discovery config as the notebooks under `tools/uc/layer_preparation`.
-
-To rebuild UC metadata and refresh documentation in one local flow, run `tools/uc_catalog_rebuild_and_docs.ipynb`.
 
 ## Architecture Summary
 1) Pre-raw generators -> PostgreSQL (source schema)

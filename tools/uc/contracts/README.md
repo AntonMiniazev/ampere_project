@@ -16,9 +16,3 @@ catalog -> layers -> tables -> columns
 Bronze stream-group runtime metadata lives on each bronze table and is used to
 regenerate `dags/config/table_definitions.json` and
 `dags/config/stream_groups.json`.
-
-Regenerate derived artifacts after editing the contract:
-
-```powershell
-py -3 tools\uc\generators\generate_from_contract.py
-```
