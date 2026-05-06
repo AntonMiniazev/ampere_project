@@ -235,7 +235,7 @@ def get_uc_table(
         raise RuntimeError(
             f"Missing UC silver table {catalog}.{schema}.{table_name}. "
             "Initialize or repair UC metadata from "
-            "internal_docs/test/unity_catalog_check/schemas/uc_silver_tables.json "
+            "tools/uc/contracts/ampere_tables.json "
             "before running the silver pipeline."
         ) from exc
 

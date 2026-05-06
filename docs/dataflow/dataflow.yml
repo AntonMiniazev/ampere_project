@@ -1,0 +1,106 @@
+project: ampere
+
+layers:
+  source:
+    title: Python generator + PostgreSQL
+    status: implemented
+    responsibility: Synthetic operational source data generation and storage.
+    engine:
+      - Python
+      - PostgreSQL
+    storage:
+      - PostgreSQL
+
+  raw:
+    title: Raw landing
+    status: implemented
+    responsibility: Immutable parquet landing batches with manifest, success markers, and extraction state.
+    engine:
+      - Spark
+    storage:
+      - MinIO
+      - Parquet
+    controls:
+      - _manifest.json
+      - _SUCCESS
+      - _state_<table>.json
+
+  bronze:
+    title: Bronze
+    status: implemented
+    responsibility: Apply raw landing batches into Unity Catalog registered Delta tables.
+    engine:
+      - Spark
+      - Delta Lake
+    storage:
+      - MinIO
+      - Delta Lake
+    catalog: Unity Catalog OSS
+    catalog_schema: ampere.bronze
+
+  silver:
+    title: Silver
+    status: implemented
+    responsibility: Clean analytical dbt models built from Bronze through the Unity Catalog metadata bridge.
+    engine:
+      - DuckDB
+      - dbt
+      - Delta Lake
+    storage:
+      - MinIO
+      - Delta Lake
+    catalog: Unity Catalog OSS
+    catalog_schema: ampere.silver
+
+  gold:
+    title: Gold
+    status: implemented
+    responsibility: Serving-oriented marts for BI and downstream consumers, built from Silver in the shared dbt runtime.
+    engine:
+      - DuckDB
+      - dbt
+      - Delta Lake
+    storage:
+      - MinIO
+      - Delta Lake
+    catalog: Unity Catalog OSS
+    catalog_schema: ampere.gold
+
+  serving:
+    title: Serving / BI
+    status: planned
+    responsibility: Dashboard and downstream serving consumption from Gold marts.
+    engine:
+      - BI / serving
+    storage: []
+
+flows:
+  - from: source
+    to: raw
+    engine: Spark
+    artifact: Raw parquet batches
+    description: Extract PostgreSQL source tables into raw landing batches with manifests and state files.
+
+  - from: raw
+    to: bronze
+    engine: Spark + Delta Lake
+    artifact: UC registered Delta tables
+    description: Apply raw batches into Bronze Delta tables registered in Unity Catalog OSS.
+
+  - from: bronze
+    to: silver
+    engine: DuckDB + dbt
+    artifact: Silver Delta tables
+    description: Transform Bronze into clean analytical Silver models through the UC metadata bridge.
+
+  - from: silver
+    to: gold
+    engine: DuckDB + dbt + Delta Lake
+    artifact: Gold marts
+    description: Build Gold marts from Silver models in the normal silver-gold dbt flow or from published Silver during recovery.
+
+  - from: gold
+    to: serving
+    engine: BI / serving
+    artifact: Dashboards and downstream consumers
+    description: Expose Gold data to BI and serving workloads.

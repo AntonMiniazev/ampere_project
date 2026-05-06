@@ -1,7 +1,7 @@
 # =========================
-# In Dev
+# Internal docs
 # =========================
-
+tools/uc/reports/
 
 # =========================
 # Python
@@ -34,6 +34,7 @@ ruff.toml
 # =========================
 # Secrets / Config
 # =========================
+.env
 data_source/.env
 *.yaml.dec
 *.dec.yaml
@@ -45,6 +46,8 @@ kube-cluster/
 # Project temp / old
 # =========================
 _old/
+_archive/
+_internal/
 other/
 data_source/
 deployment/sql_scripts/
@@ -66,10 +69,3 @@ test/
 /dbt/local.duckdb
 /dbt_profiles
 /logs
-
-# =========================
-# Local documentation snapshots
-# =========================
-/docs/utils/*.json
-/docs/utils/*.jsonl
-/docs/utils/.env

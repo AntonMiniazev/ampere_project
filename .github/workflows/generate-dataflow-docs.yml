@@ -1,0 +1,51 @@
+name: Generate dataflow docs
+
+on:
+  push:
+    paths:
+      - "docs/data_contracts/**"
+      - "docs/dataflow/**"
+      - "docs/README.md"
+      - "tools/docs/**"
+      - "dags/config/**"
+      - "dags/my_dags/**"
+      - "dbt/**"
+  pull_request:
+    paths:
+      - "docs/data_contracts/**"
+      - "docs/dataflow/**"
+      - "docs/README.md"
+      - "tools/docs/**"
+      - "dags/config/**"
+      - "dags/my_dags/**"
+      - "dbt/**"
+
+permissions:
+  contents: read
+
+jobs:
+  generate-dataflow-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install docs dependencies
+        run: |
+          pip install pyyaml
+
+      - name: Generate dataflow docs
+        env:
+          UC_INVENTORY_MODE: preserve
+        run: |
+          python tools/docs/generate_dataflow_docs.py
+
+      - name: Check generated docs are up to date
+        run: |
+          git diff --exit-code

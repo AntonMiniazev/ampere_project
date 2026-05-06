@@ -1,0 +1,1979 @@
+{
+  "catalog": "ampere",
+  "extracted_at_utc": "2026-05-06T19:43:27+00:00",
+  "layer": "bronze",
+  "schema": "bronze",
+  "source": "http://10.10.4.52:8080",
+  "tables": [
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "product_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "store_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 5,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: assortment",
+      "data_source_format": "DELTA",
+      "name": "assortment",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/assortment",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [],
+      "comment": "Operational table: bronze_apply_registry",
+      "data_source_format": "DELTA",
+      "name": "bronze_apply_registry",
+      "schema": "ops",
+      "storage_location": "s3://ampere-bronze/bronze/ops/bronze_apply_registry",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "fullname",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "preferred_store_id",
+          "nullable": true,
+          "position": 3,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "registration_date",
+          "nullable": true,
+          "position": 4,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "updated_at",
+          "nullable": true,
+          "position": 5,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "churned",
+          "nullable": true,
+          "position": 6,
+          "type_name": "BOOLEAN",
+          "type_text": "boolean"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 9,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: clients",
+      "data_source_format": "DELTA",
+      "name": "clients",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/clients",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "product_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "store_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "avg_cost",
+          "nullable": true,
+          "position": 3,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(10,2)"
+        },
+        {
+          "comment": null,
+          "name": "valid_from",
+          "nullable": true,
+          "position": 4,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "valid_to",
+          "nullable": true,
+          "position": 5,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 8,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: costing",
+      "data_source_format": "DELTA",
+      "name": "costing",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/costing",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "zone_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "delivery_type_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "tariff",
+          "nullable": true,
+          "position": 3,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(4,2)"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 5,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 6,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: delivery_costing",
+      "data_source_format": "DELTA",
+      "name": "delivery_costing",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/delivery_costing",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "fullname",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "delivery_type_id",
+          "nullable": true,
+          "position": 3,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "store_id",
+          "nullable": true,
+          "position": 4,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "created_at",
+          "nullable": true,
+          "position": 5,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "updated_at",
+          "nullable": true,
+          "position": 6,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "active_flag",
+          "nullable": true,
+          "position": 7,
+          "type_name": "BOOLEAN",
+          "type_text": "boolean"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 10,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 16,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: delivery_resource",
+      "data_source_format": "DELTA",
+      "name": "delivery_resource",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/delivery_resource",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "order_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "courier_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "delivery_status_id",
+          "nullable": true,
+          "position": 3,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "status",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "status_datetime",
+          "nullable": true,
+          "position": 5,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 8,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "event_date",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: delivery_tracking",
+      "data_source_format": "DELTA",
+      "name": "delivery_tracking",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/delivery_tracking",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "courier_type",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 5,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: delivery_type",
+      "data_source_format": "DELTA",
+      "name": "delivery_type",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/delivery_type",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "order_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "order_date",
+          "nullable": true,
+          "position": 2,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "product_id",
+          "nullable": true,
+          "position": 3,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "quantity",
+          "nullable": true,
+          "position": 4,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(6,2)"
+        },
+        {
+          "comment": null,
+          "name": "sales_price",
+          "nullable": true,
+          "position": 5,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(10,2)"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 8,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "event_date",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: order_product",
+      "data_source_format": "DELTA",
+      "name": "order_product",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/order_product",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "order_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "order_status_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "status_datetime",
+          "nullable": true,
+          "position": 3,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 5,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 6,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "event_date",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: order_status_history",
+      "data_source_format": "DELTA",
+      "name": "order_status_history",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/order_status_history",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "order_status",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 5,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: order_statuses",
+      "data_source_format": "DELTA",
+      "name": "order_statuses",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/order_statuses",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "client_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "order_date",
+          "nullable": true,
+          "position": 3,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "order_source_id",
+          "nullable": true,
+          "position": 4,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "store_id",
+          "nullable": true,
+          "position": 5,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "total_amount",
+          "nullable": true,
+          "position": 6,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(12,4)"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 9,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "event_date",
+          "nullable": true,
+          "position": 16,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: orders",
+      "data_source_format": "DELTA",
+      "name": "orders",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/orders",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "order_id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "amount",
+          "nullable": true,
+          "position": 2,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(12,4)"
+        },
+        {
+          "comment": null,
+          "name": "method",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "payment_status",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "payment_date",
+          "nullable": true,
+          "position": 5,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 8,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "event_date",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: payments",
+      "data_source_format": "DELTA",
+      "name": "payments",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/payments",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "category_name",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 5,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 6,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: product_categories",
+      "data_source_format": "DELTA",
+      "name": "product_categories",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/product_categories",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "INT",
+          "type_text": "int"
+        },
+        {
+          "comment": null,
+          "name": "product_name",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "price",
+          "nullable": true,
+          "position": 3,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(10,2)"
+        },
+        {
+          "comment": null,
+          "name": "unit_type",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "category_id",
+          "nullable": true,
+          "position": 5,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "chance",
+          "nullable": true,
+          "position": 6,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(4,2)"
+        },
+        {
+          "comment": null,
+          "name": "valid_from",
+          "nullable": true,
+          "position": 7,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "valid_to",
+          "nullable": true,
+          "position": 8,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 11,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 14,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 15,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 16,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 17,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: products",
+      "data_source_format": "DELTA",
+      "name": "products",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/products",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "city",
+          "nullable": true,
+          "position": 2,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "store_name",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 5,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 6,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: stores",
+      "data_source_format": "DELTA",
+      "name": "stores",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/stores",
+      "table_type": "EXTERNAL"
+    },
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "id",
+          "nullable": true,
+          "position": 1,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "store_id",
+          "nullable": true,
+          "position": 2,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "zone_name",
+          "nullable": true,
+          "position": 3,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_row_hash",
+          "nullable": true,
+          "position": 4,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_run_id",
+          "nullable": true,
+          "position": 5,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_ingest_ts",
+          "nullable": true,
+          "position": 6,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_source_system",
+          "nullable": true,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_source_table",
+          "nullable": true,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_op",
+          "nullable": true,
+          "position": 9,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_run_id",
+          "nullable": true,
+          "position": 10,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_apply_ts",
+          "nullable": true,
+          "position": 11,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_bronze_last_manifest_path",
+          "nullable": true,
+          "position": 12,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "snapshot_date",
+          "nullable": true,
+          "position": 13,
+          "type_name": "STRING",
+          "type_text": "string"
+        }
+      ],
+      "comment": "Bronze table: zones",
+      "data_source_format": "DELTA",
+      "name": "zones",
+      "schema": "bronze",
+      "storage_location": "s3://ampere-bronze/bronze/source/zones",
+      "table_type": "EXTERNAL"
+    }
+  ]
+}

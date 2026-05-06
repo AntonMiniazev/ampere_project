@@ -1,0 +1,19 @@
+{
+  "ssh": {
+    "jump_host": "oppie@oppie-server",
+    "cluster_host": "ampere@ampere-k8s-master"
+  },
+  "kubernetes": {
+    "namespace": "unity-catalog",
+    "service_name": "unity-catalog-unitycatalog-server",
+    "service_port": 8080
+  },
+  "catalog": "ampere",
+  "storage": {
+    "endpoint": "",
+    "access_key": "",
+    "secret_key": "",
+    "region": "us-east-1",
+    "ssl_verify": false
+  }
+}
