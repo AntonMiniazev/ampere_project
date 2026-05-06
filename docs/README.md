@@ -4,18 +4,25 @@ Ampere is a home-lab data platform that turns synthetic operational activity int
 
 The project is intentionally compact but production-shaped: each layer has a clear responsibility, pipeline work is orchestrated by Airflow, object storage is MinIO, transformations are versioned in dbt, and documentation is generated from checked-in metadata plus live Unity Catalog snapshots.
 
+The core overview is generated as both a GitHub-rendered page and a reusable Mermaid source file:
+
+- [Project dataflow](dataflow/generated/project_dataflow.md)
+- [Project dataflow Mermaid](dataflow/diagrams/project_dataflow.mmd)
+
 ## Data Journey
 
 Synthetic source data lands in PostgreSQL first. Spark extracts source tables into immutable Raw parquet batches with manifests and success markers. Bronze applies those batches into Delta tables and records operational state. Silver cleans and shapes analytical entities through DuckDB and dbt. Gold prepares serving marts for margin, sales, delivery, and dimension-style lookups.
 
+The important distinction is not the tool list, but the contract each layer keeps. Raw preserves exactly what was extracted and proves the batch is complete. Bronze turns those batches into Delta tables with behavior-specific write logic. Silver makes the data reusable by applying typing, relationships, and dbt tests. Gold narrows the model into BI-ready marts where order sales, cost, delivery, and gross profit can be read without rebuilding business joins.
+
 ```mermaid
 flowchart LR
-    L_SOURCE["Python generator + PostgreSQL<br/>Python, PostgreSQL<br/>PostgreSQL"]
-    L_RAW["Raw landing<br/>Spark<br/>MinIO, Parquet"]
-    L_BRONZE["Bronze<br/>Spark, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
-    L_SILVER["Silver<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
-    L_GOLD["Gold<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
-    L_SERVING["Serving / BI<br/>BI / serving"]
+    L_SOURCE["Python generator + PostgreSQL<br/>Logic: Synthetic transactions and mutable source rows.<br/>Python, PostgreSQL<br/>PostgreSQL"]
+    L_RAW["Raw landing<br/>Logic: Immutable parquet batches with manifest, success marker, and extract state.<br/>Spark<br/>MinIO, Parquet"]
+    L_BRONZE["Bronze<br/>Logic: Delta apply logic by table behavior: replace snapshots, merge mutable/events, increment facts.<br/>Spark, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
+    L_SILVER["Silver<br/>Logic: dbt cleans types, joins entities, tests relationships, and publishes reusable Delta tables.<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
+    L_GOLD["Gold<br/>Logic: BI marts calculate sales, delivery, product cost, and order margin.<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
+    L_SERVING["Serving / BI<br/>Logic: Dashboards read governed Gold tables only.<br/>BI / serving"]
 
     L_SOURCE -->|"Spark"| L_RAW
     L_RAW -->|"Spark + Delta Lake"| L_BRONZE
@@ -28,30 +35,42 @@ flowchart LR
 
 Raw and Bronze processing is organized around table behavior rather than one job per table. Snapshot tables are replaced by partition, mutable dimensions are merged, facts are incrementally applied, and event tables use a lookback window to tolerate late changes.
 
+The same group semantics continue after Bronze. Silver keeps reusable analytical tables: snapshot dimensions become lookup dimensions, mutable dimensions preserve validity windows, transactional sources become facts, and event streams keep history. Gold then serves only the narrowed outputs needed for reporting: dimension lookups, order sales, delivery facts, product and delivery cost allocation, and gross margin.
+
 ```mermaid
 flowchart LR
     PG["PostgreSQL source"]
     G_SNAPSHOTS["Snapshots<br/>assortment, delivery_costing, delivery_type, order_statuses, product_categories, stores, zones"]
     G_SNAPSHOTS_RAW["Raw partition: snapshot_date"]
     G_SNAPSHOTS_BRONZE["Bronze behavior: partition replacement"]
-    PG --> G_SNAPSHOTS --> G_SNAPSHOTS_RAW --> G_SNAPSHOTS_BRONZE
+    G_SNAPSHOTS_SILVER["Silver snapshot dimensions<br/>Reference lookups and denormalized labels"]
+    G_SNAPSHOTS_GOLD["Gold reference lookups<br/>Stores and delivery tariff context"]
+    PG --> G_SNAPSHOTS --> G_SNAPSHOTS_RAW --> G_SNAPSHOTS_BRONZE --> G_SNAPSHOTS_SILVER --> G_SNAPSHOTS_GOLD
     G_MUTABLE_DIMS["Mutable Dims<br/>clients, costing, delivery_resource, products"]
     G_MUTABLE_DIMS_RAW["Raw partition: extract_date + watermark"]
     G_MUTABLE_DIMS_BRONZE["Bronze behavior: merge"]
-    PG --> G_MUTABLE_DIMS --> G_MUTABLE_DIMS_RAW --> G_MUTABLE_DIMS_BRONZE
+    G_MUTABLE_DIMS_SILVER["Silver mutable dimensions<br/>Current row plus valid_from / valid_to history"]
+    G_MUTABLE_DIMS_GOLD["Gold dimensions and cost helpers<br/>Client/product/resource lookup and order-date product cost"]
+    PG --> G_MUTABLE_DIMS --> G_MUTABLE_DIMS_RAW --> G_MUTABLE_DIMS_BRONZE --> G_MUTABLE_DIMS_SILVER --> G_MUTABLE_DIMS_GOLD
     G_FACTS["Facts<br/>order_product, orders, payments"]
     G_FACTS_RAW["Raw partition: event_date"]
     G_FACTS_BRONZE["Bronze behavior: incremental"]
-    PG --> G_FACTS --> G_FACTS_RAW --> G_FACTS_BRONZE
+    G_FACTS_SILVER["Silver facts<br/>Orders, order lines, payments, and reusable rollups"]
+    G_FACTS_GOLD["Gold sales and margin facts<br/>Order sales, product cost, delivery cost, gross profit"]
+    PG --> G_FACTS --> G_FACTS_RAW --> G_FACTS_BRONZE --> G_FACTS_SILVER --> G_FACTS_GOLD
     G_EVENTS["Events<br/>delivery_tracking, order_status_history"]
     G_EVENTS_RAW["Raw partition: event_date + 2-day lookback"]
     G_EVENTS_BRONZE["Bronze behavior: merge"]
-    PG --> G_EVENTS --> G_EVENTS_RAW --> G_EVENTS_BRONZE
+    G_EVENTS_SILVER["Silver event facts<br/>Status and delivery event history with late-arrival tolerance"]
+    G_EVENTS_GOLD["Gold delivery facts<br/>Delivery status timeline for BI consumption"]
+    PG --> G_EVENTS --> G_EVENTS_RAW --> G_EVENTS_BRONZE --> G_EVENTS_SILVER --> G_EVENTS_GOLD
 ```
 
 ## Orchestration
 
 Airflow starts with the daily source generator and then hands control from one layer to the next. Raw and Bronze are Spark workloads. Silver and Gold share one dbt/DuckDB runtime for the normal daily path so Gold can reuse freshly prepared Silver relations before publishing Delta tables. Bronze housekeeping runs after Silver/Gold reaches a terminal state and only performs cleanup on Sunday or when `bronze_optimization=true`.
+
+The daily chain is deliberately short: scheduled generation triggers Raw, Raw triggers Bronze, and Bronze waits for the combined Silver/Gold job. The full rebuild and ad hoc Gold DAGs stay manual because they are recovery entrypoints, not part of normal daily scheduling. Housekeeping is modeled as a terminal cleanup trigger so it can run after the pipeline reaches a terminal state while still skipping work on non-cleanup days.
 
 ```mermaid
 flowchart TD
@@ -76,7 +95,7 @@ flowchart TD
     D_AMPERE__SILVER__DBT_DUCKDB__FULL_REBUILD:::manual
     D_AMPERE__GOLD__DBT_DUCKDB__FULL_REBUILD:::manual
     D_AMPERE__GOLD__REFRESH_FROM_SILVER__ADHOC:::manual
-    classDef manual fill:#f6f8fa,stroke:#8c959f,stroke-dasharray: 4 3
+    classDef manual fill:#dbeafe,stroke:#2563eb,color:#111827,stroke-dasharray: 4 3
 ```
 
 ## Contracts And Governance

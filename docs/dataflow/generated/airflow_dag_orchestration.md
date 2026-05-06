@@ -1,6 +1,10 @@
 # Airflow DAG orchestration
 
-This page is generated from `dags/my_dags/*.py`. It shows which DAGs trigger other DAGs and the trigger conditions that matter operationally.
+This page is generated from `dags/my_dags/*.py`. It shows the normal daily chain, manual recovery entrypoints, and the trigger conditions that matter operationally.
+
+Daily work is intentionally narrow: the scheduled generator starts the chain, Raw and Bronze run as Spark jobs, and the combined Silver/Gold dbt job publishes analytical tables. Manual DAGs are kept outside the daily path so rebuilds and ad hoc Gold refreshes are explicit recovery actions.
+
+The housekeeping DAG is triggered after Bronze hands off to Silver/Gold and reaches a terminal state. It still skips work unless the run is Sunday or the Airflow variable `bronze_optimization=true` is set.
 
 ```mermaid
 flowchart TD
@@ -25,7 +29,7 @@ flowchart TD
     D_AMPERE__SILVER__DBT_DUCKDB__FULL_REBUILD:::manual
     D_AMPERE__GOLD__DBT_DUCKDB__FULL_REBUILD:::manual
     D_AMPERE__GOLD__REFRESH_FROM_SILVER__ADHOC:::manual
-    classDef manual fill:#f6f8fa,stroke:#8c959f,stroke-dasharray: 4 3
+    classDef manual fill:#dbeafe,stroke:#2563eb,color:#111827,stroke-dasharray: 4 3
 ```
 
 ## DAG Inventory

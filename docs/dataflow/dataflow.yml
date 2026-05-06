@@ -5,6 +5,7 @@ layers:
     title: Python generator + PostgreSQL
     status: implemented
     responsibility: Synthetic operational source data generation and storage.
+    diagram_note: "Synthetic transactions and mutable source rows."
     engine:
       - Python
       - PostgreSQL
@@ -15,6 +16,7 @@ layers:
     title: Raw landing
     status: implemented
     responsibility: Immutable parquet landing batches with manifest, success markers, and extraction state.
+    diagram_note: "Immutable parquet batches with manifest, success marker, and extract state."
     engine:
       - Spark
     storage:
@@ -29,6 +31,7 @@ layers:
     title: Bronze
     status: implemented
     responsibility: Apply raw landing batches into Unity Catalog registered Delta tables.
+    diagram_note: "Delta apply logic by table behavior: replace snapshots, merge mutable/events, increment facts."
     engine:
       - Spark
       - Delta Lake
@@ -42,6 +45,7 @@ layers:
     title: Silver
     status: implemented
     responsibility: Clean analytical dbt models built from Bronze through the Unity Catalog metadata bridge.
+    diagram_note: "dbt cleans types, joins entities, tests relationships, and publishes reusable Delta tables."
     engine:
       - DuckDB
       - dbt
@@ -56,6 +60,7 @@ layers:
     title: Gold
     status: implemented
     responsibility: Serving-oriented marts for BI and downstream consumers, built from Silver in the shared dbt runtime.
+    diagram_note: "BI marts calculate sales, delivery, product cost, and order margin."
     engine:
       - DuckDB
       - dbt
@@ -70,6 +75,7 @@ layers:
     title: Serving / BI
     status: planned
     responsibility: Dashboard and downstream serving consumption from Gold marts.
+    diagram_note: "Dashboards read governed Gold tables only."
     engine:
       - BI / serving
     storage: []

@@ -129,6 +129,9 @@ def write_project_dataflow(config: dict[str, Any]) -> None:
         if catalog:
             detail_parts.append(catalog)
         label = mermaid_text(layer.get("title", name))
+        diagram_note = str(layer.get("diagram_note") or "").strip()
+        if diagram_note:
+            label += "<br/>Logic: " + mermaid_text(diagram_note)
         if detail_parts:
             label += "<br/>" + "<br/>".join(mermaid_text(part) for part in detail_parts)
         lines.append(f'    {layer_node_id(name)}["{label}"]')
@@ -146,7 +149,7 @@ def write_project_dataflow(config: dict[str, Any]) -> None:
         GENERATED_DIR / "project_dataflow.md",
         title="Project dataflow",
         description=[
-            "This flowchart shows the high-level layer transitions and the engine used between layers.",
+            "This flowchart shows the high-level layer transitions, the main logic inside each layer, and the engine used between layers.",
         ],
         mermaid=mermaid,
     )
@@ -216,7 +219,7 @@ def group_behavior(group_name: str, group_config: dict[str, Any]) -> tuple[str, 
 
 
 def write_table_groups() -> None:
-    """Render table group flow from the repository raw/bronze grouping config."""
+    """Render table group movement across the full source-to-gold pipeline."""
     if TABLE_DEFINITIONS_PATH.exists() and STREAM_GROUPS_PATH.exists():
         definitions = load_json(TABLE_DEFINITIONS_PATH)
         stream_groups = load_json(STREAM_GROUPS_PATH)
@@ -278,6 +281,18 @@ def write_table_groups() -> None:
         "flowchart LR",
         '    PG["PostgreSQL source"]',
     ]
+    silver_labels = {
+        "snapshots": "Silver snapshot dimensions<br/>Reference lookups and denormalized labels",
+        "mutable_dims": "Silver mutable dimensions<br/>Current row plus valid_from / valid_to history",
+        "facts": "Silver facts<br/>Orders, order lines, payments, and reusable rollups",
+        "events": "Silver event facts<br/>Status and delivery event history with late-arrival tolerance",
+    }
+    gold_labels = {
+        "snapshots": "Gold reference lookups<br/>Stores and delivery tariff context",
+        "mutable_dims": "Gold dimensions and cost helpers<br/>Client/product/resource lookup and order-date product cost",
+        "facts": "Gold sales and margin facts<br/>Order sales, product cost, delivery cost, gross profit",
+        "events": "Gold delivery facts<br/>Delivery status timeline for BI consumption",
+    }
     for group_config in stream_groups:
         group_name = str(group_config.get("group") or "").strip()
         if not group_name:
@@ -292,7 +307,9 @@ def write_table_groups() -> None:
                 f'    {node_prefix}["{mermaid_text(title)}<br/>{mermaid_text(table_label)}"]',
                 f'    {node_prefix}_RAW["{mermaid_text(raw_label)}"]',
                 f'    {node_prefix}_BRONZE["{mermaid_text(bronze_label)}"]',
-                f"    PG --> {node_prefix} --> {node_prefix}_RAW --> {node_prefix}_BRONZE",
+                f'    {node_prefix}_SILVER["{mermaid_text(silver_labels.get(group_name, "Silver models"))}"]',
+                f'    {node_prefix}_GOLD["{mermaid_text(gold_labels.get(group_name, "Gold marts"))}"]',
+                f"    PG --> {node_prefix} --> {node_prefix}_RAW --> {node_prefix}_BRONZE --> {node_prefix}_SILVER --> {node_prefix}_GOLD",
             ]
         )
 
@@ -300,9 +317,9 @@ def write_table_groups() -> None:
     write_text(DIAGRAMS_DIR / "table_groups.mmd", mermaid)
     write_mermaid_markdown(
         GENERATED_DIR / "table_groups.md",
-        title="Raw and Bronze table groups",
+        title="Table movement",
         description=[
-            "This flowchart shows how source tables are grouped for raw extraction and bronze Delta application.",
+            "This flowchart shows how source table groups move through Raw, Bronze, Silver, and Gold.",
         ],
         mermaid=mermaid,
     )
@@ -466,7 +483,7 @@ def write_airflow_dag_orchestration() -> None:
             f'    {node_id("ampere__silver__dbt_duckdb__full_rebuild", "D")}:::manual',
             f'    {node_id("ampere__gold__dbt_duckdb__full_rebuild", "D")}:::manual',
             f'    {node_id("ampere__gold__refresh_from_silver__adhoc", "D")}:::manual',
-            "    classDef manual fill:#f6f8fa,stroke:#8c959f,stroke-dasharray: 4 3",
+            "    classDef manual fill:#dbeafe,stroke:#2563eb,color:#111827,stroke-dasharray: 4 3",
         ]
     )
     mermaid = "\n".join(lines) + "\n"
@@ -475,7 +492,11 @@ def write_airflow_dag_orchestration() -> None:
     md_lines = [
         "# Airflow DAG orchestration",
         "",
-        "This page is generated from `dags/my_dags/*.py`. It shows which DAGs trigger other DAGs and the trigger conditions that matter operationally.",
+        "This page is generated from `dags/my_dags/*.py`. It shows the normal daily chain, manual recovery entrypoints, and the trigger conditions that matter operationally.",
+        "",
+        "Daily work is intentionally narrow: the scheduled generator starts the chain, Raw and Bronze run as Spark jobs, and the combined Silver/Gold dbt job publishes analytical tables. Manual DAGs are kept outside the daily path so rebuilds and ad hoc Gold refreshes are explicit recovery actions.",
+        "",
+        "The housekeeping DAG is triggered after Bronze hands off to Silver/Gold and reaches a terminal state. It still skips work unless the run is Sunday or the Airflow variable `bronze_optimization=true` is set.",
         "",
         "```mermaid",
         mermaid.rstrip(),
