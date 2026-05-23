@@ -123,3 +123,9 @@ tag. The release workflow compares the new release with the previous `v*` tag,
 rebuilds only images whose source directories changed, and re-tags unchanged
 images to the new release tag. The per-image build workflows are manual
 maintenance tools and do not run automatically on branch pushes.
+
+The release workflow logs in to GHCR with `GHCR_TOKEN` when that repository
+secret exists, falling back to `GITHUB_TOKEN` otherwise. `GHCR_TOKEN` is needed
+when unchanged images are re-tagged from an existing package that the workflow
+token cannot pull. The token must have package read/write access for the
+`ghcr.io/antonminiazev/*` runtime image packages.
