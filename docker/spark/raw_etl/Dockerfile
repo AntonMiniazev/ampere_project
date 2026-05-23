@@ -15,7 +15,8 @@ RUN python3 -m pip install --no-cache-dir --no-deps delta-spark==4.2.0 \
         grpcio-status==1.76.0 \
         pandas==2.3.3 \
         pyarrow==21.0.0 \
-        pyspark==4.1.0
+        pyspark==4.1.0 \
+        zstandard==0.25.0
 USER 185
 
 RUN mkdir -p /opt/spark/ivy
