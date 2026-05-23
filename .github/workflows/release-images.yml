@@ -20,6 +20,7 @@ jobs:
     outputs:
       release_tag: ${{ steps.plan.outputs.release_tag }}
       previous_tag: ${{ steps.plan.outputs.previous_tag }}
+      previous_tags: ${{ steps.plan.outputs.previous_tags }}
       changed_matrix: ${{ steps.plan.outputs.changed_matrix }}
       unchanged_matrix: ${{ steps.plan.outputs.unchanged_matrix }}
     steps:
@@ -39,8 +40,23 @@ jobs:
           python <<'PY'
           import json
           import os
+          import re
           import subprocess
+
+
+          def semver_tuple(tag: str) -> tuple[int, int, int] | None:
+              match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+              if not match:
+                  return None
+              return tuple(int(part) for part in match.groups())
+
+
           release_tag = os.environ.get("INPUT_RELEASE_TAG") or os.environ["GITHUB_REF_NAME"]
+          release_version = semver_tuple(release_tag)
+          if release_version is None:
+              raise SystemExit(
+                  f"Release tag must be numeric semver like v0.2.6, got {release_tag!r}"
+              )
           configs = [
               {
                   "image": "ampere-spark",
@@ -78,17 +94,28 @@ jobs:
           ]
 
           tags = subprocess.check_output(
-              ["git", "tag", "--sort=-v:refname"],
+              ["git", "tag"],
               text=True,
           ).splitlines()
-          previous_tag = next((tag for tag in tags if tag.startswith("v") and tag != release_tag), "")
+          tag_names = set(tags)
+          previous_candidates = [
+              (version, tag)
+              for tag in tags
+              if (version := semver_tuple(tag)) is not None and version < release_version
+          ]
+          previous_tag = max(previous_candidates, default=(None, ""))[1]
+          previous_tags = [
+              tag
+              for _version, tag in sorted(previous_candidates, reverse=True)
+          ]
 
           changed = []
           unchanged = []
 
           if previous_tag:
+              diff_head = release_tag if release_tag in tag_names else "HEAD"
               diff_output = subprocess.check_output(
-                  ["git", "diff", "--name-only", f"{previous_tag}..HEAD"],
+                  ["git", "diff", "--name-only", f"{previous_tag}..{diff_head}"],
                   text=True,
               )
               changed_files = [line.strip() for line in diff_output.splitlines() if line.strip()]
@@ -112,6 +139,7 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"release_tag={release_tag}\n")
               fh.write(f"previous_tag={previous_tag}\n")
+              fh.write(f"previous_tags={json.dumps(previous_tags, separators=(',', ':'))}\n")
               fh.write(f"changed_matrix={json.dumps(changed, separators=(',', ':'))}\n")
               fh.write(f"unchanged_matrix={json.dumps(unchanged, separators=(',', ':'))}\n")
           PY
@@ -191,10 +219,28 @@ jobs:
           OWNER: ${{ steps.owner.outputs.value }}
           IMAGE: ${{ matrix.image }}
           RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
-          PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
+          PREVIOUS_TAGS: ${{ needs.plan.outputs.previous_tags }}
         run: |
-          SOURCE_TAG="${PREVIOUS_TAG:-latest}"
-          SOURCE_REF="ghcr.io/${OWNER}/${IMAGE}:${SOURCE_TAG}"
           TARGET_REF="ghcr.io/${OWNER}/${IMAGE}:${RELEASE_TAG}"
-          docker buildx imagetools create --tag "${TARGET_REF}" "${SOURCE_REF}"
-          docker buildx imagetools inspect "${TARGET_REF}"
+          mapfile -t SOURCE_TAGS < <(
+            python - <<'PY'
+          import json
+          import os
+
+          for tag in json.loads(os.environ.get("PREVIOUS_TAGS") or "[]"):
+              print(tag)
+          PY
+          )
+
+          for SOURCE_TAG in "${SOURCE_TAGS[@]}"; do
+            SOURCE_REF="ghcr.io/${OWNER}/${IMAGE}:${SOURCE_TAG}"
+            if docker buildx imagetools inspect "${SOURCE_REF}" >/dev/null 2>&1; then
+              docker buildx imagetools create --tag "${TARGET_REF}" "${SOURCE_REF}"
+              docker buildx imagetools inspect "${TARGET_REF}"
+              exit 0
+            fi
+            echo "Source image ${SOURCE_REF} does not exist or is not readable; trying older release tag."
+          done
+
+          echo "No existing source image found for ghcr.io/${OWNER}/${IMAGE} in previous release tags." >&2
+          exit 1

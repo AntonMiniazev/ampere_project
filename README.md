@@ -118,11 +118,13 @@ Default image resolution:
 - `ghcr.io/antonminiazev/ampere-dbt:<ampere_release_version>`
 
 Images are published through `.github/workflows/release-images.yml` when a
-`v*` release tag is pushed, or when that workflow is run manually with a release
-tag. The release workflow compares the new release with the previous `v*` tag,
-rebuilds only images whose source directories changed, and re-tags unchanged
-images to the new release tag. The per-image build workflows are manual
-maintenance tools and do not run automatically on branch pushes.
+numeric `vX.Y.Z` release tag is pushed, or when that workflow is run manually
+with a numeric release tag. The release workflow compares the new release with
+the nearest lower numeric release tag, rebuilds only images whose source
+directories changed, and re-tags unchanged images to the new release tag from
+the newest earlier release image that exists in GHCR. The per-image build
+workflows are manual maintenance tools and do not run automatically on branch
+pushes.
 
 The release workflow logs in to GHCR with `GHCR_TOKEN` when that repository
 secret exists, falling back to `GITHUB_TOKEN` otherwise. `GHCR_TOKEN` is needed
