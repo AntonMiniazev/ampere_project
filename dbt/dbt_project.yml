@@ -11,8 +11,6 @@ clean-targets: ["target"]
 vars:
   bronze_source_name: "bronze"
   bronze_source_schema: "bronze"
-  bronze_source_mapping_path: "dbt/.dbt_local/bronze_source_mapping.json"
-  bronze_source_mapping_max_age_hours: 24
 
 on-run-start:
   - "{{ ampere_prepare_bronze_sources() }}"

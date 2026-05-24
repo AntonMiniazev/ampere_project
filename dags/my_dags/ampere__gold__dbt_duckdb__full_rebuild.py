@@ -76,27 +76,12 @@ with DAG(
             "DUCKDB_TEMP_DIRECTORY": Variable.get(
                 "gold_duckdb_temp_directory", default=DAG_CONFIG.duckdb_temp_directory
             ),
-            "RUN_UC_MAPPING_GENERATION": "false",
             "RUN_BRONZE_SOURCE_PREPARE": "false",
-            "RUN_BRONZE_PREFLIGHT": "false",
-            "RUN_BRONZE_PREFLIGHT_DELTA_SCAN": "false",
-            "RUN_SILVER_SOURCE_MAPPING_GENERATION": "true",
-            "RUN_SILVER_SOURCE_PREFLIGHT": "true",
-            "RUN_SILVER_SOURCE_PREFLIGHT_DELTA_SCAN": Variable.get(
-                "run_gold_silver_source_preflight_delta_scan",
-                default="true",
-            )
-            .strip()
-            .lower(),
             "SILVER_UC_CATALOG": DAG_CONFIG.bronze_uc_catalog,
             "SILVER_UC_SCHEMA": Variable.get("spark_uc_silver_schema", default="silver"),
             "SILVER_SOURCE_NAME": "silver",
             "SILVER_SOURCE_SCHEMA": "silver",
-            "SILVER_SOURCE_MAPPING_PATH": Variable.get(
-                "silver_source_mapping_path",
-                default="/app/artifacts/silver_source_mapping.json",
-            ),
-            "GOLD_SOURCE_MODE": "published_silver",
+
             "GOLD_EXTERNAL_ROOT": Variable.get(
                 "gold_external_root", default="s3://ampere-gold/gold"
             ),

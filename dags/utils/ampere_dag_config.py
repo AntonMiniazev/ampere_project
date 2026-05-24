@@ -528,11 +528,6 @@ class SilverDagConfig:
     bronze_uc_schema: str
     bronze_source_name: str
     bronze_source_schema: str
-    bronze_source_mapping_path: str
-    bronze_source_mapping_max_age_hours: str
-    run_uc_mapping_generation: str
-    run_bronze_preflight: str
-    run_bronze_preflight_delta_scan: str
     dbt_target: str
     dbt_threads: str
     dbt_command: str
@@ -586,32 +581,6 @@ def load_silver_dag_config() -> SilverDagConfig:
         bronze_uc_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
         bronze_source_name=Variable.get("bronze_source_name", default="bronze"),
         bronze_source_schema=Variable.get("bronze_source_schema", default="bronze"),
-        bronze_source_mapping_path=Variable.get(
-            "bronze_source_mapping_path",
-            default="/app/artifacts/bronze_source_mapping.json",
-        ),
-        bronze_source_mapping_max_age_hours=Variable.get(
-            "bronze_source_mapping_max_age_hours",
-            default="24",
-        ),
-        run_uc_mapping_generation=Variable.get(
-            "run_uc_mapping_generation",
-            default="true",
-        )
-        .strip()
-        .lower(),
-        run_bronze_preflight=Variable.get(
-            "run_bronze_preflight",
-            default="true",
-        )
-        .strip()
-        .lower(),
-        run_bronze_preflight_delta_scan=Variable.get(
-            "run_bronze_preflight_delta_scan",
-            default="true",
-        )
-        .strip()
-        .lower(),
         dbt_target=Variable.get("silver_dbt_target", default="prod"),
         dbt_threads=Variable.get("silver_dbt_threads", default="2"),
         dbt_command=Variable.get(

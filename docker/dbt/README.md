@@ -30,7 +30,9 @@ Default runtime contract:
 - daily lookback window: `SILVER_LOOKBACK_DAYS`, default `7`
 - silver UC registration: `RUN_SILVER_UC_REGISTRATION`, default `true`
 - bundled helper scripts path: `/app/scripts`
-- bronze source access is path-agnostic in SQL (`source()` only) and resolved at runtime via generated mapping views.
+- bronze and published-silver source access is path-agnostic in SQL (`source()` only) and resolved at runtime via `delta_scan(...)` views created from live Unity Catalog metadata.
+- source mapping artifacts: `BRONZE_SOURCE_MAPPING_PATH` and `SILVER_SOURCE_MAPPING_PATH`, defaulting to `/app/artifacts/*.json`.
+- DuckDB reads MinIO through the configured S3 secret; the direct attached UC scan path is not used until the published UC extension can propagate MinIO endpoint settings.
 
 DuckDB memory and spill-directory values are rendered as connection-time `config_options`. They must be applied before extensions or queries touch temporary storage.
 
@@ -42,26 +44,21 @@ selectors, and environment variables.
 
 Runtime sequence in entrypoint:
 1. render profiles (`render_profiles.sh`);
-2. generate UC bronze metadata mapping (`generate_bronze_source_mapping.py`);
-3. validate mapping coverage/freshness + optional `delta_scan` smoke (`validate_bronze_sources.py`);
-4. run dbt command.
-5. validate each planned published table against existing UC metadata when `RUN_SILVER_UC_REGISTRATION=true`.
-6. publish `publish`-tagged model tables to the layer external root as Delta tables; replacement models are overwritten and partitioned models are written one date partition at a time to keep Arrow and Delta writer memory bounded. If daily mode finds a missing partitioned Delta table, the publish step automatically bootstraps that layer with full-rebuild publish mode for the run.
-7. check published silver Delta locations are readable and match existing UC locations/formats when `RUN_SILVER_UC_REGISTRATION=true`.
-8. upload dbt artifacts and `silver_publish_manifest.json` to `SILVER_DBT_ARTIFACT_ROOT` when silver publish is enabled.
-9. upload dbt artifacts and `gold_publish_manifest.json` to `GOLD_DBT_ARTIFACT_ROOT` when gold publish is enabled.
+2. create fresh Bronze/Silver source mappings from Unity Catalog metadata.
+3. run dbt command; dbt `on-run-start` creates `delta_scan(...)` source views from those mappings.
+4. validate each planned published table against existing UC metadata when `RUN_SILVER_UC_REGISTRATION=true`.
+5. publish `publish`-tagged model tables to the layer external root as Delta tables; replacement models are overwritten and partitioned models are written one date partition at a time to keep Arrow and Delta writer memory bounded. If daily mode finds a missing partitioned Delta table, the publish step automatically bootstraps that layer with full-rebuild publish mode for the run.
+6. check published silver Delta locations are readable and match existing UC locations/formats when `RUN_SILVER_UC_REGISTRATION=true`.
+7. upload dbt artifacts and `silver_publish_manifest.json` to `SILVER_DBT_ARTIFACT_ROOT` when silver publish is enabled.
+8. upload dbt artifacts and `gold_publish_manifest.json` to `GOLD_DBT_ARTIFACT_ROOT` when gold publish is enabled.
 
 Gold runs use this same image and call dbt with gold selectors. Gold publish,
 UC validation, and artifact upload use the same shared runtime scripts with
 layer-specific roots.
 
-Mapping and preflight helpers are bundled under `/app/scripts`. They generate the Bronze source mapping, validate mapping coverage and freshness, optionally probe Delta storage readability, and upload dbt artifacts after a run.
-
 Fallback behavior:
-- if UC metadata cannot be fetched, entrypoint fails before dbt starts;
-- if mapping is missing required tables, duplicated, or stale, entrypoint fails before dbt starts;
-- if `RUN_UC_MAPPING_GENERATION=false`, an existing mapping at `BRONZE_SOURCE_MAPPING_PATH` can be reused, but freshness checks still apply;
-- if `RUN_BRONZE_PREFLIGHT_DELTA_SCAN=false`, only mapping structure/freshness is validated (no storage read probe).
+- if UC metadata mapping generation fails, the entrypoint stops before dbt starts;
+- if a mapped Delta location cannot be read through DuckDB S3 settings, dbt fails during source view preparation or first model read;
 - if `RUN_SILVER_PUBLISH=false`, dbt tables remain local to the runtime DuckDB file and are not copied to MinIO.
 - if `RUN_SILVER_UC_REGISTRATION=false`, Delta tables are published but UC pre-publish validation and post-publish location checks are skipped.
 - if `RUN_DBT_ARTIFACT_UPLOAD=false`, dbt artifacts remain local to the runtime container.

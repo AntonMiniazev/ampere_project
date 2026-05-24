@@ -2,7 +2,7 @@ version: 2
 
 sources:
   - name: bronze
-    description: Bronze tables resolved from UC-generated source mapping views.
+    description: Bronze tables resolved through live Unity Catalog metadata and DuckDB delta_scan views.
     schema: "{{ env_var('BRONZE_SOURCE_SCHEMA', var('bronze_source_schema', 'bronze')) }}"
     freshness:
       warn_after: {count: 6, period: hour}  
@@ -56,7 +56,7 @@ sources:
         description: Bronze event table for delivery tracking.
         loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
   - name: silver
-    description: Published silver Delta tables resolved from UC for gold recovery and rebuild runs.
+    description: Published silver Delta tables resolved through live Unity Catalog metadata and DuckDB delta_scan views for gold recovery and rebuild runs.
     schema: "{{ env_var('SILVER_SOURCE_SCHEMA', 'silver') }}"
     tables:
       - name: dim_clients

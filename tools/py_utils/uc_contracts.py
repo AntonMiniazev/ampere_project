@@ -13,7 +13,8 @@ DEFAULT_CONTRACT = "tools/uc/contracts/ampere_tables.json"
 
 def load_contract(path: str | Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     """Load the canonical project metadata contract."""
-    return json.loads(resolve_project_path(path).read_text(encoding="utf-8"))
+    # Accept UTF-8 files with or without BOM to avoid platform-specific decode failures.
+    return json.loads(resolve_project_path(path).read_text(encoding="utf-8-sig"))
 
 
 def catalog(contract: dict[str, Any]) -> dict[str, Any]:

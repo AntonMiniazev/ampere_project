@@ -3,6 +3,11 @@
 {%- endmacro %}
 
 
+{% macro ampere_quote_identifier(value) -%}
+  {{ return('"' ~ (value | string).replace('"', '""') ~ '"') }}
+{%- endmacro %}
+
+
 {% macro ampere_configure_minio_access() -%}
   {% if not execute %}
     {{ return('') }}
@@ -39,7 +44,7 @@
 
   {% if access_key and secret_key %}
     {% set create_secret_sql %}
-      create or replace secret bronze_minio_s3 (
+      create or replace secret ampere_minio_s3 (
         type s3,
         provider config,
         key_id '{{ ampere_escape_sql_literal(access_key) }}',
@@ -80,10 +85,11 @@
     {{ return('') }}
   {% endif %}
   {% do ampere_configure_minio_access() %}
+  {% set required_tables = ampere_required_source_tables(source_name) %}
   {% set escaped_mapping_path = ampere_escape_sql_literal(mapping_path) %}
   {% set escaped_source_name = ampere_escape_sql_literal(source_name) %}
 
-  {% do run_query('create schema if not exists "' ~ source_schema ~ '"') %}
+  {% do run_query('create schema if not exists ' ~ ampere_quote_identifier(source_schema)) %}
 
   {% set mapping_sql %}
     select table_name, storage_location
@@ -95,7 +101,7 @@
 
   {% if mapping_result is none %}
     {% do exceptions.raise_compiler_error(
-      'Unable to read bronze source mapping from ' ~ mapping_path
+      'Unable to read UC source mapping from ' ~ mapping_path
     ) %}
   {% endif %}
 
@@ -107,7 +113,7 @@
       {% do mapped_tables.append(table_name) %}
       {% set escaped_storage_location = ampere_escape_sql_literal(storage_location) %}
       {% set create_view_sql %}
-        create or replace view "{{ source_schema }}"."{{ table_name }}" as
+        create or replace view {{ ampere_quote_identifier(source_schema) }}.{{ ampere_quote_identifier(table_name) }} as
         select *
         from delta_scan('{{ escaped_storage_location }}')
       {% endset %}
@@ -115,16 +121,15 @@
     {% endif %}
   {% endfor %}
 
-  {% set required_tables = ampere_required_source_tables(source_name) %}
   {% set missing_tables = [] %}
   {% for table_name in required_tables %}
     {% if table_name not in mapped_tables %}
       {% do missing_tables.append(table_name) %}
     {% endif %}
   {% endfor %}
-    {% if missing_tables | length > 0 %}
+  {% if missing_tables | length > 0 %}
     {% do exceptions.raise_compiler_error(
-      label ~ ' source mapping is missing required tables: '
+      label ~ ' UC source mapping is missing required tables: '
       ~ (missing_tables | join(', '))
       ~ '. mapping_path=' ~ mapping_path
     ) %}
@@ -132,7 +137,8 @@
 
   {% do log(
     'Prepared ' ~ (mapped_tables | length)
-    ~ ' ' ~ label ~ ' source views from ' ~ mapping_path,
+    ~ ' ' ~ label ~ ' source views from live UC metadata mapping '
+    ~ mapping_path,
     info=True
   ) %}
   {{ return('') }}
@@ -147,18 +153,15 @@
   {% set source_schema = env_var('BRONZE_SOURCE_SCHEMA', var('bronze_source_schema', 'bronze')) %}
   {% set mapping_path = env_var(
     'BRONZE_SOURCE_MAPPING_PATH',
-    var('bronze_source_mapping_path', '/app/artifacts/bronze_source_mapping.json')
+    var('bronze_source_mapping_path', 'dbt/.dbt_local/bronze_source_mapping.json')
   ) %}
   {{ ampere_prepare_mapped_sources(source_name, source_schema, mapping_path, 'Bronze') }}
 {%- endmacro %}
 
 
 {% macro ampere_prepare_silver_sources() -%}
-  {% if env_var('GOLD_SOURCE_MODE', 'ref') != 'published_silver' %}
-    {{ return('') }}
-  {% endif %}
   {% set source_name = env_var('SILVER_SOURCE_NAME', 'silver') %}
   {% set source_schema = env_var('SILVER_SOURCE_SCHEMA', 'silver') %}
-  {% set mapping_path = env_var('SILVER_SOURCE_MAPPING_PATH', '/app/artifacts/silver_source_mapping.json') %}
+  {% set mapping_path = env_var('SILVER_SOURCE_MAPPING_PATH', 'dbt/.dbt_local/silver_source_mapping.json') %}
   {{ ampere_prepare_mapped_sources(source_name, source_schema, mapping_path, 'Silver') }}
 {%- endmacro %}

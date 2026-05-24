@@ -12,17 +12,9 @@ log() { printf '[ampere-dbt] %s\n' "$*"; }
 : "${BRONZE_SOURCE_NAME:=bronze}"
 : "${BRONZE_SOURCE_SCHEMA:=bronze}"
 : "${BRONZE_SOURCE_MAPPING_PATH:=/app/artifacts/bronze_source_mapping.json}"
-: "${BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS:=24}"
 : "${SILVER_SOURCE_NAME:=silver}"
 : "${SILVER_SOURCE_SCHEMA:=silver}"
 : "${SILVER_SOURCE_MAPPING_PATH:=/app/artifacts/silver_source_mapping.json}"
-: "${SILVER_SOURCE_MAPPING_MAX_AGE_HOURS:=24}"
-: "${RUN_UC_MAPPING_GENERATION:=true}"
-: "${RUN_SILVER_SOURCE_MAPPING_GENERATION:=false}"
-: "${RUN_BRONZE_PREFLIGHT:=true}"
-: "${RUN_BRONZE_PREFLIGHT_DELTA_SCAN:=true}"
-: "${RUN_SILVER_SOURCE_PREFLIGHT:=false}"
-: "${RUN_SILVER_SOURCE_PREFLIGHT_DELTA_SCAN:=true}"
 : "${RUN_SILVER_PUBLISH:=true}"
 : "${RUN_SILVER_UC_REGISTRATION:=true}"
 : "${RUN_GOLD_PUBLISH:=false}"
@@ -38,15 +30,56 @@ log() { printf '[ampere-dbt] %s\n' "$*"; }
 : "${GOLD_DBT_ARTIFACT_ROOT:=s3://ampere-gold-ops/dbt}"
 
 export PATH="/app/.venv/bin:${PATH}"
-export BRONZE_SOURCE_NAME BRONZE_SOURCE_SCHEMA
-export BRONZE_SOURCE_MAPPING_PATH BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS
-export SILVER_SOURCE_NAME SILVER_SOURCE_SCHEMA
-export SILVER_SOURCE_MAPPING_PATH SILVER_SOURCE_MAPPING_MAX_AGE_HOURS
+export BRONZE_SOURCE_NAME BRONZE_SOURCE_SCHEMA BRONZE_SOURCE_MAPPING_PATH
+export SILVER_SOURCE_NAME SILVER_SOURCE_SCHEMA SILVER_SOURCE_MAPPING_PATH
+
+normalize_bool() {
+  local raw="${1:-false}"
+  case "${raw,,}" in
+    1|true|yes|y|on) printf 'true' ;;
+    *) printf 'false' ;;
+  esac
+}
+
+configure_aws_env_for_minio() {
+  local endpoint="${MINIO_S3_ENDPOINT:-}"
+  local use_ssl
+  use_ssl="$(normalize_bool "${MINIO_S3_USE_SSL:-false}")"
+  if [[ "${endpoint}" == https://* ]]; then
+    endpoint="${endpoint#https://}"
+    use_ssl=true
+  elif [[ "${endpoint}" == http://* ]]; then
+    endpoint="${endpoint#http://}"
+    use_ssl=false
+  fi
+  local endpoint_with_scheme="http://${endpoint}"
+  if [[ "${use_ssl}" == "true" ]]; then
+    endpoint_with_scheme="https://${endpoint}"
+  fi
+
+  export AWS_EC2_METADATA_DISABLED=true
+  export AWS_METADATA_SERVICE_NUM_ATTEMPTS=1
+  export AWS_METADATA_SERVICE_TIMEOUT=1
+  export AWS_REGION="${MINIO_S3_REGION:-us-east-1}"
+  export AWS_DEFAULT_REGION="${AWS_REGION}"
+  export AWS_ENDPOINT_URL="${endpoint_with_scheme}"
+  export AWS_ENDPOINT_URL_S3="${endpoint_with_scheme}"
+  export AWS_S3_FORCE_PATH_STYLE=true
+  if [[ "${use_ssl}" != "true" ]]; then
+    export AWS_ALLOW_HTTP=true
+  fi
+  if [[ -n "${MINIO_ACCESS_KEY:-}" ]]; then
+    export AWS_ACCESS_KEY_ID="${MINIO_ACCESS_KEY}"
+  fi
+  if [[ -n "${MINIO_SECRET_KEY:-}" ]]; then
+    export AWS_SECRET_ACCESS_KEY="${MINIO_SECRET_KEY}"
+  fi
+}
+
+configure_aws_env_for_minio
 
 mkdir -p "$(dirname "${DUCKDB_PATH}")"
 mkdir -p "${DBT_LOG_PATH}"
-mkdir -p "$(dirname "${BRONZE_SOURCE_MAPPING_PATH}")"
-mkdir -p "$(dirname "${SILVER_SOURCE_MAPPING_PATH}")"
 
 if [ ! -f "${DBT_PROJECT_DIR}/dbt_project.yml" ]; then
   log "dbt project file not found at ${DBT_PROJECT_DIR}/dbt_project.yml"
@@ -62,57 +95,29 @@ if [ ! -f "${DBT_PROFILES_DIR}/profiles.yml" ]; then
   exit 1
 fi
 
-if [[ "${RUN_UC_MAPPING_GENERATION}" == "true" ]]; then
-  log "generate bronze source mapping from UC"
-  python /app/scripts/generate_bronze_source_mapping.py \
-    --project-dir "${DBT_PROJECT_DIR}" \
-    --source-name "${BRONZE_SOURCE_NAME}" \
-    --output "${BRONZE_SOURCE_MAPPING_PATH}"
-fi
-
-if [[ "${RUN_SILVER_SOURCE_MAPPING_GENERATION}" == "true" ]]; then
-  log "generate silver source mapping from UC"
-  python /app/scripts/generate_bronze_source_mapping.py \
-    --project-dir "${DBT_PROJECT_DIR}" \
-    --source-name "${SILVER_SOURCE_NAME}" \
-    --output "${SILVER_SOURCE_MAPPING_PATH}" \
-    --catalog "${SILVER_UC_CATALOG:-${BRONZE_UC_CATALOG:-ampere}}" \
-    --schema "${SILVER_UC_SCHEMA:-silver}"
-fi
-
-if [[ "${RUN_BRONZE_PREFLIGHT}" == "true" ]]; then
-  log "validate bronze source mapping"
-  VALIDATE_ARGS=(
-    --project-dir "${DBT_PROJECT_DIR}"
-    --source-name "${BRONZE_SOURCE_NAME}"
-    --mapping-path "${BRONZE_SOURCE_MAPPING_PATH}"
-    --max-age-hours "${BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS}"
-  )
-  if [[ "${RUN_BRONZE_PREFLIGHT_DELTA_SCAN}" != "true" ]]; then
-    VALIDATE_ARGS+=(--skip-delta-scan)
-  fi
-  python /app/scripts/validate_bronze_sources.py "${VALIDATE_ARGS[@]}"
-fi
-
-if [[ "${RUN_SILVER_SOURCE_PREFLIGHT}" == "true" ]]; then
-  log "validate silver source mapping"
-  SILVER_VALIDATE_ARGS=(
-    --project-dir "${DBT_PROJECT_DIR}"
-    --source-name "${SILVER_SOURCE_NAME}"
-    --mapping-path "${SILVER_SOURCE_MAPPING_PATH}"
-    --max-age-hours "${SILVER_SOURCE_MAPPING_MAX_AGE_HOURS}"
-  )
-  if [[ "${RUN_SILVER_SOURCE_PREFLIGHT_DELTA_SCAN}" != "true" ]]; then
-    SILVER_VALIDATE_ARGS+=(--skip-delta-scan)
-  fi
-  python /app/scripts/validate_bronze_sources.py "${SILVER_VALIDATE_ARGS[@]}"
-fi
-
 DBT_BIN="/app/.venv/bin/dbt"
 if [ ! -x "${DBT_BIN}" ]; then
   log "dbt binary not found at ${DBT_BIN}"
   exit 127
 fi
+
+if [[ "${RUN_BRONZE_SOURCE_PREPARE:-true}" == "true" ]]; then
+  log "create bronze UC source mapping"
+  python /app/scripts/create_uc_source_mapping.py \
+    --project-dir "${DBT_PROJECT_DIR}" \
+    --source-name "${BRONZE_SOURCE_NAME}" \
+    --catalog "${BRONZE_UC_CATALOG:-ampere}" \
+    --schema "${BRONZE_UC_SCHEMA:-bronze}" \
+    --output "${BRONZE_SOURCE_MAPPING_PATH}"
+fi
+
+log "create silver UC source mapping"
+python /app/scripts/create_uc_source_mapping.py \
+  --project-dir "${DBT_PROJECT_DIR}" \
+  --source-name "${SILVER_SOURCE_NAME}" \
+  --catalog "${SILVER_UC_CATALOG:-${BRONZE_UC_CATALOG:-ampere}}" \
+  --schema "${SILVER_UC_SCHEMA:-silver}" \
+  --output "${SILVER_SOURCE_MAPPING_PATH}"
 
 RAW_CMD="$*"
 if [ -z "${RAW_CMD}" ]; then

@@ -26,9 +26,5 @@
 {%- endmacro %}
 
 {% macro ampere_gold_silver_relation(table_name, ref_name=none) -%}
-  {%- if env_var('GOLD_SOURCE_MODE', 'ref') == 'published_silver' -%}
-    {{ return(source('silver', table_name)) }}
-  {%- else -%}
-    {{ return(ref(ref_name or table_name)) }}
-  {%- endif -%}
+  {{ return(source('silver', table_name)) }}
 {%- endmacro %}

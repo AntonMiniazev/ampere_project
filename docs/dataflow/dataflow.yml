@@ -44,7 +44,7 @@ layers:
   silver:
     title: Silver
     status: implemented
-    responsibility: Clean analytical dbt models built from Bronze through the Unity Catalog metadata bridge.
+    responsibility: Clean analytical dbt models built from Bronze through Unity Catalog metadata and DuckDB delta_scan source views.
     diagram_note: "dbt cleans types, joins entities, tests relationships, and publishes reusable Delta tables."
     engine:
       - DuckDB
@@ -97,7 +97,7 @@ flows:
     to: silver
     engine: DuckDB + dbt
     artifact: Silver Delta tables
-    description: Transform Bronze into clean analytical Silver models through the UC metadata bridge.
+    description: Transform Bronze into clean analytical Silver models through Unity Catalog metadata and DuckDB delta_scan source views.
 
   - from: silver
     to: gold

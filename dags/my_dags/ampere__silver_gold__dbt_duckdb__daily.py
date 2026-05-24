@@ -75,11 +75,6 @@ with DAG(
             "BRONZE_UC_SCHEMA": DAG_CONFIG.bronze_uc_schema,
             "BRONZE_SOURCE_NAME": DAG_CONFIG.bronze_source_name,
             "BRONZE_SOURCE_SCHEMA": DAG_CONFIG.bronze_source_schema,
-            "BRONZE_SOURCE_MAPPING_PATH": DAG_CONFIG.bronze_source_mapping_path,
-            "BRONZE_SOURCE_MAPPING_MAX_AGE_HOURS": DAG_CONFIG.bronze_source_mapping_max_age_hours,
-            "RUN_UC_MAPPING_GENERATION": DAG_CONFIG.run_uc_mapping_generation,
-            "RUN_BRONZE_PREFLIGHT": DAG_CONFIG.run_bronze_preflight,
-            "RUN_BRONZE_PREFLIGHT_DELTA_SCAN": DAG_CONFIG.run_bronze_preflight_delta_scan,
             "DBT_TARGET": DAG_CONFIG.dbt_target,
             "THREADS": DAG_CONFIG.dbt_threads,
             "DUCKDB_MEMORY_LIMIT": DAG_CONFIG.duckdb_memory_limit,
@@ -90,7 +85,7 @@ with DAG(
             "SILVER_LOOKBACK_DAYS": DAG_CONFIG.lookback_days,
             "RUN_SILVER_PUBLISH": DAG_CONFIG.run_silver_publish,
             "RUN_SILVER_UC_REGISTRATION": DAG_CONFIG.run_silver_uc_registration,
-            "GOLD_SOURCE_MODE": "ref",
+
             "GOLD_EXTERNAL_ROOT": Variable.get(
                 "gold_external_root", default="s3://ampere-gold/gold"
             ),
