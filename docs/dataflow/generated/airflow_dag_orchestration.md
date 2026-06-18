@@ -10,6 +10,7 @@ The housekeeping DAG is triggered after Bronze hands off to Silver/Gold and reac
 flowchart TD
     START(["Scheduled daily start<br/>04:15"])
     D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY["bronze<br/>landing_to_delta<br/>daily<br/>schedule: manual / triggered"]
+    D_AMPERE__CURIE__CACHE_REFRESH__POST_GOLD["curie<br/>cache_refresh<br/>post_gold<br/>schedule: manual / triggered"]
     D_AMPERE__GOLD__DBT_DUCKDB__FULL_REBUILD["gold<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
     D_AMPERE__GOLD__REFRESH_FROM_SILVER__ADHOC["gold<br/>refresh_from_silver<br/>adhoc<br/>schedule: manual / triggered"]
     D_AMPERE__HOUSEKEEPING__BRONZE_DELTA_CLEANUP__WEEKLY["housekeeping<br/>bronze_delta_cleanup<br/>weekly<br/>schedule: manual / triggered"]
@@ -24,6 +25,7 @@ flowchart TD
     D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY -->|"upstream success; waits for completion"| D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY
     D_AMPERE__PRE_RAW__GENERATORS__DAILY -->|"upstream success; does not wait"| D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY -->|"upstream success; does not wait"| D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY
+    D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY -->|"upstream success; waits for completion"| D_AMPERE__CURIE__CACHE_REFRESH__POST_GOLD
 
     D_AMPERE__PRE_RAW__GENERATORS__INIT:::manual
     D_AMPERE__SILVER__DBT_DUCKDB__FULL_REBUILD:::manual
@@ -37,6 +39,7 @@ flowchart TD
 | DAG | Schedule | Tags | Source file |
 |---|---|---|---|
 | `ampere__bronze__landing_to_delta__daily` | manual / triggered | layer:bronze, system:spark, system:minio, catalog:unity, mode:daily | `dags/my_dags/ampere__bronze__landing_to_delta__daily.py` |
+| `ampere__curie__cache_refresh__post_gold` | manual / triggered | layer:gold, system:curie, system:api, mode:post_gold | `dags/my_dags/ampere__curie__cache_refresh__post_gold.py` |
 | `ampere__gold__dbt_duckdb__full_rebuild` | manual / triggered | layer:gold, system:dbt, system:duckdb, system:minio, mode:full-rebuild | `dags/my_dags/ampere__gold__dbt_duckdb__full_rebuild.py` |
 | `ampere__gold__refresh_from_silver__adhoc` | manual / triggered | layer:gold, system:dbt, system:duckdb, system:minio, mode:adhoc | `dags/my_dags/ampere__gold__refresh_from_silver__adhoc.py` |
 | `ampere__housekeeping__bronze_delta_cleanup__weekly` | manual / triggered | layer:housekeeping, system:spark, system:delta, system:minio, mode:weekly | `dags/my_dags/ampere__housekeeping__bronze_delta_cleanup__weekly.py` |
@@ -54,3 +57,4 @@ flowchart TD
 | `ampere__bronze__landing_to_delta__daily` | `ampere__silver_gold__dbt_duckdb__daily` | `trigger__silver_gold__dbt_duckdb__daily` | upstream success; waits for completion |
 | `ampere__pre_raw__generators__daily` | `ampere__raw_landing__postgres_to_landing__daily` | `trigger__raw_landing__postgres_to_landing__daily` | upstream success; does not wait |
 | `ampere__raw_landing__postgres_to_landing__daily` | `ampere__bronze__landing_to_delta__daily` | `trigger__bronze__landing_to_delta__daily` | upstream success; does not wait |
+| `ampere__silver_gold__dbt_duckdb__daily` | `ampere__curie__cache_refresh__post_gold` | `trigger__curie__cache_refresh__post_gold` | upstream success; waits for completion |
