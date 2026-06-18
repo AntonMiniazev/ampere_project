@@ -6,6 +6,7 @@ from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
@@ -134,4 +135,13 @@ with DAG(
         op_args=["##### doneSilverGold #####"],
     )
 
-    start_task >> run_silver_dbt >> done_task
+    # Start Curie's dashboard cache refresh after Gold is published.
+    trigger_curie_cache_refresh = TriggerDagRunOperator(
+        task_id="trigger__curie__cache_refresh__post_gold",
+        trigger_dag_id="ampere__curie__cache_refresh__post_gold",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+        reset_dag_run=True,
+        wait_for_completion=True,
+    )
+
+    start_task >> run_silver_dbt >> done_task >> trigger_curie_cache_refresh

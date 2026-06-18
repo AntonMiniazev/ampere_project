@@ -86,9 +86,7 @@ def prepare_clients_update_and_generation(
 
     for store_id in store_ids:
         # Work per-store to preserve local churn and acquisition rates.
-        store_clients = active_clients.filter(
-            pl.col("preferred_store_id") == store_id
-        )
+        store_clients = active_clients.filter(pl.col("preferred_store_id") == store_id)
         n_clients = store_clients.height
         if n_clients == 0:
             continue
@@ -98,7 +96,9 @@ def prepare_clients_update_and_generation(
         if n_churn > 0:
             # Sample churned clients without replacement.
             client_ids = store_clients.get_column("id").to_list()
-            churn_ids = np.random.choice(client_ids, size=n_churn, replace=False).tolist()
+            churn_ids = np.random.choice(
+                client_ids, size=n_churn, replace=False
+            ).tolist()
             to_churn_ids.extend(churn_ids)
 
         new_clients_rate = np.random.uniform(
@@ -110,4 +110,3 @@ def prepare_clients_update_and_generation(
             clients_for_upload.extend(generate_clients(n_new_clients, store_id, today))
 
     return to_churn_ids, clients_for_upload
-
