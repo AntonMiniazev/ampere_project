@@ -4688,6 +4688,36 @@
                                 "nullable": false,
                                 "type_precision": 12,
                                 "type_scale": 4
+                            },
+                            {
+                                "name": "_gold_build_ts",
+                                "type_name": "TIMESTAMP",
+                                "type_text": "timestamp",
+                                "type_json": "{\"name\": \"timestamp\"}",
+                                "position": 6,
+                                "nullable": false,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
+                                "name": "_gold_model_name",
+                                "type_name": "STRING",
+                                "type_text": "string",
+                                "type_json": "{\"name\": \"string\"}",
+                                "position": 7,
+                                "nullable": false,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
+                                "name": "_gold_run_id",
+                                "type_name": "STRING",
+                                "type_text": "string",
+                                "type_json": "{\"name\": \"string\"}",
+                                "position": 8,
+                                "nullable": false,
+                                "type_precision": 0,
+                                "type_scale": 0
                             }
                         ],
                         "properties": {}

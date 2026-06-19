@@ -47,6 +47,30 @@
           "position": 5,
           "type_name": "DECIMAL",
           "type_text": "decimal(12,4)"
+        },
+        {
+          "comment": null,
+          "name": "_gold_build_ts",
+          "nullable": false,
+          "position": 6,
+          "type_name": "TIMESTAMP",
+          "type_text": "timestamp"
+        },
+        {
+          "comment": null,
+          "name": "_gold_model_name",
+          "nullable": false,
+          "position": 7,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "_gold_run_id",
+          "nullable": false,
+          "position": 8,
+          "type_name": "STRING",
+          "type_text": "string"
         }
       ],
       "comment": "Gold table: budget_orders_sales",
