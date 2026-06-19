@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from airflow.hooks.base import BaseHook
 from airflow.sdk import Variable
@@ -451,8 +452,11 @@ class BronzeCleanupDagConfig:
     spark_remote: str
     uc_catalog: str
     uc_bronze_schema: str
-    retention_days: int
+    maintenance_vacuum_retention_hours: int
     snapshot_vacuum_retention_hours: int
+    optimize_min_files: int
+    optimize_target_min_file_mb: float
+    skip_optimize: str
     client_cpu_request: str
     client_memory_request: str
     client_cpu_limit: str
@@ -483,11 +487,43 @@ def load_bronze_cleanup_dag_config() -> BronzeCleanupDagConfig:
         ),
         uc_catalog=Variable.get("spark_uc_catalog", default="ampere"),
         uc_bronze_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
-        retention_days=int(Variable.get("bronze_cleanup_retention_days", default="7")),
+        maintenance_vacuum_retention_hours=max(
+            int(
+                Variable.get(
+                    "bronze_maintenance_vacuum_retention_hours",
+                    default=str(
+                        int(
+                            Variable.get(
+                                "bronze_cleanup_retention_days",
+                                default="1",
+                            )
+                        )
+                        * 24
+                    ),
+                )
+            ),
+            0,
+        ),
         snapshot_vacuum_retention_hours=max(
             int(Variable.get("bronze_snapshot_vacuum_retention_hours", default="0")),
             0,
         ),
+        optimize_min_files=max(
+            int(Variable.get("bronze_cleanup_optimize_min_files", default="32")),
+            0,
+        ),
+        optimize_target_min_file_mb=max(
+            float(
+                Variable.get("bronze_cleanup_optimize_target_min_file_mb", default="64")
+            ),
+            0.0,
+        ),
+        skip_optimize=Variable.get(
+            "bronze_cleanup_skip_optimize",
+            default="false",
+        )
+        .strip()
+        .lower(),
         client_cpu_request=Variable.get(
             "bronze_cleanup_client_cpu_request",
             default="250m",

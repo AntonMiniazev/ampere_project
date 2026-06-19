@@ -143,9 +143,7 @@ def _candidate_runs(
                 f"{base_path}/mode=snapshot/snapshot_date={partition_date.isoformat()}"
             )
         else:
-            partition_path = (
-                f"{base_path}/mode=incremental/{partition_key}={partition_date.isoformat()}"
-            )
+            partition_path = f"{base_path}/mode=incremental/{partition_key}={partition_date.isoformat()}"
         run_dirs = list_dirs(spark, partition_path)
         for run_dir in run_dirs:
             if not run_dir.startswith("run_id="):
@@ -197,9 +195,7 @@ def _apply_group_shuffle(
             group_name,
         )
     if files_max_partition_bytes:
-        spark.conf.set(
-            "spark.sql.files.maxPartitionBytes", files_max_partition_bytes
-        )
+        spark.conf.set("spark.sql.files.maxPartitionBytes", files_max_partition_bytes)
         logging.getLogger(APP_NAME).info(
             "Set spark.sql.files.maxPartitionBytes=%s for group=%s",
             files_max_partition_bytes,
@@ -292,7 +288,9 @@ def main() -> None:
     set_spark_log_level(spark)
     ensure_uc_schema(spark, uc_catalog, uc_bronze_schema, logger)
     ensure_uc_schema(spark, uc_catalog, uc_ops_schema, logger)
-    logger.info("UC-only bronze apply enabled: bronze targets and registry are resolved from UC.")
+    logger.info(
+        "UC-only bronze apply enabled: bronze targets and registry are resolved from UC."
+    )
 
     # Step 4: Load the registry table to track applied batches.
     # This drives idempotency and prevents duplicate loads per partition.
@@ -358,14 +356,16 @@ def main() -> None:
             registry_rows = []
             table_meta = table_config.get(table, {})
             merge_keys = table_meta.get("merge_keys", [])
+            bronze_strategy = table_meta.get("bronze_strategy")
             table_lookback_days = table_meta.get("lookback_days")
             if table_lookback_days is None:
                 table_lookback_days = lookback_days
             table_lookback_days = int(table_lookback_days or 0)
             logger.info(
-                "Table %s uses lookback_days=%s",
+                "Table %s uses lookback_days=%s bronze_strategy=%s",
                 table,
                 table_lookback_days,
+                bronze_strategy,
             )
             raw_base = table_base_path(
                 args.raw_bucket, args.raw_prefix, args.schema, table
@@ -397,7 +397,9 @@ def main() -> None:
                     .collect()
                 }
                 latest_row = (
-                    table_registry.orderBy(F.col("apply_ts_utc").desc()).limit(1).collect()
+                    table_registry.orderBy(F.col("apply_ts_utc").desc())
+                    .limit(1)
+                    .collect()
                 )
                 if latest_row:
                     expected_contract_version = latest_row[0].contract_version
@@ -413,7 +415,7 @@ def main() -> None:
                     state_last_ingest = parse_optional_datetime(
                         state["last_successful_ingest_ts_utc"]
                     )
-    
+
             search_start = _search_start_date(
                 partition_key,
                 table_registry,
@@ -426,13 +428,11 @@ def main() -> None:
             # Step 7: Discover candidate runs and load manifests.
             # This filters to batches with _SUCCESS and builds the apply queue.
             # The expected outcome is a list of candidate batches ready for validation.
-            candidates = _candidate_runs(
-                spark, raw_base, partition_key, search_start
-            )
+            candidates = _candidate_runs(spark, raw_base, partition_key, search_start)
             if not candidates:
                 logger.info("No candidate batches for %s", table)
                 continue
-    
+
             apply_queue = []
             seen_batches = set()
             for candidate in candidates:
@@ -511,15 +511,11 @@ def main() -> None:
                 Examples:
                     _apply_sort_key({"partition_value": "2026-01-24", "run_id": "r1"})
                 """
-                ingest_dt = parse_optional_datetime(
-                    batch.get("ingest_ts_utc") or ""
-                )
+                ingest_dt = parse_optional_datetime(batch.get("ingest_ts_utc") or "")
                 if ingest_dt and ingest_dt.tzinfo is None:
                     ingest_dt = ingest_dt.replace(tzinfo=timezone.utc)
                 ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
                 return (batch["partition_value"], ingest_key, batch["run_id"])
-
-
 
             # Step 8: Apply batches to bronze and record outcomes in the registry.
             # The ETL delegates to per-table-type writers to keep logic easy to follow.
@@ -568,7 +564,11 @@ def main() -> None:
                     source_schema=args.schema,
                     sorted_batches=sorted_queue,
                     lookback_days=table_lookback_days,
-                    append_only_override=table_meta.get("append_only"),
+                    append_only_override=(
+                        parse_bool_flag(table_meta.get("append_only"))
+                        if table_meta.get("append_only") is not None
+                        else None
+                    ),
                     expected_schema_hash=expected_schema_hash,
                     expected_contract_version=expected_contract_version,
                     logger=logger,

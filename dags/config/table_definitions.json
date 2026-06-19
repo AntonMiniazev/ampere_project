@@ -1,6 +1,7 @@
 {
   "events": {
     "delivery_tracking": {
+      "bronze_strategy": "merge",
       "event_date_column": "status_datetime",
       "merge_keys": [
         "order_id",
@@ -8,6 +9,7 @@
       ]
     },
     "order_status_history": {
+      "bronze_strategy": "merge",
       "event_date_column": "status_datetime",
       "merge_keys": [
         "order_id",
@@ -17,6 +19,7 @@
   },
   "facts": {
     "order_product": {
+      "bronze_strategy": "append_only",
       "event_date_column": "order_date",
       "merge_keys": [
         "order_id",
@@ -24,12 +27,14 @@
       ]
     },
     "orders": {
+      "bronze_strategy": "append_only",
       "event_date_column": "order_date",
       "merge_keys": [
         "id"
       ]
     },
     "payments": {
+      "bronze_strategy": "merge",
       "event_date_column": "payment_date",
       "lookback_days": 5,
       "merge_keys": [
@@ -40,6 +45,7 @@
   },
   "mutable_dims": {
     "clients": {
+      "bronze_strategy": "merge",
       "merge_keys": [
         "id"
       ],
@@ -48,6 +54,7 @@
       "cursor_granularity": "date"
     },
     "costing": {
+      "bronze_strategy": "merge",
       "merge_keys": [
         "product_id",
         "store_id",
@@ -58,6 +65,7 @@
       "cursor_granularity": "date"
     },
     "delivery_resource": {
+      "bronze_strategy": "merge",
       "merge_keys": [
         "id"
       ],
@@ -66,6 +74,7 @@
       "cursor_granularity": "date"
     },
     "products": {
+      "bronze_strategy": "merge",
       "merge_keys": [
         "id",
         "valid_from"

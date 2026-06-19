@@ -68,6 +68,27 @@ def _resolve_table_lookback_days(
     return table_meta.get("lookback_days", None)
 
 
+def _default_bronze_strategy(group_name: str, lookback_days: int | None) -> str:
+    """Return the legacy-compatible Bronze write strategy for a table group."""
+    if group_name == "facts":
+        return "merge" if int(lookback_days or 0) > 0 else "append_only"
+    if group_name in {"events", "mutable_dims"}:
+        return "merge"
+    if group_name == "snapshots":
+        return "snapshot_history"
+    return "merge"
+
+
+def _bronze_strategy(
+    table_meta: dict, group_name: str, lookback_days: int | None
+) -> str:
+    """Resolve explicit table strategy with a legacy-compatible fallback."""
+    return str(
+        table_meta.get("bronze_strategy")
+        or _default_bronze_strategy(group_name, lookback_days)
+    )
+
+
 def load_stream_groups(
     lookback_overrides: Mapping[str, int | None] | None = None,
 ) -> list[dict]:
@@ -112,7 +133,9 @@ def build_raw_stream_groups(
             if name == "mutable_dims":
                 table_config = {
                     table: {
-                        "watermark_column": table_map[table].get("watermark_column", ""),
+                        "watermark_column": table_map[table].get(
+                            "watermark_column", ""
+                        ),
                         "created_column": table_map[table].get("created_column", ""),
                         "cursor_granularity": table_map[table].get(
                             "cursor_granularity", "timestamp"
@@ -123,7 +146,9 @@ def build_raw_stream_groups(
             else:
                 table_config = {
                     table: {
-                        "event_date_column": table_map[table].get("event_date_column", ""),
+                        "event_date_column": table_map[table].get(
+                            "event_date_column", ""
+                        ),
                         "lookback_days": _resolve_table_lookback_days(
                             table_map[table],
                             name,
@@ -162,21 +187,30 @@ def build_bronze_stream_groups(
         name = group["group"]
         if name == "snapshots":
             tables_list = tables["snapshots"]
-            table_config = {}
-        else:
-            table_map = tables[name]
-            tables_list = list(table_map.keys())
             table_config = {
                 table: {
-                    "merge_keys": table_map[table].get("merge_keys", []),
-                    "lookback_days": _resolve_table_lookback_days(
-                        table_map[table],
-                        name,
-                        normalized_overrides,
-                    ),
+                    "bronze_strategy": "snapshot_history",
+                    "append_only": False,
                 }
                 for table in tables_list
             }
+        else:
+            table_map = tables[name]
+            tables_list = list(table_map.keys())
+            table_config = {}
+            for table in tables_list:
+                lookback_days = _resolve_table_lookback_days(
+                    table_map[table],
+                    name,
+                    normalized_overrides,
+                )
+                strategy = _bronze_strategy(table_map[table], name, lookback_days)
+                table_config[table] = {
+                    "merge_keys": table_map[table].get("merge_keys", []),
+                    "lookback_days": lookback_days,
+                    "bronze_strategy": strategy,
+                    "append_only": strategy == "append_only",
+                }
         stream_groups.append(
             {
                 **group,

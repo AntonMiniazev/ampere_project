@@ -51,6 +51,31 @@ maintenance_tables = (
     + _tables_for_group("events")
 )
 
+cleanup_arguments = [
+    "--spark-remote",
+    DAG_CONFIG.spark_remote,
+    "--uc-catalog",
+    DAG_CONFIG.uc_catalog,
+    "--uc-bronze-schema",
+    DAG_CONFIG.uc_bronze_schema,
+    "--run-date",
+    "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+    "--maintenance-vacuum-retention-hours",
+    str(DAG_CONFIG.maintenance_vacuum_retention_hours),
+    "--snapshot-vacuum-retention-hours",
+    str(DAG_CONFIG.snapshot_vacuum_retention_hours),
+    "--optimize-min-files",
+    str(DAG_CONFIG.optimize_min_files),
+    "--optimize-target-min-file-mb",
+    str(DAG_CONFIG.optimize_target_min_file_mb),
+    "--snapshot-tables",
+    ",".join(snapshot_tables),
+    "--maintenance-tables",
+    ",".join(maintenance_tables),
+]
+if _is_truthy(DAG_CONFIG.skip_optimize):
+    cleanup_arguments.append("--skip-optimize")
+
 minio_access_key = Secret(
     deploy_type="env",
     deploy_target="MINIO_ACCESS_KEY",
@@ -115,24 +140,7 @@ with DAG(
         # Run as a Spark Connect client. Do not use spark-submit here because it
         # injects spark.master=local[*], which conflicts with remote().
         cmds=["python3", "/opt/spark/app/bronze_cleanup_connect.py"],
-        arguments=[
-            "--spark-remote",
-            DAG_CONFIG.spark_remote,
-            "--uc-catalog",
-            DAG_CONFIG.uc_catalog,
-            "--uc-bronze-schema",
-            DAG_CONFIG.uc_bronze_schema,
-            "--run-date",
-            "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
-            "--retention-days",
-            str(DAG_CONFIG.retention_days),
-            "--snapshot-vacuum-retention-hours",
-            str(DAG_CONFIG.snapshot_vacuum_retention_hours),
-            "--snapshot-tables",
-            ",".join(snapshot_tables),
-            "--maintenance-tables",
-            ",".join(maintenance_tables),
-        ],
+        arguments=cleanup_arguments,
         container_resources=V1ResourceRequirements(
             requests={
                 "cpu": DAG_CONFIG.client_cpu_request,

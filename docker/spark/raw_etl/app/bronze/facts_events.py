@@ -8,6 +8,7 @@ from typing import Callable
 
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
+from pyspark.sql.window import Window
 
 from etl_utils import manifest_ok
 from bronze.apply_utils import build_registry_payload, merge_to_delta
@@ -247,10 +248,10 @@ def apply_facts_events_batches(
     if not valid_batches:
         return
 
-    partition_kinds = {
-        info["batch"].get("partition_kind") for info in valid_batches
-    }
-    partition_kind = partition_kinds.pop() if len(partition_kinds) == 1 else "event_date"
+    partition_kinds = {info["batch"].get("partition_kind") for info in valid_batches}
+    partition_kind = (
+        partition_kinds.pop() if len(partition_kinds) == 1 else "event_date"
+    )
     if partition_kinds:
         logger.warning(
             "Mixed partition kinds for %s; defaulting to %s",
@@ -277,6 +278,13 @@ def apply_facts_events_batches(
 
     meta_df = spark.createDataFrame(file_meta_rows)
     do_merge = bool(merge_keys) and not append_only
+    affected_partition_values = sorted(
+        {
+            str(info["batch"].get("partition_value"))
+            for info in valid_batches
+            if info["batch"].get("partition_value")
+        }
+    )
 
     # Step B: Read all batch files once and write in a single job.
     # This reduces per-batch scheduling overhead while preserving lineage.
@@ -292,25 +300,41 @@ def apply_facts_events_batches(
         df = df.drop("_input_file", "file_path")
         df = df.withColumn("_bronze_last_run_id", F.col("run_id"))
         df = df.withColumn("_bronze_last_apply_ts", F.col("apply_ts"))
-        df = df.withColumn(
-            "_bronze_last_manifest_path", F.col("manifest_path")
-        )
+        df = df.withColumn("_bronze_last_manifest_path", F.col("manifest_path"))
         df = df.withColumn(partition_kind, F.col("partition_value"))
         df = df.drop("run_id", "apply_ts", "manifest_path", "partition_value")
 
         if merge_keys:
-            df = df.dropDuplicates(merge_keys)
+            missing_keys = [key for key in merge_keys if key not in df.columns]
+            if missing_keys:
+                raise ValueError(f"Missing merge keys for {table}: {missing_keys}")
+            window = Window.partitionBy(*[F.col(key) for key in merge_keys]).orderBy(
+                F.col("_bronze_last_apply_ts").desc(),
+                F.col("_bronze_last_run_id").desc(),
+                F.col("_bronze_last_manifest_path").desc(),
+            )
+            df = (
+                df.withColumn("_bronze_merge_rank", F.row_number().over(window))
+                .filter(F.col("_bronze_merge_rank") == 1)
+                .drop("_bronze_merge_rank")
+            )
 
         if align_to_target_schema is not None:
             df = align_to_target_schema(table, df)
         if do_merge:
+            logger.info(
+                "Merging %s with static %s values=%s",
+                table,
+                partition_kind,
+                affected_partition_values,
+            )
             merge_to_delta(
                 spark,
                 df,
                 bronze_table_name,
                 merge_keys,
                 partition_column=partition_kind,
-                partition_value=None,
+                partition_values=affected_partition_values,
             )
         else:
             df.write.format("delta").mode("append").saveAsTable(bronze_table_name)

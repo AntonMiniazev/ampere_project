@@ -45,14 +45,41 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--retention-days",
         type=int,
-        default=7,
-        help="Days to retain before DELETE/VACUUM. Default 7.",
+        default=None,
+        help=(
+            "Deprecated compatibility fallback. Days to retain before "
+            "maintenance VACUUM when --maintenance-vacuum-retention-hours "
+            "is not supplied."
+        ),
+    )
+    parser.add_argument(
+        "--maintenance-vacuum-retention-hours",
+        type=int,
+        default=None,
+        help="VACUUM retention for non-snapshot Bronze tables. Default 24.",
     )
     parser.add_argument(
         "--snapshot-vacuum-retention-hours",
         type=int,
         default=0,
         help="VACUUM retention for snapshot tables after DELETE. Default 0.",
+    )
+    parser.add_argument(
+        "--optimize-min-files",
+        type=int,
+        default=32,
+        help="Run OPTIMIZE only when a maintenance table has at least this many active files.",
+    )
+    parser.add_argument(
+        "--optimize-target-min-file-mb",
+        type=float,
+        default=64.0,
+        help="Run OPTIMIZE only when average active file size is below this threshold.",
+    )
+    parser.add_argument(
+        "--skip-optimize",
+        action="store_true",
+        help="Run VACUUM only and skip maintenance-table OPTIMIZE.",
     )
     parser.add_argument(
         "--snapshot-tables",
@@ -114,6 +141,68 @@ def _validate_uc_tables(
     )
 
 
+def _table_metrics(spark: SparkSession, fqtn: str) -> dict[str, float | int]:
+    """Return compact active Delta metrics from DESCRIBE DETAIL."""
+    row = spark.sql(f"DESCRIBE DETAIL {fqtn}").collect()[0].asDict()
+    active_files = int(row.get("numFiles") or 0)
+    active_size_mb = round(int(row.get("sizeInBytes") or 0) / 1024 / 1024, 3)
+    avg_active_file_mb = (
+        round(active_size_mb / active_files, 3) if active_files else 0.0
+    )
+    return {
+        "active_files": active_files,
+        "active_size_mb": active_size_mb,
+        "avg_active_file_mb": avg_active_file_mb,
+    }
+
+
+def _log_table_metrics(
+    spark: SparkSession,
+    fqtn: str,
+    label: str,
+    logger: logging.Logger,
+) -> dict[str, float | int]:
+    """Log and return current active Delta metrics for one table."""
+    metrics = _table_metrics(spark, fqtn)
+    logger.info(
+        "%s metrics for %s: active_files=%s active_size_mb=%s avg_active_file_mb=%s",
+        label,
+        fqtn,
+        metrics["active_files"],
+        metrics["active_size_mb"],
+        metrics["avg_active_file_mb"],
+    )
+    return metrics
+
+
+def _vacuum_table(
+    spark: SparkSession,
+    fqtn: str,
+    retention_hours: int,
+    logger: logging.Logger,
+) -> None:
+    """Run VACUUM with consistent logging."""
+    logger.info("Vacuuming %s with RETAIN %s HOURS", fqtn, retention_hours)
+    rows = spark.sql(f"VACUUM {fqtn} RETAIN {retention_hours} HOURS").collect()
+    logger.info("VACUUM completed for %s; returned_rows=%s", fqtn, len(rows))
+
+
+def _should_optimize(
+    metrics: dict[str, float | int],
+    *,
+    optimize_min_files: int,
+    optimize_target_min_file_mb: float,
+) -> bool:
+    """Decide whether OPTIMIZE is useful for current active file layout."""
+    active_files = int(metrics["active_files"])
+    avg_file_mb = float(metrics["avg_active_file_mb"])
+    if optimize_min_files <= 0:
+        return active_files > 1
+    return (
+        active_files >= optimize_min_files and avg_file_mb < optimize_target_min_file_mb
+    )
+
+
 def _delete_old_snapshots(
     spark: SparkSession,
     *,
@@ -137,31 +226,63 @@ def _delete_old_snapshots(
             f"DELETE FROM {fqtn} "
             f"WHERE {SNAPSHOT_PARTITION_COLUMN} < DATE '{cutoff.isoformat()}'"
         ).collect()
-        logger.info(
-            "Vacuuming deleted snapshot files for %s with RETAIN %s HOURS",
-            fqtn,
-            retention_hours,
-        )
-        spark.sql(f"VACUUM {fqtn} RETAIN {retention_hours} HOURS").collect()
+        _log_table_metrics(spark, fqtn, "before snapshot vacuum", logger)
+        _vacuum_table(spark, fqtn, retention_hours, logger)
+        _log_table_metrics(spark, fqtn, "after snapshot vacuum", logger)
 
 
-def _optimize_and_vacuum(
+def _maintain_tables(
     spark: SparkSession,
     *,
     catalog: str,
     schema: str,
     tables: list[str],
     retention_hours: int,
+    optimize_min_files: int,
+    optimize_target_min_file_mb: float,
+    skip_optimize: bool,
     logger: logging.Logger,
 ) -> None:
-    """Run OPTIMIZE followed by VACUUM for non-snapshot Bronze tables."""
+    """Vacuum and conditionally optimize non-snapshot Bronze tables."""
     for table in tables:
         fqtn = _table_name(catalog, schema, table)
         _describe_columns(spark, fqtn)
-        logger.info("Optimizing %s", fqtn)
+        before_metrics = _log_table_metrics(
+            spark, fqtn, "before maintenance vacuum", logger
+        )
+        _vacuum_table(spark, fqtn, retention_hours, logger)
+        after_vacuum_metrics = _log_table_metrics(
+            spark, fqtn, "after maintenance vacuum", logger
+        )
+        if skip_optimize:
+            logger.info("Skipping OPTIMIZE for %s because --skip-optimize is set", fqtn)
+            continue
+        if not _should_optimize(
+            after_vacuum_metrics,
+            optimize_min_files=optimize_min_files,
+            optimize_target_min_file_mb=optimize_target_min_file_mb,
+        ):
+            logger.info(
+                "Skipping OPTIMIZE for %s; active_files=%s avg_active_file_mb=%s "
+                "thresholds min_files=%s target_min_file_mb=%s",
+                fqtn,
+                after_vacuum_metrics["active_files"],
+                after_vacuum_metrics["avg_active_file_mb"],
+                optimize_min_files,
+                optimize_target_min_file_mb,
+            )
+            continue
+
+        logger.info(
+            "Optimizing %s; before_active_files=%s before_active_size_mb=%s",
+            fqtn,
+            before_metrics["active_files"],
+            before_metrics["active_size_mb"],
+        )
         spark.sql(f"OPTIMIZE {fqtn}").collect()
-        logger.info("Vacuuming %s with RETAIN %s HOURS", fqtn, retention_hours)
-        spark.sql(f"VACUUM {fqtn} RETAIN {retention_hours} HOURS").collect()
+        _log_table_metrics(spark, fqtn, "after optimize", logger)
+        _vacuum_table(spark, fqtn, retention_hours, logger)
+        _log_table_metrics(spark, fqtn, "after post-optimize vacuum", logger)
 
 
 def main() -> None:
@@ -170,9 +291,16 @@ def main() -> None:
     logger = logging.getLogger(APP_NAME)
     args = _parse_args()
     run_date = date.fromisoformat(args.run_date)
-    retention_days = max(int(args.retention_days), 1)
+    if args.maintenance_vacuum_retention_hours is None:
+        retention_days = max(int(args.retention_days or 1), 1)
+        maintenance_vacuum_retention_hours = retention_days * 24
+    else:
+        maintenance_vacuum_retention_hours = max(
+            int(args.maintenance_vacuum_retention_hours),
+            0,
+        )
+        retention_days = max(maintenance_vacuum_retention_hours // 24, 1)
     cutoff = run_date - timedelta(days=retention_days)
-    retention_hours = retention_days * 24
     snapshot_vacuum_retention_hours = max(
         int(args.snapshot_vacuum_retention_hours),
         0,
@@ -186,28 +314,36 @@ def main() -> None:
         )
 
     logger.info(
-        "Starting Bronze cleanup via %s for run_date=%s cutoff=%s",
+        "Starting Bronze cleanup via %s for run_date=%s cutoff=%s "
+        "maintenance_vacuum_retention_hours=%s snapshot_vacuum_retention_hours=%s",
         args.spark_remote,
         run_date,
         cutoff,
+        maintenance_vacuum_retention_hours,
+        snapshot_vacuum_retention_hours,
     )
     spark = (
-        SparkSession.builder.remote(args.spark_remote)
-        .appName(APP_NAME)
-        .getOrCreate()
+        SparkSession.builder.remote(args.spark_remote).appName(APP_NAME).getOrCreate()
     )
     try:
-        if snapshot_tables and snapshot_vacuum_retention_hours < 168:
+        low_retention_values = [
+            value
+            for value in (
+                snapshot_vacuum_retention_hours if snapshot_tables else None,
+                maintenance_vacuum_retention_hours if maintenance_tables else None,
+            )
+            if value is not None and value < 168
+        ]
+        if low_retention_values:
             spark.conf.set(
                 "spark.databricks.delta.retentionDurationCheck.enabled",
                 "false",
             )
             logger.warning(
-                "Disabled Delta retention duration check for snapshot VACUUM "
-                "RETAIN %s HOURS. This physically removes files immediately "
-                "after snapshot DELETE and disables time travel for deleted "
-                "snapshot partitions.",
-                snapshot_vacuum_retention_hours,
+                "Disabled Delta retention duration check for low-retention "
+                "VACUUM values=%s. This can remove files needed for time "
+                "travel or concurrent readers.",
+                low_retention_values,
             )
         _validate_uc_tables(
             spark,
@@ -227,12 +363,18 @@ def main() -> None:
                 logger=logger,
             )
         if maintenance_tables:
-            _optimize_and_vacuum(
+            _maintain_tables(
                 spark,
                 catalog=args.uc_catalog,
                 schema=args.uc_bronze_schema,
                 tables=maintenance_tables,
-                retention_hours=retention_hours,
+                retention_hours=maintenance_vacuum_retention_hours,
+                optimize_min_files=max(int(args.optimize_min_files), 0),
+                optimize_target_min_file_mb=max(
+                    float(args.optimize_target_min_file_mb),
+                    0.0,
+                ),
+                skip_optimize=bool(args.skip_optimize),
                 logger=logger,
             )
     finally:

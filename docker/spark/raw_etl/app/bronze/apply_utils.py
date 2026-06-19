@@ -33,9 +33,7 @@ def load_registry_schema(schema_path: str) -> StructType:
     for field in data.get("fields", []):
         field_type = type_map.get(field.get("type"))
         if field_type is None:
-            raise ValueError(
-                f"Unsupported registry field type: {field.get('type')}"
-            )
+            raise ValueError(f"Unsupported registry field type: {field.get('type')}")
         fields.append(
             StructField(
                 field.get("name"),
@@ -151,6 +149,21 @@ def build_registry_payload(
     }
 
 
+def _quote_column(value: str) -> str:
+    """Return a backtick-quoted Spark SQL column identifier."""
+    return "`" + value.replace("`", "``") + "`"
+
+
+def _qualified_column(alias: str, column: str) -> str:
+    """Build a qualified Spark SQL column reference for merge conditions."""
+    return f"{alias}.{_quote_column(column)}"
+
+
+def _quote_literal(value: object) -> str:
+    """Return a Spark SQL string literal."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def merge_to_delta(
     spark: SparkSession,
     df,
@@ -158,6 +171,7 @@ def merge_to_delta(
     merge_keys: list[str],
     partition_column: str | None = None,
     partition_value: str | None = None,
+    partition_values: list[str] | None = None,
 ) -> None:
     """Merge or overwrite a Delta table using stable business keys.
 
@@ -168,6 +182,7 @@ def merge_to_delta(
         merge_keys: Business keys, e.g. ["order_id"].
         partition_column: Optional partition column for pruning, e.g. "event_date".
         partition_value: Optional partition value for pruning, e.g. "2026-01-24".
+        partition_values: Optional partition values for static target pruning.
 
     Examples:
         merge_to_delta(
@@ -186,8 +201,19 @@ def merge_to_delta(
             "delta-spark is required for bronze writes. Ensure Delta jars are on the classpath."
         ) from exc
 
-    if partition_column and partition_value and partition_column in df.columns:
-        df = df.filter(df[partition_column] == partition_value)
+    effective_partition_values = []
+    if partition_values:
+        effective_partition_values.extend(str(value) for value in partition_values)
+    if partition_value:
+        effective_partition_values.append(str(partition_value))
+    effective_partition_values = sorted(set(effective_partition_values))
+
+    if (
+        partition_column
+        and effective_partition_values
+        and partition_column in df.columns
+    ):
+        df = df.filter(df[partition_column].isin(effective_partition_values))
 
     try:
         delta_table = DeltaTable.forName(spark, target_table)
@@ -197,12 +223,27 @@ def merge_to_delta(
             "Pre-create it in Unity Catalog before running the bronze pipeline."
         ) from exc
 
-    conditions = " AND ".join([f"t.{k} = s.{k}" for k in merge_keys])
+    conditions = " AND ".join(
+        [
+            f"{_qualified_column('t', key)} = {_qualified_column('s', key)}"
+            for key in merge_keys
+        ]
+    )
     if partition_column and partition_column in df.columns:
         target_columns = set(delta_table.toDF().columns)
         if partition_column in target_columns:
+            static_partition_condition = ""
+            if effective_partition_values:
+                values_sql = ", ".join(
+                    _quote_literal(value) for value in effective_partition_values
+                )
+                static_partition_condition = (
+                    f"{_qualified_column('t', partition_column)} IN ({values_sql}) AND "
+                )
             conditions = (
-                f"t.{partition_column} = s.{partition_column} AND {conditions}"
+                f"{static_partition_condition}"
+                f"{_qualified_column('t', partition_column)} = "
+                f"{_qualified_column('s', partition_column)} AND {conditions}"
             )
     (
         delta_table.alias("t")
