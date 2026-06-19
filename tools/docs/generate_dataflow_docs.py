@@ -436,8 +436,8 @@ def trigger_condition(source: str, target: str, trigger: dict[str, Any]) -> str:
         parts.append("waits for completion")
     elif wait is False:
         parts.append("does not wait")
-    if source == "ampere__bronze__landing_to_delta__daily" and target == "ampere__housekeeping__bronze_delta_cleanup__weekly":
-        parts.append("after Silver/Gold reaches terminal state")
+    if source == "ampere__silver_gold__dbt_duckdb__daily" and target == "ampere__housekeeping__bronze_delta_cleanup__weekly":
+        parts.append("after Silver/Gold dbt reaches terminal state")
     if target == "ampere__housekeeping__bronze_delta_cleanup__weekly":
         parts.append("cleanup runs on Sunday or bronze_optimization=true, otherwise skips")
     return "; ".join(parts)
@@ -496,7 +496,7 @@ def write_airflow_dag_orchestration() -> None:
         "",
         "Daily work is intentionally narrow: the scheduled generator starts the chain, Raw and Bronze run as Spark jobs, and the combined Silver/Gold dbt job publishes analytical tables. Manual DAGs are kept outside the daily path so rebuilds and ad hoc Gold refreshes are explicit recovery actions.",
         "",
-        "The housekeeping DAG is triggered after Bronze hands off to Silver/Gold and reaches a terminal state. It still skips work unless the run is Sunday or the Airflow variable `bronze_optimization=true` is set.",
+        "The housekeeping DAG is triggered after the Silver/Gold dbt pod reaches a terminal state. It still skips work unless the run is Sunday or the Airflow variable `bronze_optimization=true` is set.",
         "",
         "```mermaid",
         mermaid.rstrip(),

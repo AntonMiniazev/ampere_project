@@ -312,7 +312,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     - source_system: Source-system id used in manifests and registry rows. Default `postgres-pre-raw`.
     - driver_cores: Spark driver CPU core count. Default `1`.
     - driver_core_request: Kubernetes CPU request for the Spark driver. Default `400m`.
-    - driver_memory: Spark driver memory setting. Default `2500m`.
+    - driver_memory: Spark driver memory setting. Default `2000m`.
     - driver_memory_overhead: Extra Kubernetes memory overhead for the driver. Default `512m`.
     - executor_cores: Spark executor CPU core count. Default `1`.
     - executor_core_request: Kubernetes CPU request for each executor. Default `300m`.
@@ -368,9 +368,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
-        driver_memory=Variable.get("spark_driver_memory", default="2500m"),
+        driver_memory=Variable.get("spark_bronze_driver_memory", default="2000m"),
         driver_memory_overhead=Variable.get(
-            "spark_driver_memory_overhead", default="512m"
+            "spark_bronze_driver_memory_overhead", default="512"
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(

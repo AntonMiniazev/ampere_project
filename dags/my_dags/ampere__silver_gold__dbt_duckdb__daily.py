@@ -8,6 +8,7 @@ from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable
+from airflow.task.trigger_rule import TriggerRule
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
@@ -135,13 +136,27 @@ with DAG(
         op_args=["##### doneSilverGold #####"],
     )
 
-    # Start Curie's dashboard cache refresh after Gold is published.
+    # Start Curie's dashboard cache refresh after Gold is published. This is a
+    # handoff only, so Silver/Gold does not wait for Curie to finish.
     trigger_curie_cache_refresh = TriggerDagRunOperator(
         task_id="trigger__curie__cache_refresh__post_gold",
         trigger_dag_id="ampere__curie__cache_refresh__post_gold",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
-        wait_for_completion=True,
+        wait_for_completion=False,
     )
 
-    start_task >> run_silver_dbt >> done_task >> trigger_curie_cache_refresh
+    # Fire Bronze housekeeping after the dbt pod reaches a terminal state. The
+    # cleanup DAG still decides whether to do work on Sunday or when forced.
+    trigger_cleanup = TriggerDagRunOperator(
+        task_id="trigger__housekeeping__bronze_delta_cleanup__weekly",
+        trigger_dag_id="ampere__housekeeping__bronze_delta_cleanup__weekly",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+        reset_dag_run=True,
+        wait_for_completion=False,
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
+
+    start_task >> run_silver_dbt
+    run_silver_dbt >> done_task >> trigger_curie_cache_refresh
+    run_silver_dbt >> trigger_cleanup

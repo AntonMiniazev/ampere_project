@@ -68,14 +68,15 @@ flowchart LR
 
 ## Orchestration
 
-Airflow starts with the daily source generator and then hands control from one layer to the next. Raw and Bronze are Spark workloads. Silver and Gold share one dbt/DuckDB runtime for the normal daily path so Gold can reuse freshly prepared Silver relations before publishing Delta tables. Bronze housekeeping runs after Silver/Gold reaches a terminal state and only performs cleanup on Sunday or when `bronze_optimization=true`.
+Airflow starts with the daily source generator and then hands control from one layer to the next without waiting for downstream DAGs to finish. Raw and Bronze are Spark workloads. Silver and Gold share one dbt/DuckDB runtime for the normal daily path so Gold can reuse freshly prepared Silver relations before publishing Delta tables. Bronze housekeeping is fired after Silver/Gold reaches a terminal state and only performs cleanup on Sunday or when `bronze_optimization=true`.
 
-The daily chain is deliberately short: scheduled generation triggers Raw, Raw triggers Bronze, and Bronze waits for the combined Silver/Gold job. The full rebuild and ad hoc Gold DAGs stay manual because they are recovery entrypoints, not part of normal daily scheduling. Housekeeping is modeled as a terminal cleanup trigger so it can run after the pipeline reaches a terminal state while still skipping work on non-cleanup days.
+The daily chain is deliberately short: scheduled generation triggers Raw, Raw triggers Bronze, Bronze triggers the combined Silver/Gold job, and Silver/Gold triggers Curie cache refresh. The full rebuild and ad hoc Gold DAGs stay manual because they are recovery entrypoints, not part of normal daily scheduling. Housekeeping is modeled as a non-blocking terminal cleanup trigger so it can run after Silver/Gold is terminal while still skipping work on non-cleanup days.
 
 ```mermaid
 flowchart TD
     START(["Scheduled daily start<br/>04:15"])
     D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY["bronze<br/>landing_to_delta<br/>daily<br/>schedule: manual / triggered"]
+    D_AMPERE__CURIE__CACHE_REFRESH__POST_GOLD["curie<br/>cache_refresh<br/>post_gold<br/>schedule: manual / triggered"]
     D_AMPERE__GOLD__DBT_DUCKDB__FULL_REBUILD["gold<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
     D_AMPERE__GOLD__REFRESH_FROM_SILVER__ADHOC["gold<br/>refresh_from_silver<br/>adhoc<br/>schedule: manual / triggered"]
     D_AMPERE__HOUSEKEEPING__BRONZE_DELTA_CLEANUP__WEEKLY["housekeeping<br/>bronze_delta_cleanup<br/>weekly<br/>schedule: manual / triggered"]
@@ -86,10 +87,11 @@ flowchart TD
     D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY["silver_gold<br/>dbt_duckdb<br/>daily<br/>schedule: manual / triggered"]
 
     START --> D_AMPERE__PRE_RAW__GENERATORS__DAILY
-    D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY -->|"trigger_rule=ALL_DONE; waits for completion; after Silver/Gold reaches terminal state; cleanup runs on Sunday or bronze_optimization=true, otherwise skips"| D_AMPERE__HOUSEKEEPING__BRONZE_DELTA_CLEANUP__WEEKLY
-    D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY -->|"upstream success; waits for completion"| D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY
+    D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY -->|"upstream success; does not wait"| D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY
     D_AMPERE__PRE_RAW__GENERATORS__DAILY -->|"upstream success; does not wait"| D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY -->|"upstream success; does not wait"| D_AMPERE__BRONZE__LANDING_TO_DELTA__DAILY
+    D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_GOLD
+    D_AMPERE__SILVER_GOLD__DBT_DUCKDB__DAILY -->|"trigger_rule=ALL_DONE; does not wait; cleanup runs on Sunday or bronze_optimization=true, otherwise skips"| D_AMPERE__HOUSEKEEPING__BRONZE_DELTA_CLEANUP__WEEKLY
 
     D_AMPERE__PRE_RAW__GENERATORS__INIT:::manual
     D_AMPERE__SILVER__DBT_DUCKDB__FULL_REBUILD:::manual
@@ -119,6 +121,6 @@ The normal daily path is:
 2. Extract raw landing batches to MinIO.
 3. Apply Raw into Bronze Delta tables with registry-backed idempotency.
 4. Build and publish Silver and Gold in the shared dbt/DuckDB runtime.
-5. Run Bronze cleanup when the Sunday or forced-cleanup condition is met.
+5. Trigger Curie cache refresh and Bronze cleanup as non-blocking terminal handoffs.
 
 Recovery and backfill paths stay separate from the daily chain. Silver full rebuild, Gold full rebuild, and Gold refresh from published Silver are manual DAGs, which keeps normal daily orchestration narrow while preserving explicit repair options.

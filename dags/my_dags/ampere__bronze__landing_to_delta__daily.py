@@ -199,26 +199,15 @@ with DAG(
         op_args=["##### done #####"],
     )
 
-    # Bronze cleanup is triggered by this pipeline only. The trigger waits for
-    # completion so the bronze pipeline run stays open until cleanup finishes
-    # or is skipped by the cleanup DAG's Sunday/force gate.
-    trigger_cleanup = TriggerDagRunOperator(
-        task_id="trigger__housekeeping__bronze_delta_cleanup__weekly",
-        trigger_dag_id="ampere__housekeeping__bronze_delta_cleanup__weekly",
-        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
-        reset_dag_run=True,
-        wait_for_completion=True,
-        trigger_rule=TriggerRule.ALL_DONE,
-    )
-
     # Trigger silver transformation once bronze finished successfully for the
-    # same logical date. This keeps bronze -> silver orchestration automatic.
+    # same logical date. The trigger is a handoff, so Bronze does not stay open
+    # while downstream DAGs run.
     trigger_silver = TriggerDagRunOperator(
         task_id="trigger__silver_gold__dbt_duckdb__daily",
         trigger_dag_id="ampere__silver_gold__dbt_duckdb__daily",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
-        wait_for_completion=True,
+        wait_for_completion=False,
     )
 
     base_params = _base_params()
@@ -339,5 +328,4 @@ with DAG(
     elif facts_events_task:
         registry_ready >> facts_events_task
         bronze_terminal_task = facts_events_task
-    bronze_terminal_task >> done_task
-    done_task >> trigger_silver >> trigger_cleanup
+    bronze_terminal_task >> done_task >> trigger_silver
