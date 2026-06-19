@@ -1,10 +1,61 @@
 {
   "catalog": "ampere",
-  "extracted_at_utc": "2026-05-24T09:54:59+00:00",
+  "extracted_at_utc": "2026-06-19T19:31:10+00:00",
   "layer": "gold",
   "schema": "gold",
-  "source": "http://10.10.4.43:8080",
+  "source": "http://10.10.4.48:8080",
   "tables": [
+    {
+      "catalog": "ampere",
+      "columns": [
+        {
+          "comment": null,
+          "name": "budget_name",
+          "nullable": false,
+          "position": 1,
+          "type_name": "STRING",
+          "type_text": "string"
+        },
+        {
+          "comment": null,
+          "name": "budget_date",
+          "nullable": false,
+          "position": 2,
+          "type_name": "DATE",
+          "type_text": "date"
+        },
+        {
+          "comment": null,
+          "name": "store_id",
+          "nullable": false,
+          "position": 3,
+          "type_name": "SHORT",
+          "type_text": "smallint"
+        },
+        {
+          "comment": null,
+          "name": "orders_budget_daily",
+          "nullable": false,
+          "position": 4,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(12,4)"
+        },
+        {
+          "comment": null,
+          "name": "sales_amount_daily",
+          "nullable": false,
+          "position": 5,
+          "type_name": "DECIMAL",
+          "type_text": "decimal(12,4)"
+        }
+      ],
+      "comment": "Gold table: budget_orders_sales",
+      "data_source_format": "DELTA",
+      "name": "budget_orders_sales",
+      "schema": "gold",
+      "storage_location": "s3://ampere-gold/gold/budget_orders_sales",
+      "table_type": "EXTERNAL"
+    },
     {
       "catalog": "ampere",
       "columns": [

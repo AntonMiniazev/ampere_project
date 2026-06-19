@@ -69,3 +69,4 @@ sources:
       - name: fact_orders
       - name: fact_order_product
       - name: fact_delivery_tracking
+      - name: budget_orders_sales

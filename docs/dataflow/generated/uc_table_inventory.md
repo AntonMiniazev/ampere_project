@@ -1,7 +1,7 @@
 # Unity Catalog table inventory
 
 Source: `docs/data_contracts/*.json`
-Extracted at UTC: `2026-05-24T09:54:59+00:00`
+Extracted at UTC: `2026-06-19T19:31:10+00:00`
 
 | Catalog | Schema | Table | Layer | Storage location | Comment / Description |
 |---|---|---|---|---|---|
@@ -22,6 +22,7 @@ Extracted at UTC: `2026-05-24T09:54:59+00:00`
 | ampere | bronze | products | bronze | s3://ampere-bronze/bronze/source/products | Bronze table: products |
 | ampere | bronze | stores | bronze | s3://ampere-bronze/bronze/source/stores | Bronze table: stores |
 | ampere | bronze | zones | bronze | s3://ampere-bronze/bronze/source/zones | Bronze table: zones |
+| ampere | gold | budget_orders_sales | gold | s3://ampere-gold/gold/budget_orders_sales | Gold table: budget_orders_sales |
 | ampere | gold | dim_clients | gold | s3://ampere-gold/gold/dim_clients | Gold table: dim_clients |
 | ampere | gold | dim_costing | gold | s3://ampere-gold/gold/dim_costing | Gold table: dim_costing |
 | ampere | gold | dim_delivery_cost | gold | s3://ampere-gold/gold/dim_delivery_cost | Gold table: dim_delivery_cost |

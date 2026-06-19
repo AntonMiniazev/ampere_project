@@ -4633,6 +4633,67 @@
                 "tables": [
                     {
                         "schema_name": "gold",
+                        "table_name": "budget_orders_sales",
+                        "table_type": "EXTERNAL",
+                        "data_source_format": "DELTA",
+                        "storage_location": "s3://ampere-gold/gold/budget_orders_sales",
+                        "comment": "Gold table: budget_orders_sales",
+                        "columns": [
+                            {
+                                "name": "budget_name",
+                                "type_name": "STRING",
+                                "type_text": "string",
+                                "type_json": "{\"name\": \"string\"}",
+                                "position": 1,
+                                "nullable": false,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
+                                "name": "budget_date",
+                                "type_name": "DATE",
+                                "type_text": "date",
+                                "type_json": "{\"name\": \"date\"}",
+                                "position": 2,
+                                "nullable": false,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
+                                "name": "store_id",
+                                "type_name": "SHORT",
+                                "type_text": "smallint",
+                                "type_json": "{\"name\": \"short\"}",
+                                "position": 3,
+                                "nullable": false,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
+                                "name": "orders_budget_daily",
+                                "type_name": "DECIMAL",
+                                "type_text": "decimal(12,4)",
+                                "type_json": "{\"name\": \"decimal\", \"precision\": 12, \"scale\": 4}",
+                                "position": 4,
+                                "nullable": false,
+                                "type_precision": 12,
+                                "type_scale": 4
+                            },
+                            {
+                                "name": "sales_amount_daily",
+                                "type_name": "DECIMAL",
+                                "type_text": "decimal(12,4)",
+                                "type_json": "{\"name\": \"decimal\", \"precision\": 12, \"scale\": 4}",
+                                "position": 5,
+                                "nullable": false,
+                                "type_precision": 12,
+                                "type_scale": 4
+                            }
+                        ],
+                        "properties": {}
+                    },
+                    {
+                        "schema_name": "gold",
                         "table_name": "dim_clients",
                         "table_type": "EXTERNAL",
                         "data_source_format": "DELTA",
