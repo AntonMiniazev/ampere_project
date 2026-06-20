@@ -2,6 +2,7 @@
 
 select
     order_id,
+    store_id,
     client_id,
     order_date,
     order_source_id,

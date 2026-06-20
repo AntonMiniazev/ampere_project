@@ -1,9 +1,9 @@
 {
   "catalog": "ampere",
-  "extracted_at_utc": "2026-06-19T22:48:05+00:00",
+  "extracted_at_utc": "2026-06-20T13:55:18+00:00",
   "layer": "bronze",
   "schema": "bronze",
-  "source": "http://10.10.4.48:8080",
+  "source": "http://10.10.4.140:8080",
   "tables": [
     {
       "catalog": "ampere",

@@ -1,7 +1,7 @@
 # Unity Catalog table inventory
 
 Source: `docs/data_contracts/*.json`
-Extracted at UTC: `2026-06-19T22:48:05+00:00`
+Extracted at UTC: `2026-06-20T13:55:18+00:00`
 
 | Catalog | Schema | Table | Layer | Storage location | Comment / Description |
 |---|---|---|---|---|---|
@@ -31,6 +31,7 @@ Extracted at UTC: `2026-06-19T22:48:05+00:00`
 | ampere | gold | dim_stores | gold | s3://ampere-gold/gold/dim_stores | Gold table: dim_stores |
 | ampere | gold | fct_deliveries | gold | s3://ampere-gold/gold/fct_deliveries | Gold table: fct_deliveries |
 | ampere | gold | fct_order_margin | gold | s3://ampere-gold/gold/fct_order_margin | Gold table: fct_order_margin |
+| ampere | gold | fct_order_product | gold | s3://ampere-gold/gold/fct_order_product | Gold table: fct_order_product |
 | ampere | gold | fct_orders_sales | gold | s3://ampere-gold/gold/fct_orders_sales | Gold table: fct_orders_sales |
 | ampere | silver | budget_orders_sales | silver | s3://ampere-silver/silver/budget_orders_sales | Silver table: budget_orders_sales |
 | ampere | silver | dim_assortment | silver | s3://ampere-silver/silver/dim_assortment | Silver table: dim_assortment |
