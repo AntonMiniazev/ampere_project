@@ -1,6 +1,6 @@
 {
   "catalog": "ampere",
-  "extracted_at_utc": "2026-06-20T13:55:18+00:00",
+  "extracted_at_utc": "2026-06-20T14:19:51+00:00",
   "layer": "gold",
   "schema": "gold",
   "source": "http://10.10.4.140:8080",
@@ -746,14 +746,6 @@
           "position": 8,
           "type_name": "STRING",
           "type_text": "string"
-        },
-        {
-          "comment": null,
-          "name": "_gold_partition_date",
-          "nullable": false,
-          "position": 9,
-          "type_name": "DATE",
-          "type_text": "date"
         }
       ],
       "comment": "Gold table: fct_order_product",

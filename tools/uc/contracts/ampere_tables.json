@@ -5648,16 +5648,6 @@
                                 "nullable": false,
                                 "type_precision": 0,
                                 "type_scale": 0
-                            },
-                            {
-                                "name": "_gold_partition_date",
-                                "type_name": "DATE",
-                                "type_text": "date",
-                                "type_json": "{\"name\": \"date\"}",
-                                "position": 9,
-                                "nullable": false,
-                                "type_precision": 0,
-                                "type_scale": 0
                             }
                         ],
                         "properties": {}
