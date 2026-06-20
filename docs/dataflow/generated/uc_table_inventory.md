@@ -1,7 +1,7 @@
 # Unity Catalog table inventory
 
 Source: `docs/data_contracts/*.json`
-Extracted at UTC: `2026-06-20T14:53:17+00:00`
+Extracted at UTC: `2026-06-20T15:08:54+00:00`
 
 | Catalog | Schema | Table | Layer | Storage location | Comment / Description |
 |---|---|---|---|---|---|

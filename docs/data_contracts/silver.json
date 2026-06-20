@@ -1,6 +1,6 @@
 {
   "catalog": "ampere",
-  "extracted_at_utc": "2026-06-20T14:53:17+00:00",
+  "extracted_at_utc": "2026-06-20T15:08:54+00:00",
   "layer": "silver",
   "schema": "silver",
   "source": "http://10.10.4.140:8080",
@@ -1149,7 +1149,7 @@
           "nullable": true,
           "position": 12,
           "type_name": "DECIMAL",
-          "type_text": "decimal(38,4)"
+          "type_text": "decimal(14,4)"
         },
         {
           "comment": null,
@@ -1387,7 +1387,7 @@
           "nullable": true,
           "position": 11,
           "type_name": "DECIMAL",
-          "type_text": "decimal(38,4)"
+          "type_text": "decimal(14,4)"
         },
         {
           "comment": null,
