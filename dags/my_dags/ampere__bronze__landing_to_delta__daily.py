@@ -252,6 +252,8 @@ with DAG(
         application_file=REGISTRY_INIT_TEMPLATE,
         params=registry_params,
         kubernetes_conn_id="kubernetes_default",
+        get_logs=False,
+        log_events_on_failure=True,
         do_xcom_push=False,
     )
     registry_ready = EmptyOperator(
@@ -306,6 +308,8 @@ with DAG(
             application_file=SPARK_APP_TEMPLATE,
             params=params,
             kubernetes_conn_id="kubernetes_default",
+            get_logs=False,
+            log_events_on_failure=True,
             do_xcom_push=False,
         )
         if group_name == "snapshots-mutable-dims":
