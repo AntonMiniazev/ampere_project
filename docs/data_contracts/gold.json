@@ -1,6 +1,6 @@
 {
   "catalog": "ampere",
-  "extracted_at_utc": "2026-06-20T15:21:55+00:00",
+  "extracted_at_utc": "2026-06-20T15:37:22+00:00",
   "layer": "gold",
   "schema": "gold",
   "source": "http://10.10.4.140:8080",

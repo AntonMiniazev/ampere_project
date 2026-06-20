@@ -12,7 +12,7 @@ import boto3
 import duckdb
 import pyarrow as pa
 from botocore.exceptions import ClientError
-from deltalake import write_deltalake
+from deltalake import DeltaTable, write_deltalake
 from register_silver_uc_tables import (
     comparable_column,
     get_uc_table,
@@ -393,6 +393,71 @@ def validate_publish_contract(
     print(f"UC publish contract valid: {catalog}.{schema}.{table_name}")
 
 
+def existing_delta_field_names(
+    target_uri: str,
+    storage_options: dict[str, str],
+) -> list[str]:
+    """Return physical Delta field names for an existing published table."""
+    delta_table = DeltaTable(target_uri, storage_options=storage_options)
+    arrow_schema = delta_table.schema().to_arrow()
+    return list(arrow_schema.names)
+
+
+def planned_delta_field_names(
+    connection: duckdb.DuckDBPyConnection,
+    relation_name: str,
+    partition_column: str | None,
+    publish_partition_column: str,
+) -> list[str]:
+    """Return field names that the current publish would write to Delta."""
+    return [
+        column["name"]
+        for column in relation_uc_columns(
+            connection,
+            relation_name,
+            partition_column,
+            publish_partition_column,
+        )
+    ]
+
+
+def validate_existing_delta_schema_for_daily_refresh(
+    connection: duckdb.DuckDBPyConnection,
+    target_uri: str,
+    table_name: str,
+    relation_name: str,
+    partition_column: str,
+    publish_partition_column: str,
+    storage_options: dict[str, str],
+) -> None:
+    """Fail clearly when a daily partition refresh targets an old Delta schema."""
+    existing_fields = existing_delta_field_names(target_uri, storage_options)
+    planned_fields = planned_delta_field_names(
+        connection,
+        relation_name,
+        partition_column,
+        publish_partition_column,
+    )
+    if existing_fields == planned_fields:
+        return
+
+    missing_in_delta = [
+        field for field in planned_fields if field not in set(existing_fields)
+    ]
+    extra_in_delta = [
+        field for field in existing_fields if field not in set(planned_fields)
+    ]
+    raise RuntimeError(
+        f"Existing Delta schema for {table_name} does not match the current "
+        "publish schema. Daily partition refresh cannot safely evolve a "
+        f"published table schema. table_uri={target_uri!r} "
+        f"existing_fields={existing_fields!r} planned_fields={planned_fields!r} "
+        f"missing_in_delta={missing_in_delta!r} extra_in_delta={extra_in_delta!r}. "
+        f"Run the {table_name} layer publish in full_rebuild mode after applying "
+        "the updated UC contract."
+    )
+
+
 def partition_predicate(
     publish_partition_column: str,
     partition_values_to_replace: list[str],
@@ -484,6 +549,16 @@ def publish_partitioned_model(
         raise RuntimeError(
             f"{table_name} is not a Delta table yet. Run the {layer} full rebuild "
             "before daily partition refresh."
+        )
+    else:
+        validate_existing_delta_schema_for_daily_refresh(
+            connection,
+            target_uri,
+            table_name,
+            relation_name,
+            partition_column,
+            publish_partition_column,
+            storage_options,
         )
 
     for index, partition_value in enumerate(date_partitions, start=1):
