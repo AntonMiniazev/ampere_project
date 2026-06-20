@@ -3,9 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from airflow import DAG
-from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
-    SparkKubernetesOperator,
-)
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 
@@ -15,6 +12,7 @@ from utils.ampere_dag_config import (
     minio_ssl_enabled,
     standard_default_args,
 )
+from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
 from utils.stream_group_config import build_raw_stream_groups
 
 DAG_ID = "ampere__raw_landing__postgres_to_landing__daily"
@@ -180,13 +178,14 @@ with DAG(
             "executor_memory_overhead": executor_memory_overhead,
         }
         submit_tasks.append(
-            SparkKubernetesOperator(
+            SafeSparkKubernetesOperator(
                 task_id=f"run__sparkapp__group_{group_name}",
                 namespace=DAG_CONFIG.spark_namespace,
                 application_file=SPARK_APP_TEMPLATE,
                 params=params,
                 kubernetes_conn_id="kubernetes_default",
-                get_logs=False,
+                get_logs=True,
+                base_container_status_polling_interval=30,
                 log_events_on_failure=True,
                 do_xcom_push=False,
             )

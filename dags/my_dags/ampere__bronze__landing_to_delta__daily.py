@@ -4,15 +4,13 @@ from datetime import datetime
 import logging
 
 from airflow import DAG
-from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import (
-    SparkKubernetesOperator,
-)
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import BranchPythonOperator
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 
+from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
 from utils.ampere_dag_config import (
     get_optional_nonnegative_int_variable,
     get_optional_variable,
@@ -246,13 +244,14 @@ with DAG(
         "executor_instances": 1,
     }
 
-    init_registry_task = SparkKubernetesOperator(
+    init_registry_task = SafeSparkKubernetesOperator(
         task_id="run__sparkapp__registry_init",
         namespace=DAG_CONFIG.spark_namespace,
         application_file=REGISTRY_INIT_TEMPLATE,
         params=registry_params,
         kubernetes_conn_id="kubernetes_default",
-        get_logs=False,
+        get_logs=True,
+        base_container_status_polling_interval=30,
         log_events_on_failure=True,
         do_xcom_push=False,
     )
@@ -302,13 +301,14 @@ with DAG(
             "executor_memory": executor_memory,
             "executor_memory_overhead": executor_memory_overhead,
         }
-        task = SparkKubernetesOperator(
+        task = SafeSparkKubernetesOperator(
             task_id=f"run__sparkapp__group_{group_name}",
             namespace=DAG_CONFIG.spark_namespace,
             application_file=SPARK_APP_TEMPLATE,
             params=params,
             kubernetes_conn_id="kubernetes_default",
-            get_logs=False,
+            get_logs=True,
+            base_container_status_polling_interval=30,
             log_events_on_failure=True,
             do_xcom_push=False,
         )

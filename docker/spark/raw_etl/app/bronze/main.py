@@ -220,6 +220,15 @@ def _apply_group_shuffle(
         )
 
 
+def _registry_status_counts(rows: list[dict]) -> dict[str, int]:
+    """Count registry row statuses for concise table progress logging."""
+    counts = {"applied": 0, "skipped": 0, "failed": 0}
+    for row in rows:
+        status = str(row.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
 def main() -> None:
     """Apply raw landing batches to bronze Delta tables.
 
@@ -430,7 +439,14 @@ def main() -> None:
             # The expected outcome is a list of candidate batches ready for validation.
             candidates = _candidate_runs(spark, raw_base, partition_key, search_start)
             if not candidates:
-                logger.info("No candidate batches for %s", table)
+                logger.info(
+                    "BRONZE_TABLE_PROGRESS status=no_candidates group=%s table=%s "
+                    "partition_key=%s search_start=%s",
+                    group_name,
+                    table,
+                    partition_key,
+                    search_start,
+                )
                 continue
 
             apply_queue = []
@@ -493,12 +509,24 @@ def main() -> None:
                 seen_batches.add(batch_key)
                 apply_queue.append(candidate)
             if not apply_queue:
-                logger.info("No new batches to apply for %s", table)
                 write_registry_rows(
                     spark,
                     registry_table_name,
                     registry_schema,
                     registry_rows,
+                )
+                counts = _registry_status_counts(registry_rows)
+                logger.info(
+                    "BRONZE_TABLE_PROGRESS status=no_new_batches group=%s table=%s "
+                    "candidate_batches=%s applied=%s skipped=%s failed=%s "
+                    "registry_rows=%s",
+                    group_name,
+                    table,
+                    len(candidates),
+                    counts.get("applied", 0),
+                    counts.get("skipped", 0),
+                    counts.get("failed", 0),
+                    len(registry_rows),
                 )
                 continue
 
@@ -521,6 +549,25 @@ def main() -> None:
             # The ETL delegates to per-table-type writers to keep logic easy to follow.
             # The expected outcome is applied/skipped rows in the registry for each batch.
             sorted_queue = sorted(apply_queue, key=_apply_sort_key)
+            partition_values = sorted(
+                {
+                    str(batch.get("partition_value"))
+                    for batch in sorted_queue
+                    if batch.get("partition_value")
+                }
+            )
+            logger.info(
+                "BRONZE_TABLE_PROGRESS status=applying group=%s table=%s "
+                "partition_key=%s new_batches=%s partitions=%s strategy=%s "
+                "lookback_days=%s",
+                group_name,
+                table,
+                partition_key,
+                len(sorted_queue),
+                ",".join(partition_values),
+                bronze_strategy,
+                table_lookback_days,
+            )
             if partition_key == "snapshot_date":
                 apply_snapshot_batches(
                     spark=spark,
@@ -579,6 +626,20 @@ def main() -> None:
                 registry_table_name,
                 registry_schema,
                 registry_rows,
+            )
+            counts = _registry_status_counts(registry_rows)
+            table_status = "failed" if counts.get("failed", 0) else "done"
+            logger.info(
+                "BRONZE_TABLE_PROGRESS status=%s group=%s table=%s applied=%s "
+                "skipped=%s failed=%s registry_rows=%s partitions=%s",
+                table_status,
+                group_name,
+                table,
+                counts.get("applied", 0),
+                counts.get("skipped", 0),
+                counts.get("failed", 0),
+                len(registry_rows),
+                ",".join(partition_values),
             )
             # Release cached data between tables to limit driver memory growth.
             spark.catalog.clearCache()
