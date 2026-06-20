@@ -4078,11 +4078,11 @@
                             {
                                 "name": "line_sales_amount",
                                 "type_name": "DECIMAL",
-                                "type_text": "decimal(14,4)",
-                                "type_json": "{\"name\": \"decimal\", \"precision\": 14, \"scale\": 4}",
+                                "type_text": "decimal(38,4)",
+                                "type_json": "{\"name\": \"decimal\", \"precision\": 38, \"scale\": 4}",
                                 "position": 12,
                                 "nullable": true,
-                                "type_precision": 14,
+                                "type_precision": 38,
                                 "type_scale": 4
                             },
                             {
