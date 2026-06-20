@@ -5,5 +5,7 @@ select
     client_full_name as fullname,
     preferred_store_id,
     registration_date,
+    updated_at,
+    is_churned as churned,
     {{ ampere_gold_lineage_columns() }}
 from {{ ampere_gold_silver_relation('dim_clients') }}

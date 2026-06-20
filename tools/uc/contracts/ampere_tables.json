@@ -4771,11 +4771,31 @@
                                 "type_scale": 0
                             },
                             {
+                                "name": "updated_at",
+                                "type_name": "DATE",
+                                "type_text": "date",
+                                "type_json": "{\"name\": \"date\"}",
+                                "position": 5,
+                                "nullable": true,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
+                                "name": "churned",
+                                "type_name": "BOOLEAN",
+                                "type_text": "boolean",
+                                "type_json": "{\"name\": \"boolean\"}",
+                                "position": 6,
+                                "nullable": true,
+                                "type_precision": 0,
+                                "type_scale": 0
+                            },
+                            {
                                 "name": "_gold_build_ts",
                                 "type_name": "TIMESTAMP",
                                 "type_text": "timestamp",
                                 "type_json": "{\"name\": \"timestamp\"}",
-                                "position": 5,
+                                "position": 7,
                                 "nullable": false,
                                 "type_precision": 0,
                                 "type_scale": 0
@@ -4785,7 +4805,7 @@
                                 "type_name": "STRING",
                                 "type_text": "string",
                                 "type_json": "{\"name\": \"string\"}",
-                                "position": 6,
+                                "position": 8,
                                 "nullable": false,
                                 "type_precision": 0,
                                 "type_scale": 0
@@ -4795,7 +4815,7 @@
                                 "type_name": "STRING",
                                 "type_text": "string",
                                 "type_json": "{\"name\": \"string\"}",
-                                "position": 7,
+                                "position": 9,
                                 "nullable": false,
                                 "type_precision": 0,
                                 "type_scale": 0
