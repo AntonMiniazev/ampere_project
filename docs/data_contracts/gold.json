@@ -1,6 +1,6 @@
 {
   "catalog": "ampere",
-  "extracted_at_utc": "2026-06-20T14:19:51+00:00",
+  "extracted_at_utc": "2026-06-20T14:41:38+00:00",
   "layer": "gold",
   "schema": "gold",
   "source": "http://10.10.4.140:8080",
@@ -702,10 +702,10 @@
         {
           "comment": null,
           "name": "store_id",
-          "nullable": true,
+          "nullable": false,
           "position": 3,
-          "type_name": "INT",
-          "type_text": "int"
+          "type_name": "SHORT",
+          "type_text": "smallint"
         },
         {
           "comment": null,
@@ -771,8 +771,8 @@
           "name": "store_id",
           "nullable": false,
           "position": 2,
-          "type_name": "INT",
-          "type_text": "int"
+          "type_name": "SHORT",
+          "type_text": "smallint"
         },
         {
           "comment": null,

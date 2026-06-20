@@ -5470,9 +5470,9 @@
                             },
                             {
                                 "name": "store_id",
-                                "type_name": "INT",
-                                "type_text": "int",
-                                "type_json": "{\"name\": \"integer\"}",
+                                "type_name": "SHORT",
+                                "type_text": "smallint",
+                                "type_json": "{\"name\": \"short\"}",
                                 "position": 2,
                                 "nullable": false,
                                 "type_precision": 0,
@@ -5591,11 +5591,11 @@
                             },
                             {
                                 "name": "store_id",
-                                "type_name": "INT",
-                                "type_text": "int",
-                                "type_json": "{\"name\": \"integer\"}",
+                                "type_name": "SHORT",
+                                "type_text": "smallint",
+                                "type_json": "{\"name\": \"short\"}",
                                 "position": 3,
-                                "nullable": true,
+                                "nullable": false,
                                 "type_precision": 0,
                                 "type_scale": 0
                             },
