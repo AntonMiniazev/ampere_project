@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime
 from urllib import error, request
 
@@ -82,9 +83,16 @@ def trigger_curie_cache_refresh() -> dict:
     return payload
 
 
-def check_curie_cache_status() -> dict:
-    """Read Curie's cache status after the refresh trigger is accepted."""
-    logger = logging.getLogger(DAG_ID)
+def trigger_and_wait_for_curie_cache_refresh() -> dict:
+    """Trigger Curie cache refresh and wait until a new release becomes active."""
+    old_status = read_curie_cache_status()
+    old_release_id = old_status.get("active_release_id")
+    trigger_curie_cache_refresh()
+    return wait_for_curie_cache_release_update(old_release_id=old_release_id)
+
+
+def read_curie_cache_status() -> dict:
+    """Read Curie's current cache status."""
     timeout_seconds = int(
         Variable.get("curie_api_status_timeout_seconds", default="30")
     )
@@ -95,6 +103,13 @@ def check_curie_cache_status() -> dict:
     )
     if status_code != 200:
         raise RuntimeError(f"Expected Curie cache status HTTP 200, got {status_code}")
+    return payload
+
+
+def check_curie_cache_status() -> dict:
+    """Read Curie's cache status for logging and XCom."""
+    logger = logging.getLogger(DAG_ID)
+    payload = read_curie_cache_status()
     logger.info(
         "Curie cache status: configured=%s, active_release_id=%s, table_count=%s",
         payload.get("configured"),
@@ -102,6 +117,52 @@ def check_curie_cache_status() -> dict:
         len(payload.get("tables", [])),
     )
     return payload
+
+
+def wait_for_curie_cache_release_update(old_release_id: str | None) -> dict:
+    """Wait until Curie publishes a new active cache release after trigger."""
+    logger = logging.getLogger(DAG_ID)
+    max_wait_seconds = int(
+        Variable.get("curie_api_release_update_max_wait_seconds", default="2700")
+    )
+    poll_interval_seconds = int(
+        Variable.get("curie_api_release_update_poll_interval_seconds", default="60")
+    )
+    deadline = time.monotonic() + max_wait_seconds
+
+    logger.info(
+        "Waiting for Curie cache release update: old_release_id=%s, max_wait_seconds=%s, poll_interval_seconds=%s",
+        old_release_id,
+        max_wait_seconds,
+        poll_interval_seconds,
+    )
+
+    while True:
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            raise RuntimeError(
+                "Curie cache release did not update within "
+                f"{max_wait_seconds} seconds; old_release_id={old_release_id}"
+            )
+
+        time.sleep(min(poll_interval_seconds, remaining_seconds))
+        status = read_curie_cache_status()
+        active_release_id = status.get("active_release_id")
+        table_count = len(status.get("tables", []))
+
+        logger.info(
+            "Curie cache release poll: active_release_id=%s, table_count=%s",
+            active_release_id,
+            table_count,
+        )
+
+        if active_release_id and active_release_id != old_release_id:
+            logger.info(
+                "Curie cache release updated: old_release_id=%s, new_release_id=%s",
+                old_release_id,
+                active_release_id,
+            )
+            return status
 
 
 with DAG(
@@ -125,13 +186,13 @@ with DAG(
         op_args=["##### startCurieCacheRefresh #####"],
     )
 
-    # Curie starts the remote Polars cache update job and returns HTTP 202.
+    # Curie starts the remote Polars cache update job and waits for a new release.
     refresh_cache = PythonOperator(
         task_id="run__curie_cache_refresh__trigger",
-        python_callable=trigger_curie_cache_refresh,
+        python_callable=trigger_and_wait_for_curie_cache_refresh,
     )
 
-    # Status check confirms that the Curie API remains reachable after trigger.
+    # Final status check records the active release and table count.
     check_status = PythonOperator(
         task_id="run__curie_cache_refresh__status",
         python_callable=check_curie_cache_status,
