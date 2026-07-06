@@ -13,7 +13,7 @@ from airflow.sdk import Variable
 from utils.ampere_dag_config import standard_default_args
 
 DAG_ID = "ampere__curie__cache_refresh__post_gold"
-DEFAULT_CURIE_API_BASE_URL = "https://ampere-data.work"
+DEFAULT_CURIE_API_BASE_URL = "http://100.65.42.72"
 REFRESH_PATH = "/api/cache/refresh"
 STATUS_PATH = "/api/cache/status"
 ADMIN_KEY_HEADER = "X-Curie-Admin-Key"
