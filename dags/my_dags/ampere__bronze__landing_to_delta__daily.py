@@ -261,28 +261,28 @@ with DAG(
     )
 
     group_pairs = [
-        ("snapshots-mutable-dims", ["snapshots", "mutable_dims"]),
+        ("snapshots", ["snapshots"]),
+        ("mutable-dims", ["mutable_dims"]),
         ("facts-events", ["facts", "events"]),
     ]
-    snapshots_task = None
-    facts_events_task = None
+    bronze_tasks = []
     for group_name, group_keys in group_pairs:
         groups_config = [group_map[key] for key in group_keys if key in group_map]
         if not groups_config:
             continue
         executor_instances = (
             DAG_CONFIG.executor_instances_snapshots
-            if group_name == "snapshots-mutable-dims"
+            if group_name != "facts-events"
             else DAG_CONFIG.executor_instances_facts_events
         )
         executor_memory = (
             DAG_CONFIG.executor_memory_snapshots
-            if group_name == "snapshots-mutable-dims"
+            if group_name != "facts-events"
             else DAG_CONFIG.executor_memory_facts_events
         )
         executor_memory_overhead = (
             DAG_CONFIG.executor_memory_overhead
-            if group_name == "snapshots-mutable-dims"
+            if group_name != "facts-events"
             else DAG_CONFIG.executor_memory_overhead_facts_events
         )
         params = {
@@ -312,24 +312,15 @@ with DAG(
             log_events_on_failure=True,
             do_xcom_push=False,
         )
-        if group_name == "snapshots-mutable-dims":
-            snapshots_task = task
-        else:
-            facts_events_task = task
+        bronze_tasks.append(task)
 
     start_batch_task >> registry_check
     registry_check >> skip_registry_task >> registry_ready
     registry_check >> init_registry_task >> registry_ready
     bronze_terminal_task = registry_ready
-    if snapshots_task and facts_events_task:
-        # Run bronze groups sequentially so each SparkApplication can consume
-        # a larger share of node4 memory/CPU without competing with the other.
-        registry_ready >> snapshots_task >> facts_events_task
-        bronze_terminal_task = facts_events_task
-    elif snapshots_task:
-        registry_ready >> snapshots_task
-        bronze_terminal_task = snapshots_task
-    elif facts_events_task:
-        registry_ready >> facts_events_task
-        bronze_terminal_task = facts_events_task
+    # Fresh applications between groups release JVM/native threads while jobs
+    # still run sequentially on node4.
+    for task in bronze_tasks:
+        bronze_terminal_task >> task
+        bronze_terminal_task = task
     bronze_terminal_task >> done_task >> trigger_silver

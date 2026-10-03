@@ -64,7 +64,7 @@ def _list_partitions(
 
 def _search_start_date(
     partition_key: str,
-    registry_df,
+    registry_date: Optional[date],
     state_last_ingest: Optional[datetime],
     run_date: date,
     lookback_days: int,
@@ -74,21 +74,15 @@ def _search_start_date(
 
     Args:
         partition_key: Partition type, e.g. "snapshot_date", "extract_date", "event_date".
-        registry_df: Registry DataFrame or None, e.g. spark.read.table("`ampere`.`ops`.`bronze_apply_registry`").
+        registry_date: Latest registry partition date for this table, if any.
         state_last_ingest: Last ingest timestamp, e.g. datetime(2026, 1, 24, tzinfo=UTC).
         run_date: Run date, e.g. date(2026, 1, 24).
         lookback_days: Lookback window in days, e.g. 2.
         has_registry_rows: Whether registry has any rows for the table, e.g. True.
 
     Examples:
-        _search_start_date("event_date", registry_df, None, date(2026, 1, 24), 2, False)
+        _search_start_date("event_date", None, None, date(2026, 1, 24), 2, False)
     """
-    registry_date = None
-    if registry_df is not None:
-        row = registry_df.select(F.max("partition_value").alias("pv")).first()
-        if row and row.pv:
-            registry_date = date.fromisoformat(row.pv)
-
     candidates = []
     if registry_date:
         candidates.append(registry_date)
@@ -318,6 +312,23 @@ def main() -> None:
         logger=logger,
     )
     registry_df = spark.read.table(registry_table_name)
+    # Read historical registry metadata once; per-table status checks below only
+    # inspect run ids discovered in the current landing window.
+    registry_history = registry_df.filter(
+        (F.col("source_system") == args.source_system)
+        & (F.col("source_schema") == args.schema)
+    )
+    registry_summaries = {
+        row.source_table: row
+        for row in registry_history.groupBy("source_table")
+        .agg(
+            F.max("partition_value").alias("latest_partition_value"),
+            F.max_by("contract_version", "apply_ts_utc").alias(
+                "latest_contract_version"
+            ),
+        )
+        .collect()
+    }
 
     def _align_to_uc_bronze_schema(table_name: str, df):
         """Align a table DataFrame to UC schema before bronze write/merge."""
@@ -387,32 +398,17 @@ def main() -> None:
                 logger=logger,
             )
 
-            table_registry = None
-            applied_batches = set()
+            summary = registry_summaries.get(table)
             expected_schema_hash = None
-            expected_contract_version = None
-            if registry_df is not None:
-                table_registry = registry_df.filter(
-                    (F.col("source_system") == args.source_system)
-                    & (F.col("source_schema") == args.schema)
-                    & (F.col("source_table") == table)
-                )
-                applied_batches = {
-                    (row.run_id, row.partition_value)
-                    for row in table_registry.filter(
-                        F.col("status").isin("applied", "skipped")
-                    )
-                    .select("run_id", "partition_value")
-                    .collect()
-                }
-                latest_row = (
-                    table_registry.orderBy(F.col("apply_ts_utc").desc())
-                    .limit(1)
-                    .collect()
-                )
-                if latest_row:
-                    expected_contract_version = latest_row[0].contract_version
-            has_registry_rows = bool(latest_row) if registry_df is not None else False
+            expected_contract_version = (
+                summary.latest_contract_version if summary else None
+            )
+            registry_date = (
+                date.fromisoformat(summary.latest_partition_value)
+                if summary and summary.latest_partition_value
+                else None
+            )
+            has_registry_rows = summary is not None
 
             state_last_ingest = None
             if partition_key == "extract_date":
@@ -427,7 +423,7 @@ def main() -> None:
 
             search_start = _search_start_date(
                 partition_key,
-                table_registry,
+                registry_date,
                 state_last_ingest,
                 run_date,
                 table_lookback_days,
@@ -448,6 +444,20 @@ def main() -> None:
                     search_start,
                 )
                 continue
+
+            # A run id is only unique together with its partition. Fetch all
+            # registry partitions for candidate run ids, then compare both keys.
+            candidate_run_ids = sorted({candidate["run_id"] for candidate in candidates})
+            applied_batches = {
+                (row.run_id, row.partition_value)
+                for row in registry_history.filter(
+                    (F.col("source_table") == table)
+                    & F.col("status").isin("applied", "skipped")
+                    & F.col("run_id").isin(candidate_run_ids)
+                )
+                .select("run_id", "partition_value")
+                .collect()
+            }
 
             apply_queue = []
             seen_batches = set()
