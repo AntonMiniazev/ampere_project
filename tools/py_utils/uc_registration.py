@@ -154,46 +154,40 @@ def decimal_precision_scale(dtype: Any) -> tuple[int, int]:
 
 
 def uc_column_type(dtype: Any) -> tuple[str, str, str]:
-    """Map PyArrow or arro3 type to Unity Catalog column metadata fields."""
+    """Map an Arrow type to UC names and a Spark JSON field type."""
     normalized = arrow_type_name(dtype)
     if is_pyarrow_type(pa.types.is_boolean, dtype) or "bool" in normalized:
-        return ("BOOLEAN", "BOOLEAN", json.dumps({"name": "boolean"}))
+        return ("BOOLEAN", "BOOLEAN", "boolean")
     if (
         is_pyarrow_type(pa.types.is_int8, dtype)
         or is_pyarrow_type(pa.types.is_int16, dtype)
         or "int8" in normalized
         or "int16" in normalized
     ):
-        return ("SHORT", "SMALLINT", json.dumps({"name": "short"}))
+        return ("SHORT", "SMALLINT", "short")
     if is_pyarrow_type(pa.types.is_int32, dtype) or "int32" in normalized:
-        return ("INT", "INT", json.dumps({"name": "integer"}))
+        return ("INT", "INT", "integer")
     if is_pyarrow_type(pa.types.is_int64, dtype) or "int64" in normalized:
-        return ("LONG", "BIGINT", json.dumps({"name": "long"}))
+        return ("LONG", "BIGINT", "long")
     if (
         is_pyarrow_type(pa.types.is_float16, dtype)
         or is_pyarrow_type(pa.types.is_float32, dtype)
         or "float16" in normalized
         or "float32" in normalized
     ):
-        return ("FLOAT", "FLOAT", json.dumps({"name": "float"}))
+        return ("FLOAT", "FLOAT", "float")
     if (
         is_pyarrow_type(pa.types.is_float64, dtype)
         or "float64" in normalized
         or "double" in normalized
     ):
-        return ("DOUBLE", "DOUBLE", json.dumps({"name": "double"}))
+        return ("DOUBLE", "DOUBLE", "double")
     if is_pyarrow_type(pa.types.is_decimal, dtype) or "decimal" in normalized:
         precision, scale = decimal_precision_scale(dtype)
         return (
             "DECIMAL",
             f"DECIMAL({precision},{scale})",
-            json.dumps(
-                {
-                    "name": "decimal",
-                    "precision": precision,
-                    "scale": scale,
-                }
-            ),
+            f"decimal({precision},{scale})",
         )
     if (
         is_pyarrow_type(pa.types.is_string, dtype)
@@ -201,22 +195,22 @@ def uc_column_type(dtype: Any) -> tuple[str, str, str]:
         or "string" in normalized
         or "utf8" in normalized
     ):
-        return ("STRING", "STRING", json.dumps({"name": "string"}))
+        return ("STRING", "STRING", "string")
     if (
         is_pyarrow_type(pa.types.is_binary, dtype)
         or is_pyarrow_type(pa.types.is_large_binary, dtype)
         or "binary" in normalized
     ):
-        return ("BINARY", "BINARY", json.dumps({"name": "binary"}))
+        return ("BINARY", "BINARY", "binary")
     if (
         is_pyarrow_type(pa.types.is_date32, dtype)
         or is_pyarrow_type(pa.types.is_date64, dtype)
         or "date" in normalized
     ):
-        return ("DATE", "DATE", json.dumps({"name": "date"}))
+        return ("DATE", "DATE", "date")
     if is_pyarrow_type(pa.types.is_timestamp, dtype) or "timestamp" in normalized:
-        return ("TIMESTAMP", "TIMESTAMP", json.dumps({"name": "timestamp"}))
-    return ("STRING", "STRING", json.dumps({"name": "string"}))
+        return ("TIMESTAMP", "TIMESTAMP", "timestamp")
+    return ("STRING", "STRING", "string")
 
 
 def uc_columns_from_arrow(
@@ -231,13 +225,21 @@ def uc_columns_from_arrow(
 
     columns: list[dict[str, Any]] = []
     for position, field in enumerate(fields, start=1):
-        type_name, type_text, type_json = uc_column_type(field.type)
+        type_name, type_text, spark_type = uc_column_type(field.type)
         columns.append(
             {
                 "name": field.name,
                 "type_name": type_name,
                 "type_text": type_text,
-                "type_json": type_json,
+                "type_json": json.dumps(
+                    {
+                        "name": field.name,
+                        "type": spark_type,
+                        "nullable": bool(field.nullable),
+                        "metadata": {},
+                    },
+                    separators=(",", ":"),
+                ),
                 "position": position,
                 "nullable": bool(field.nullable),
             }

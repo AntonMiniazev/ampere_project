@@ -5,6 +5,12 @@ This folder contains local-only notebooks for preparing Unity Catalog metadata f
 Source of truth:
 - `tools/uc/contracts/ampere_tables.json`
 
+UC `ColumnInfo.type_json` must contain a complete Spark field JSON object
+(`name`, `type`, `nullable`, `metadata`). The `bronze.assortment` contract entry
+uses this format as the UC 0.6.0 pilot; the other existing contract entries still
+need conversion before a full layer metadata refresh. The pilot changed only its
+UC metadata, not its external Delta storage path.
+
 Local runtime config:
 - `tools/uc/config/uc_runtime_config.json`
 
