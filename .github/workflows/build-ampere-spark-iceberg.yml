@@ -9,6 +9,8 @@ on:
       - docker/spark/raw_etl/app/etl_utils.py
       - docker/spark/raw_etl/app/etl_parser.py
       - tools/uc/contracts/ampere_tables.json
+      - tests/test_iceberg_bronze_contract.py
+      - tests/test_iceberg_bronze_spark.py
       - .github/workflows/build-ampere-spark-iceberg.yml
 
 permissions:
