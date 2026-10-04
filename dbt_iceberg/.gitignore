@@ -1,0 +1,6 @@
+target/
+logs/
+.dbt_local/
+.venv/
+*.duckdb
+dbt_internal_packages/

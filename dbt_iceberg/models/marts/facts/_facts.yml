@@ -1,0 +1,98 @@
+version: 2
+
+models:
+  - name: fact_orders
+    description: Curated order fact enriched with latest status and line-item rollups.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: client_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_clients')
+                field: client_id
+      - name: store_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stores')
+                field: store_id
+      - name: total_amount
+        tests: [not_null, positive_number]
+
+  - name: fact_order_product
+    description: Curated order-line fact enriched with order and product context.
+    columns:
+      - name: fact_order_product_key
+        tests: [not_null, unique]
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fact_orders')
+                field: order_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+  - name: fact_payments
+    description: Curated payment fact enriched with order and client context.
+    columns:
+      - name: fact_payments_key
+        tests: [not_null, unique]
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fact_orders')
+                field: order_id
+      - name: payment_amount
+        tests: [not_null, positive_number]
+
+  - name: fact_order_status_history
+    description: Curated order-status history fact enriched with status labels.
+    columns:
+      - name: fact_order_status_history_key
+        tests: [not_null, unique]
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fact_orders')
+                field: order_id
+      - name: order_status_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_order_statuses')
+                field: order_status_id
+
+  - name: fact_delivery_tracking
+    description: Curated delivery-tracking fact enriched with courier context.
+    columns:
+      - name: fact_delivery_tracking_key
+        tests: [not_null, unique]
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fact_orders')
+                field: order_id
+      - name: courier_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_delivery_resource')
+                field: delivery_resource_id

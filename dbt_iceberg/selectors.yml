@@ -1,0 +1,56 @@
+selectors:
+  - name: silver_source_freshness
+    description: Bronze sources used by the silver dbt project.
+    definition:
+      method: source
+      value: bronze.*
+
+  - name: silver_staging
+    description: Bronze-to-staging models that mirror the business table set.
+    definition:
+      method: tag
+      value: staging
+
+  - name: silver_dimensions_facts
+    description: Intermediate plus curated silver dimensions and facts.
+    definition:
+      union:
+        - method: tag
+          value: intermediate
+        - method: tag
+          value: dimension
+        - method: tag
+          value: fact
+
+  - name: silver_publishable
+    description: Curated silver tables intended for UC registration and publish.
+    definition:
+      method: tag
+      value: publish
+
+  - name: silver_snapshot_dimensions
+    description: Silver dimensions derived from bronze snapshot tables.
+    definition:
+      method: tag
+      value: snapshot_dimension
+
+  - name: silver_mutable_dimensions
+    description: Silver dimensions derived from bronze mutable_dims tables.
+    definition:
+      method: tag
+      value: mutable_dimension
+
+  - name: silver_facts_events
+    description: Silver transactional facts and event facts with daily lookback filtering.
+    definition:
+      union:
+        - method: tag
+          value: fact
+        - method: tag
+          value: event
+
+  - name: gold_models
+    description: Gold serving-layer models tagged for gold orchestration.
+    definition:
+      method: tag
+      value: gold
