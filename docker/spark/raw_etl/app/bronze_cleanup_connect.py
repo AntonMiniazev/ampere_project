@@ -36,6 +36,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--uc-catalog", required=True, help="UC catalog name.")
     parser.add_argument("--uc-bronze-schema", required=True, help="UC Bronze schema.")
+    parser.add_argument("--uc-ops-schema", default="ops", help="UC operational schema.")
     parser.add_argument(
         "--run-date",
         type=parse_date,
@@ -90,6 +91,11 @@ def _parse_args() -> argparse.Namespace:
         "--maintenance-tables",
         default="",
         help="Comma-separated mutable-dim/fact/event table names.",
+    )
+    parser.add_argument(
+        "--ops-tables",
+        default="",
+        help="Comma-separated operational tables to compact without VACUUM.",
     )
     return parser.parse_args()
 
@@ -285,6 +291,32 @@ def _maintain_tables(
         _log_table_metrics(spark, fqtn, "after post-optimize vacuum", logger)
 
 
+def _compact_ops_tables(
+    spark: SparkSession,
+    *,
+    catalog: str,
+    schema: str,
+    tables: list[str],
+    optimize_min_files: int,
+    optimize_target_min_file_mb: float,
+    logger: logging.Logger,
+) -> None:
+    """Compact operational Delta tables without removing their old files."""
+    for table in tables:
+        fqtn = _table_name(catalog, schema, table)
+        before_metrics = _log_table_metrics(spark, fqtn, "before ops optimize", logger)
+        if not _should_optimize(
+            before_metrics,
+            optimize_min_files=optimize_min_files,
+            optimize_target_min_file_mb=optimize_target_min_file_mb,
+        ):
+            logger.info("Skipping ops OPTIMIZE for %s", fqtn)
+            continue
+        logger.info("Optimizing operational table %s", fqtn)
+        spark.sql(f"OPTIMIZE {fqtn}").collect()
+        _log_table_metrics(spark, fqtn, "after ops optimize", logger)
+
+
 def main() -> None:
     """Connect to Spark Connect and execute the requested cleanup table chunk."""
     setup_logging()
@@ -307,10 +339,11 @@ def main() -> None:
     )
     snapshot_tables = parse_table_list(args.snapshot_tables)
     maintenance_tables = parse_table_list(args.maintenance_tables)
+    ops_tables = parse_table_list(args.ops_tables)
 
-    if not snapshot_tables and not maintenance_tables:
+    if not snapshot_tables and not maintenance_tables and not ops_tables:
         raise ValueError(
-            "At least one of --snapshot-tables or --maintenance-tables is required."
+            "At least one table list is required."
         )
 
     logger.info(
@@ -352,6 +385,25 @@ def main() -> None:
             tables=snapshot_tables + maintenance_tables,
             logger=logger,
         )
+        if ops_tables:
+            _validate_uc_tables(
+                spark,
+                catalog=args.uc_catalog,
+                schema=args.uc_ops_schema,
+                tables=ops_tables,
+                logger=logger,
+            )
+            _compact_ops_tables(
+                spark,
+                catalog=args.uc_catalog,
+                schema=args.uc_ops_schema,
+                tables=ops_tables,
+                optimize_min_files=max(int(args.optimize_min_files), 0),
+                optimize_target_min_file_mb=max(
+                    float(args.optimize_target_min_file_mb), 0.0
+                ),
+                logger=logger,
+            )
         if snapshot_tables:
             _delete_old_snapshots(
                 spark,

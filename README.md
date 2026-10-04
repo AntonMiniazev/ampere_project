@@ -82,6 +82,7 @@ Deployment reference: follow the completed infra runbook from https://github.com
 - [x] Airflow DAG for bronze load
 - [x] Bronze triggers the Silver/Gold daily DAG on success
 - [x] Bronze triggers weekly housekeeping after Silver/Gold reaches a terminal state
+- [x] Weekly housekeeping compacts the Bronze apply registry before table cleanup, preserving its old Delta files
 
 ### 4) Bronze -> Silver
 - [x] Shared DuckDB/dbt runtime: docker/dbt

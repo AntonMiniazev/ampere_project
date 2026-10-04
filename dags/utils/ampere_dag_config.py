@@ -452,6 +452,7 @@ class BronzeCleanupDagConfig:
     spark_remote: str
     uc_catalog: str
     uc_bronze_schema: str
+    uc_ops_schema: str
     maintenance_vacuum_retention_hours: int
     snapshot_vacuum_retention_hours: int
     optimize_min_files: int
@@ -487,6 +488,7 @@ def load_bronze_cleanup_dag_config() -> BronzeCleanupDagConfig:
         ),
         uc_catalog=Variable.get("spark_uc_catalog", default="ampere"),
         uc_bronze_schema=Variable.get("spark_uc_bronze_schema", default="bronze"),
+        uc_ops_schema=Variable.get("spark_uc_ops_schema", default="ops"),
         maintenance_vacuum_retention_hours=max(
             int(
                 Variable.get(

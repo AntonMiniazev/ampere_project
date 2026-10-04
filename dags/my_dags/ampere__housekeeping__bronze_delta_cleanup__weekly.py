@@ -58,6 +58,8 @@ cleanup_arguments = [
     DAG_CONFIG.uc_catalog,
     "--uc-bronze-schema",
     DAG_CONFIG.uc_bronze_schema,
+    "--uc-ops-schema",
+    DAG_CONFIG.uc_ops_schema,
     "--run-date",
     "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
     "--maintenance-vacuum-retention-hours",
@@ -72,6 +74,8 @@ cleanup_arguments = [
     ",".join(snapshot_tables),
     "--maintenance-tables",
     ",".join(maintenance_tables),
+    "--ops-tables",
+    "bronze_apply_registry",
 ]
 if _is_truthy(DAG_CONFIG.skip_optimize):
     cleanup_arguments.append("--skip-optimize")
