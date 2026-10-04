@@ -37,16 +37,18 @@ class IcebergSparkTests(unittest.TestCase):
                     "spark.sql.extensions",
                     "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
                 )
-                .config(
-                    "spark.sql.catalog.iceberg_bronze",
-                    "org.apache.iceberg.spark.SparkCatalog",
-                )
-                .config("spark.sql.catalog.iceberg_bronze.type", "hadoop")
-                .config("spark.sql.catalog.iceberg_bronze.warehouse", warehouse)
                 .getOrCreate()
             )
             spark.sparkContext.setLogLevel("ERROR")
             try:
+                # The production app sets its REST catalog after Spark starts,
+                # before the first catalog resolution. Check the same timing.
+                spark.conf.set(
+                    "spark.sql.catalog.iceberg_bronze",
+                    "org.apache.iceberg.spark.SparkCatalog",
+                )
+                spark.conf.set("spark.sql.catalog.iceberg_bronze.type", "hadoop")
+                spark.conf.set("spark.sql.catalog.iceberg_bronze.warehouse", warehouse)
                 snapshot_table = ensure_iceberg_table(
                     spark,
                     catalog="iceberg_bronze",
