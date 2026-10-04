@@ -33,6 +33,20 @@ flowchart LR
 - tools/ — local project tooling for documentation, Unity Catalog preparation, metadata generation, and shared helper modules.
 - .github/workflows/ — manual image builds, release-tag image publishing, and generated-doc validation workflows.
 
+## Parallel Iceberg migration
+
+The `migration/iceberg` branch contains an isolated Raw-to-Bronze Spark runtime,
+a dbt v2/DuckDB Silver and Gold project, and two manual Iceberg Airflow DAGs.
+The new images are `ampere-spark-iceberg` and `ampere-dbt-iceberg`. Their dedicated
+GitHub Actions workflows build immutable `sha-<commit>` tags on migration-branch
+pushes; they do not participate in the production `v*` release workflow. Set
+`iceberg_spark_image` and `iceberg_dbt_image` Airflow variables to tested SHA
+tags before a manual run. The current Delta DAGs and release images remain the
+production path until parity and cluster access have been validated.
+
+See `docker/spark/iceberg_raw_etl/README.md` and `dbt_iceberg/README.md` for
+the new runtimes and their validation requirements.
+
 ## Documentation
 
 Dataflow documentation is generated from `docs/dataflow/dataflow.yml`, current DAG table-group config, and optional local Unity Catalog inventory snapshots.
