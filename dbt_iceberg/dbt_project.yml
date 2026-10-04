@@ -1,0 +1,33 @@
+name: ampere_iceberg_project
+version: 2.0.0
+config-version: 2
+profile: ampere_iceberg_project
+
+model-paths: [models]
+macro-paths: [macros]
+test-paths: [tests]
+clean-targets: [target]
+
+models:
+  ampere_iceberg_project:
+    staging:
+      +database: ampere_work
+      +schema: silver_staging
+      +materialized: view
+      +tags: [silver, staging]
+    intermediate:
+      +database: ampere_work
+      +schema: silver_intermediate
+      +materialized: view
+      +tags: [silver, intermediate]
+    marts:
+      +database: iceberg_silver
+      +schema: silver
+      +materialized: table
+      +tags: [silver, publish]
+    gold:
+      marts:
+        +database: iceberg_gold
+        +schema: gold
+        +materialized: table
+        +tags: [gold, publish]
