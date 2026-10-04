@@ -77,13 +77,13 @@ with DAG(
                 default="api://4120baf5-d479-464e-8c83-a96b5d475fdf/.default",
             ),
             "ICEBERG_BRONZE_WAREHOUSE": Variable.get(
-                "iceberg_bronze_warehouse", default="ampere-bronze"
+                "iceberg_bronze_warehouse", default="bronze"
             ),
             "ICEBERG_SILVER_WAREHOUSE": Variable.get(
-                "iceberg_silver_warehouse", default="ampere-silver"
+                "iceberg_silver_warehouse", default="silver"
             ),
             "ICEBERG_GOLD_WAREHOUSE": Variable.get(
-                "iceberg_gold_warehouse", default="ampere-gold"
+                "iceberg_gold_warehouse", default="gold"
             ),
             "DBT_THREADS": CONFIG.dbt_threads,
             "DUCKDB_MEMORY_LIMIT": CONFIG.duckdb_memory_limit,

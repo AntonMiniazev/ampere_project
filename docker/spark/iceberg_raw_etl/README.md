@@ -1,7 +1,7 @@
 # Iceberg Bronze runtime
 
 This image runs the existing Raw-to-Bronze business flow against Lakekeeper's
-`ampere-bronze` warehouse. It has its own Iceberg apply registry and never writes
+`bronze` warehouse. It has its own Iceberg apply registry and never writes
 to the Delta Bronze bucket. The Bronze table columns come from
 `tools/uc/contracts/ampere_tables.json`; the operational registry columns come
 from `app/iceberg_bronze/bronze_apply_registry_schema.json`.
