@@ -8,9 +8,24 @@ from typing import Callable
 
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
+from pyspark.sql.window import Window
 
 from etl_utils import manifest_ok
 from iceberg_bronze.apply_utils import build_registry_payload, merge_to_iceberg
+
+
+def latest_rows_by_merge_key(df, merge_keys: list[str]):
+    """Select the last Raw run for each mutable dimension business key."""
+    window = Window.partitionBy(*[F.col(key) for key in merge_keys]).orderBy(
+        F.col("_bronze_last_apply_ts").desc(),
+        F.col("_bronze_last_run_id").desc(),
+        F.col("_bronze_last_manifest_path").desc(),
+    )
+    return (
+        df.withColumn("_bronze_merge_rank", F.row_number().over(window))
+        .filter(F.col("_bronze_merge_rank") == 1)
+        .drop("_bronze_merge_rank")
+    )
 
 
 def apply_mutable_dim_batches(
@@ -263,6 +278,10 @@ def apply_mutable_dim_batches(
             df = dfs[0]
             for extra in dfs[1:]:
                 df = df.unionByName(extra, allowMissingColumns=True)
+
+            # Several Raw runs can cover the same extract_date and business key.
+            # Keep the latest run so Iceberg MERGE sees one source row per key.
+            df = latest_rows_by_merge_key(df, merge_keys)
 
             if align_to_target_schema is not None:
                 df = align_to_target_schema(table, df)

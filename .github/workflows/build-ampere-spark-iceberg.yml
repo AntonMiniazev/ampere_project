@@ -11,6 +11,7 @@ on:
       - tools/uc/contracts/ampere_tables.json
       - tests/test_iceberg_bronze_contract.py
       - tests/test_iceberg_bronze_spark.py
+      - tests/test_iceberg_mutable_dedup.py
       - .github/workflows/build-ampere-spark-iceberg.yml
 
 permissions:
@@ -36,7 +37,9 @@ jobs:
       - name: Check contract and Iceberg writes
         env:
           ICEBERG_RUNTIME_JAR: ${{ github.workspace }}/iceberg-runtime.jar
-        run: python -m unittest discover -s tests -p 'test_iceberg_bronze*.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_iceberg_bronze*.py' -v
+          python -m unittest discover -s tests -p 'test_iceberg_mutable_dedup.py' -v
 
   build-and-push:
     needs: spark-smoke
