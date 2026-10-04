@@ -42,7 +42,8 @@ spec:
     - --app-name
     - {{ params.app_name }}
   sparkConf:
-    spark.jars: "local:///opt/spark/iceberg-jars/iceberg-spark-runtime-4.1_2.13-1.12.0.jar,local:///opt/spark/iceberg-jars/hadoop-aws-3.4.1.jar,local:///opt/spark/iceberg-jars/bundle-2.35.4.jar"
+    spark.driver.extraClassPath: "/opt/spark/iceberg-jars/*"
+    spark.executor.extraClassPath: "/opt/spark/iceberg-jars/*"
     spark.sql.extensions: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
     spark.sql.shuffle.partitions: "{{ params.shuffle_partitions }}"
     spark.default.parallelism: "{{ params.shuffle_partitions }}"
