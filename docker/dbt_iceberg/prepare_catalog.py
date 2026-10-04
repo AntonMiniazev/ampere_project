@@ -68,8 +68,7 @@ def prepare() -> None:
             f"CLIENT_SECRET {sql_string(client_secret)}, "
             f"OAUTH2_SERVER_URI {sql_string(oauth_uri)}, "
             f"OAUTH2_SCOPE {sql_string(oauth_scope)}, "
-            f"ENDPOINT {sql_string(lakekeeper_uri)}, "
-            "ACCESS_DELEGATION_MODE 'none')"
+            f"ENDPOINT {sql_string(lakekeeper_uri)})"
         )
     finally:
         con.close()

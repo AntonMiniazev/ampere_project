@@ -8,6 +8,7 @@ on:
       - dbt_iceberg/**
       - docker/dbt_iceberg/**
       - tools/budget_generation/budget_parameters_daily.csv
+      - tests/test_iceberg_dbt_catalog.py
       - .github/workflows/build-ampere-dbt-iceberg.yml
 
 permissions:
@@ -15,7 +16,25 @@ permissions:
   packages: write
 
 jobs:
+  dbt-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dbt v2 and DuckDB driver
+        run: |
+          python -m pip install -r docker/dbt_iceberg/requirements.txt
+          dbc install --level user 'duckdb=1.5.6'
+          python -c "import duckdb; c=duckdb.connect(); c.execute('INSTALL iceberg'); c.execute('INSTALL httpfs')"
+      - name: Attach mock Lakekeeper warehouses
+        env:
+          ICEBERG_DBT_SMOKE: '1'
+        run: python -m unittest discover -s tests -p test_iceberg_dbt_catalog.py -v
+
   build-and-push:
+    needs: dbt-smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
