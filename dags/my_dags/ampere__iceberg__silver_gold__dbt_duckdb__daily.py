@@ -91,7 +91,7 @@ with DAG(
             "SILVER_LOOKBACK_DAYS": CONFIG.lookback_days,
             "GOLD_RUN_MODE": CONFIG.run_mode,
             "GOLD_LOOKBACK_DAYS": CONFIG.lookback_days,
-            "LOGICAL_DATE": "{{ ds }}",
+            "LOGICAL_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
         },
         arguments=["build"],
         container_resources=V1ResourceRequirements(

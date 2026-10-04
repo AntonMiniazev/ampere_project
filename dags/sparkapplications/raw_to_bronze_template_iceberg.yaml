@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: raw-to-iceberg-{{ params.stream }}-{{ ts_nodash }}
+  name: raw-to-iceberg-{{ params.stream }}-{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y%m%dt%H%M%S') }}
   namespace: {{ params.namespace }}
 spec:
   type: Python
