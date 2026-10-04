@@ -26,7 +26,7 @@ def parse_iceberg_bronze_args() -> argparse.Namespace:
     parser.add_argument("--iceberg-catalog", default="iceberg_bronze")
     parser.add_argument("--iceberg-bronze-schema", default="bronze")
     parser.add_argument("--iceberg-ops-schema", default="ops")
-    parser.add_argument("--lakekeeper-warehouse", default="ampere-bronze")
+    parser.add_argument("--lakekeeper-warehouse", default="bronze")
     parser.add_argument("--lakekeeper-uri", required=True)
     parser.add_argument("--lakekeeper-oauth-uri", required=True)
     parser.add_argument("--lakekeeper-scope", required=True)

@@ -63,7 +63,7 @@ def _base_params() -> dict:
             default="http://lakekeeper.ampere.svc.cluster.local:8181/catalog",
         ),
         "lakekeeper_warehouse": Variable.get(
-            "iceberg_bronze_warehouse", default="ampere-bronze"
+            "iceberg_bronze_warehouse", default="bronze"
         ),
         "lakekeeper_oauth_uri": Variable.get(
             "iceberg_lakekeeper_oauth_uri",
