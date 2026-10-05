@@ -30,6 +30,7 @@ COPY docker/dbt/entrypoint.sh /usr/local/bin/ampere_dbt_entrypoint.sh
 COPY docker/dbt/render_profiles.sh /usr/local/bin/render_profiles.sh
 
 RUN chmod +x /usr/local/bin/ampere_dbt_entrypoint.sh /usr/local/bin/render_profiles.sh \
+    && bash -n /usr/local/bin/ampere_dbt_entrypoint.sh \
     && mkdir -p /app/artifacts /app/profiles /app/logs
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/ampere_dbt_entrypoint.sh"]

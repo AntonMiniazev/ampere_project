@@ -26,6 +26,7 @@ log() { printf '[ampere-dbt] %s\n' "$*"; }
 : "${SILVER_DBT_ARTIFACT_ROOT:=s3://ampere-silver-ops/dbt}"
 : "${GOLD_RUN_MODE:=daily_refresh}"
 : "${GOLD_LOOKBACK_DAYS:=${SILVER_LOOKBACK_DAYS}}"
+: "${GOLD_DBT_COMMAND:=}"
 : "${GOLD_PUBLISH_MANIFEST_PATH:=/app/artifacts/gold_publish_manifest.json}"
 : "${GOLD_DBT_ARTIFACT_ROOT:=s3://ampere-gold-ops/dbt}"
 
@@ -101,6 +102,25 @@ if [ ! -x "${DBT_BIN}" ]; then
   exit 127
 fi
 
+if [[ -n "${GOLD_DBT_COMMAND}" ]]; then
+  if [[ "${RUN_SILVER_PUBLISH}" != "true" ]]; then
+    log "GOLD_DBT_COMMAND requires RUN_SILVER_PUBLISH=true"
+    exit 2
+  fi
+  if [[ "${RUN_GOLD_PUBLISH}" != "true" ]]; then
+    log "GOLD_DBT_COMMAND requires RUN_GOLD_PUBLISH=true"
+    exit 2
+  fi
+  if [[ "${GOLD_DBT_COMMAND}" != *tag:gold* ]]; then
+    log "GOLD_DBT_COMMAND must select tag:gold"
+    exit 2
+  fi
+  if [[ "${GOLD_DBT_COMMAND}" == *tag:silver* ]]; then
+    log "GOLD_DBT_COMMAND must not select tag:silver"
+    exit 2
+  fi
+fi
+
 if [[ "${RUN_BRONZE_SOURCE_PREPARE:-true}" == "true" ]]; then
   log "create bronze UC source mapping"
   python /app/scripts/create_uc_source_mapping.py \
@@ -127,27 +147,42 @@ if [ -z "${RAW_CMD}" ]; then
   RAW_CMD="dbt build"
 fi
 
-if [[ "${RAW_CMD}" == dbt\ * ]]; then
-  RAW_ARGS="${RAW_CMD#dbt }"
-else
-  RAW_ARGS="${RAW_CMD}"
+if [[ -n "${GOLD_DBT_COMMAND}" && "${RAW_CMD}" != *tag:silver* ]]; then
+  log "GOLD_DBT_COMMAND requires the primary dbt command to select tag:silver"
+  exit 2
+fi
+if [[ -n "${GOLD_DBT_COMMAND}" && "${RAW_CMD}" == *tag:gold* ]]; then
+  log "The primary dbt command must not select tag:gold when GOLD_DBT_COMMAND is set"
+  exit 2
 fi
 
-append_if_missing() {
-  local flag="$1"
-  local value="$2"
-  grep -Eq "(^|[[:space:]])${flag}([[:space:]]|$)" <<<"${RAW_ARGS}" || RAW_ARGS+=" ${flag} ${value}"
+log "dbt version: $("${DBT_BIN}" --version | head -n1)"
+
+run_dbt_command() {
+  local raw_command="$1"
+  local raw_args
+  if [[ "${raw_command}" == dbt\ * ]]; then
+    raw_args="${raw_command#dbt }"
+  else
+    raw_args="${raw_command}"
+  fi
+
+  append_if_missing() {
+    local flag="$1"
+    local value="$2"
+    grep -Eq "(^|[[:space:]])${flag}([[:space:]]|$)" <<<"${raw_args}" || raw_args+=" ${flag} ${value}"
+  }
+
+  append_if_missing "--project-dir" "${DBT_PROJECT_DIR}"
+  append_if_missing "--profiles-dir" "${DBT_PROFILES_DIR}"
+  append_if_missing "--threads" "${THREADS}"
+  append_if_missing "--target" "${DBT_TARGET}"
+  grep -Eq "(^|[[:space:]])--fail-fast([[:space:]]|$)" <<<"${raw_args}" || raw_args+=" --fail-fast"
+  log "exec: ${DBT_BIN} ${raw_args}"
+  bash -lc "${DBT_BIN} ${raw_args}"
 }
 
-append_if_missing "--project-dir" "${DBT_PROJECT_DIR}"
-append_if_missing "--profiles-dir" "${DBT_PROFILES_DIR}"
-append_if_missing "--threads" "${THREADS}"
-append_if_missing "--target" "${DBT_TARGET}"
-grep -Eq "(^|[[:space:]])--fail-fast([[:space:]]|$)" <<<"${RAW_ARGS}" || RAW_ARGS+=" --fail-fast"
-
-log "dbt version: $("${DBT_BIN}" --version | head -n1)"
-log "exec: ${DBT_BIN} ${RAW_ARGS}"
-bash -lc "${DBT_BIN} ${RAW_ARGS}"
+run_dbt_command "${RAW_CMD}"
 
 if [[ "${RUN_SILVER_PUBLISH}" == "true" ]]; then
   log "publish silver tables"
@@ -163,6 +198,20 @@ if [[ "${RUN_SILVER_PUBLISH}" == "true" && "${RUN_SILVER_UC_REGISTRATION}" == "t
   log "check published silver Delta locations"
   python /app/scripts/register_silver_uc_tables.py \
     --publish-manifest-path "${SILVER_PUBLISH_MANIFEST_PATH}"
+fi
+
+# Gold reads published Silver sources, so build it only after Silver publication.
+if [[ -n "${GOLD_DBT_COMMAND}" ]]; then
+  if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" ]]; then
+    log "upload silver dbt artifacts before Gold build"
+    python /app/scripts/upload_dbt_artifacts.py \
+      --artifacts-dir "${DBT_PROJECT_DIR}/target" \
+      --log-file "${DBT_LOG_PATH}/dbt.log" \
+      --upload-root "${SILVER_DBT_ARTIFACT_ROOT}" \
+      --extra-file "${SILVER_PUBLISH_MANIFEST_PATH}"
+  fi
+  log "Silver is published; build Gold from the refreshed Delta Silver tables"
+  run_dbt_command "${GOLD_DBT_COMMAND}"
 fi
 
 if [[ "${RUN_GOLD_PUBLISH}" == "true" ]]; then
@@ -183,7 +232,7 @@ if [[ "${RUN_GOLD_PUBLISH}" == "true" && "${RUN_GOLD_UC_REGISTRATION}" == "true"
     --schema "${GOLD_UC_SCHEMA:-gold}"
 fi
 
-if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" && "${RUN_SILVER_PUBLISH}" == "true" ]]; then
+if [[ "${RUN_DBT_ARTIFACT_UPLOAD}" == "true" && "${RUN_SILVER_PUBLISH}" == "true" && -z "${GOLD_DBT_COMMAND}" ]]; then
   log "upload silver dbt artifacts"
   python /app/scripts/upload_dbt_artifacts.py \
     --artifacts-dir "${DBT_PROJECT_DIR}/target" \

@@ -56,8 +56,8 @@ with DAG(
         op_args=["##### startSilverGold #####"],
     )
 
-    # Execute silver and gold in one container so gold can reuse freshly built
-    # silver relations from the same DuckDB workspace.
+    # Build/publish Silver first; the entrypoint then builds Gold from the
+    # refreshed published Delta Silver sources in the same pod.
     run_silver_dbt = KubernetesPodOperator(
         task_id="run__silver_gold__dbt_build",
         name="ampere-dbt-silver-gold",
@@ -106,13 +106,17 @@ with DAG(
             )
             .strip()
             .lower(),
+            "GOLD_DBT_COMMAND": Variable.get(
+                "gold_daily_dbt_command",
+                default="dbt build --select tag:gold",
+            ),
             "RUN_DBT_ARTIFACT_UPLOAD": DAG_CONFIG.run_dbt_artifact_upload,
             "LOGICAL_DATE": "{{ ds }}",
         },
         arguments=[
             Variable.get(
-                "silver_daily_with_gold_dbt_command",
-                default=DAG_CONFIG.dbt_command,
+                "silver_daily_dbt_command",
+                default="dbt build --select tag:silver",
             )
         ],
         container_resources=V1ResourceRequirements(

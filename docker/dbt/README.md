@@ -45,12 +45,27 @@ selectors, and environment variables.
 Runtime sequence in entrypoint:
 1. render profiles (`render_profiles.sh`);
 2. create fresh Bronze/Silver source mappings from Unity Catalog metadata.
-3. run dbt command; dbt `on-run-start` creates `delta_scan(...)` source views from those mappings.
-4. validate each planned published table against existing UC metadata when `RUN_SILVER_UC_REGISTRATION=true`.
-5. publish `publish`-tagged model tables to the layer external root as Delta tables; replacement models are overwritten and partitioned models are written one date partition at a time to keep Arrow and Delta writer memory bounded. If daily mode finds a missing partitioned Delta table, the publish step automatically bootstraps that layer with full-rebuild publish mode for the run.
-6. check published silver Delta locations are readable and match existing UC locations/formats when `RUN_SILVER_UC_REGISTRATION=true`.
-7. upload dbt artifacts and `silver_publish_manifest.json` to `SILVER_DBT_ARTIFACT_ROOT` when silver publish is enabled.
-8. upload dbt artifacts and `gold_publish_manifest.json` to `GOLD_DBT_ARTIFACT_ROOT` when gold publish is enabled.
+3. run the primary dbt command; dbt `on-run-start` creates `delta_scan(...)` source views from those mappings.
+4. publish `publish`-tagged Silver models to the Silver external root as Delta tables, then validate/register them when `RUN_SILVER_UC_REGISTRATION=true`.
+5. when `GOLD_DBT_COMMAND` is set, run it only after the Silver publish/registration step. The entrypoint requires the primary command to select `tag:silver`, the Gold command to select `tag:gold`, and both publish switches to be enabled. This ordering ensures Gold's `source('silver', ...)` relations see the latest published Silver snapshot.
+6. publish `publish`-tagged Gold tables and validate/register them when enabled.
+7. upload layer artifacts and publish manifests to `SILVER_DBT_ARTIFACT_ROOT` and `GOLD_DBT_ARTIFACT_ROOT`.
+
+Partitioned models are written one date partition at a time to keep Arrow and
+Delta writer memory bounded. Daily publishing replaces only the partitions
+present in the current dbt result, retaining older partitions. If daily mode
+finds a missing partitioned Delta table, publishing bootstraps it with a full
+rebuild for that run.
+
+The Delta daily combined DAG uses two commands: `silver_daily_dbt_command`
+(default `dbt build --select tag:silver`) and `gold_daily_dbt_command` (default
+`dbt build --select tag:gold`). The full-rebuild DAG uses
+`silver_full_rebuild_silver_dbt_command` and `gold_full_rebuild_dbt_command`,
+each defaulting to its layer selector plus `--full-refresh`.
+If custom values were set under `silver_daily_with_gold_dbt_command`,
+`silver_dbt_command`, or `silver_full_rebuild_dbt_command`, migrate them to the
+new Silver-specific variables; these old names are no longer read by the daily
+or full-rebuild Silver/Gold DAGs.
 
 Gold runs use this same image and call dbt with gold selectors. Gold publish,
 UC validation, and artifact upload use the same shared runtime scripts with
