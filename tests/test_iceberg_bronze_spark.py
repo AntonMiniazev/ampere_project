@@ -21,6 +21,34 @@ os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/uc/contracts/ampere_tabl
 from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402
 from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
+from iceberg_bronze.main import _registry_progress  # noqa: E402
+
+
+class IcebergRegistryTests(unittest.TestCase):
+    """Keep failed historical batches visible after newer successes."""
+
+    def test_unresolved_failures_anchor_landing_search(self) -> None:
+        """Exclude retried successes but retain older failed partitions."""
+        spark = SparkSession.builder.master("local[2]").appName("iceberg-registry").getOrCreate()
+        spark.sparkContext.setLogLevel("ERROR")
+        try:
+            history = spark.sql(
+                "SELECT * FROM VALUES "
+                "('payments','old','2025-12-16','failed','v1','2026-10-04T00:00:00'),"
+                "('payments','resolved','2026-01-01','failed','v1','2026-10-04T00:00:00'),"
+                "('payments','resolved','2026-01-01','applied','v1','2026-10-05T00:00:00'),"
+                "('payments','new','2026-09-29','applied','v2','2026-10-05T01:00:00'),"
+                "('delivery_tracking','old','2025-12-16','failed','v1','2026-10-04T00:00:00') "
+                "AS t(source_table,run_id,partition_value,status,contract_version,apply_ts_utc)"
+            )
+            progress = _registry_progress(history)
+            self.assertEqual(progress["payments"].latest_partition_value, "2026-09-29")
+            self.assertEqual(progress["payments"].earliest_failed_partition_value, "2025-12-16")
+            self.assertEqual(progress["payments"].latest_contract_version, "v2")
+            self.assertIsNone(progress["delivery_tracking"].latest_partition_value)
+            self.assertEqual(progress["delivery_tracking"].earliest_failed_partition_value, "2025-12-16")
+        finally:
+            spark.stop()
 
 
 @unittest.skipUnless(os.getenv("ICEBERG_RUNTIME_JAR"), "Iceberg runtime JAR not supplied")

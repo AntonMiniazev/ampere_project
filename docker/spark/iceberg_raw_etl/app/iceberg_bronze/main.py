@@ -224,6 +224,32 @@ def _registry_status_counts(rows: list[dict]) -> dict[str, int]:
     return counts
 
 
+def _registry_progress(registry_history):
+    """Find the latest successful partition and oldest unresolved failure per table."""
+    key_columns = ["source_table", "run_id", "partition_value"]
+    successful = registry_history.filter(F.col("status").isin("applied", "skipped"))
+    successful_keys = successful.select(*key_columns).distinct()
+    unresolved_failures = (
+        registry_history.filter(F.col("status") == "failed")
+        .select(*key_columns)
+        .distinct()
+        .join(successful_keys, key_columns, "left_anti")
+    )
+    latest_success = successful.groupBy("source_table").agg(
+        F.max("partition_value").alias("latest_partition_value"),
+        F.max_by("contract_version", "apply_ts_utc").alias(
+            "latest_contract_version"
+        ),
+    )
+    oldest_failure = unresolved_failures.groupBy("source_table").agg(
+        F.min("partition_value").alias("earliest_failed_partition_value")
+    )
+    progress_rows = latest_success.join(
+        oldest_failure, "source_table", "full_outer"
+    ).collect()
+    return {row.source_table: row for row in progress_rows}
+
+
 def main() -> None:
     """Apply raw landing batches to Bronze Iceberg tables.
 
@@ -326,17 +352,7 @@ def main() -> None:
         (F.col("source_system") == args.source_system)
         & (F.col("source_schema") == args.schema)
     )
-    registry_summaries = {
-        row.source_table: row
-        for row in registry_history.groupBy("source_table")
-        .agg(
-            F.max("partition_value").alias("latest_partition_value"),
-            F.max_by("contract_version", "apply_ts_utc").alias(
-                "latest_contract_version"
-            ),
-        )
-        .collect()
-    }
+    registry_summaries = _registry_progress(registry_history)
 
     def _align_to_iceberg_bronze_schema(table_name: str, df):
         """Align a table DataFrame to the Bronze contract before write/merge."""
@@ -411,11 +427,19 @@ def main() -> None:
             expected_contract_version = (
                 summary.latest_contract_version if summary else None
             )
-            registry_date = (
-                date.fromisoformat(summary.latest_partition_value)
-                if summary and summary.latest_partition_value
-                else None
-            )
+            # A failed historical batch must remain in the landing search
+            # window even when newer partitions already succeeded.
+            registry_dates = []
+            if summary:
+                registry_dates = [
+                    date.fromisoformat(value)
+                    for value in (
+                        summary.latest_partition_value,
+                        summary.earliest_failed_partition_value,
+                    )
+                    if value
+                ]
+            registry_date = min(registry_dates) if registry_dates else None
             has_registry_rows = summary is not None
 
             state_last_ingest = None
