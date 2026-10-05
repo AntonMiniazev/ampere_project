@@ -22,6 +22,31 @@ database aliases and point `BUDGET_DAILY_CSV_PATH` at the tracked CSV. A full
 `dbt build` against empty contract-shaped Bronze sources passed 46 models and
 150 tests on dbt 2.0.6; this checks SQL compatibility and model order only.
 
+## Airflow run modes
+
+`ampere__iceberg__silver_gold__dbt_duckdb__daily` runs Silver and Gold using
+separate `iceberg_silver_run_mode` and `iceberg_gold_run_mode` variables
+(default `daily_refresh`) and their corresponding `iceberg_*_lookback_days`
+variables. The modes and dbt pod sizing are independent of Delta.
+
+`ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` runs the same dbt
+build with both modes set to `full_history`. It rebuilds the Iceberg Silver and
+Gold tables from the complete Bronze history currently present in Lakekeeper,
+then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
+These models are tables and views, not incremental models, so full-history mode
+removes the daily source filters; dbt `--full-refresh` is not needed.
+
+The rebuild sizing is controlled by these optional Airflow variables (defaults
+shown): `iceberg_full_rebuild_dbt_threads` (`2`),
+`iceberg_full_rebuild_duckdb_memory_limit` (`6GB`),
+`iceberg_full_rebuild_dbt_cpu_request` (`1`),
+`iceberg_full_rebuild_dbt_cpu_limit` (`4`),
+`iceberg_full_rebuild_dbt_pod_memory_request` (`5Gi`), and
+`iceberg_full_rebuild_dbt_pod_memory_limit` (`10Gi`). Daily pod sizing uses
+`iceberg_dbt_threads`, `iceberg_dbt_duckdb_memory_limit`,
+`iceberg_dbt_cpu_request`, `iceberg_dbt_cpu_limit`,
+`iceberg_dbt_pod_memory_request`, and `iceberg_dbt_pod_memory_limit`.
+
 Before an Airflow run, the Bohr deployment must provide the three Lakekeeper
 warehouses and `lakekeeper-dbt-client` Secret. Validate the native Iceberg
 `ATTACH`, Bronze read and Silver/Gold writes in that environment.

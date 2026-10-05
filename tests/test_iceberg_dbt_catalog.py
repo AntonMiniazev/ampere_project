@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import tempfile
@@ -98,6 +99,62 @@ class DuckDBCatalogTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 for layer in ("bronze", "silver", "gold"):
                     self.assertIn(f"iceberg_{layer}", completed.stdout)
+
+                # Compile representative Silver and Gold models in each mode
+                # to verify full_history removes both layers' date windows.
+                for mode in ("daily_refresh", "full_history"):
+                    target_path = Path(temp_dir) / f"target-{mode}"
+                    completed = subprocess.run(
+                        [
+                            "dbt",
+                            "compile",
+                            "--project-dir",
+                            str(ROOT / "dbt_iceberg"),
+                            "--profiles-dir",
+                            settings["DBT_PROFILES_DIR"],
+                            "--target-path",
+                            str(target_path),
+                            "--select",
+                            "stg_orders",
+                            "fct_orders_sales_mart",
+                            "--vars",
+                            json.dumps(
+                                {
+                                    "silver_run_mode": mode,
+                                    "gold_run_mode": mode,
+                                    "silver_lookback_days": 7,
+                                    "gold_lookback_days": 7,
+                                }
+                            ),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stdout + completed.stderr,
+                    )
+
+                    silver_sql = (
+                        target_path
+                        / "compiled/ampere_iceberg_project/models/staging/stg_orders.sql"
+                    ).read_text(encoding="utf-8").lower()
+                    gold_sql = (
+                        target_path
+                        / "compiled/ampere_iceberg_project/models/gold/marts/"
+                        "fct_orders_sales_mart.sql"
+                    ).read_text(encoding="utf-8").lower()
+                    if mode == "full_history":
+                        self.assertNotIn("interval '7 day'", silver_sql)
+                        self.assertNotIn("interval '7 day'", gold_sql)
+                        self.assertIn("where true", silver_sql)
+                        self.assertIn("where true", gold_sql)
+                    else:
+                        self.assertIn("interval '7 day'", silver_sql)
+                        self.assertIn("interval '7 day'", gold_sql)
         finally:
             server.shutdown()
             server.server_close()

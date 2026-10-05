@@ -14,7 +14,9 @@
   {%- if ampere_silver_run_mode() == 'daily_refresh' -%}
     cast({{ date_expression }} as date) >=
       cast('{{ ampere_silver_logical_date() }}' as date) - interval '{{ ampere_silver_lookback_days() }} day'
-  {%- else -%}
+  {%- elif ampere_silver_run_mode() == 'full_history' -%}
     true
+  {%- else -%}
+    {{ exceptions.raise_compiler_error('Unsupported Iceberg Silver run mode: ' ~ ampere_silver_run_mode()) }}
   {%- endif -%}
 {%- endmacro %}

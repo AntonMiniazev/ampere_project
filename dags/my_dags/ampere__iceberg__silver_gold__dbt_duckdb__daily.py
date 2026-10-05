@@ -128,18 +128,38 @@ with DAG(
             "ICEBERG_GOLD_WAREHOUSE": Variable.get(
                 "iceberg_gold_warehouse", default="gold"
             ),
-            "DBT_THREADS": CONFIG.dbt_threads,
-            "DUCKDB_MEMORY_LIMIT": CONFIG.duckdb_memory_limit,
-            "SILVER_RUN_MODE": CONFIG.run_mode,
-            "SILVER_LOOKBACK_DAYS": CONFIG.lookback_days,
-            "GOLD_RUN_MODE": CONFIG.run_mode,
-            "GOLD_LOOKBACK_DAYS": CONFIG.lookback_days,
+            "DBT_THREADS": Variable.get("iceberg_dbt_threads", default="2"),
+            "DUCKDB_MEMORY_LIMIT": Variable.get(
+                "iceberg_dbt_duckdb_memory_limit", default="7GB"
+            ),
+            "SILVER_RUN_MODE": Variable.get(
+                "iceberg_silver_run_mode", default="daily_refresh"
+            ),
+            "SILVER_LOOKBACK_DAYS": Variable.get(
+                "iceberg_silver_lookback_days", default="7"
+            ),
+            "GOLD_RUN_MODE": Variable.get(
+                "iceberg_gold_run_mode", default="daily_refresh"
+            ),
+            "GOLD_LOOKBACK_DAYS": Variable.get(
+                "iceberg_gold_lookback_days", default="7"
+            ),
             "LOGICAL_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
         },
         arguments=["build"],
         container_resources=V1ResourceRequirements(
-            requests={"cpu": CONFIG.cpu_request, "memory": CONFIG.memory_request},
-            limits={"cpu": CONFIG.cpu_limit, "memory": CONFIG.memory_limit},
+            requests={
+                "cpu": Variable.get("iceberg_dbt_cpu_request", default="500m"),
+                "memory": Variable.get(
+                    "iceberg_dbt_pod_memory_request", default="2Gi"
+                ),
+            },
+            limits={
+                "cpu": Variable.get("iceberg_dbt_cpu_limit", default="4"),
+                "memory": Variable.get(
+                    "iceberg_dbt_pod_memory_limit", default="10Gi"
+                ),
+            },
         ),
         get_logs=True,
         is_delete_operator_pod=True,
