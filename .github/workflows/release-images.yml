@@ -30,6 +30,16 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
       - name: Build release plan
         id: plan
         shell: bash
@@ -124,11 +134,29 @@ jobs:
               for tag in tags
               if (version := semver_tuple(tag)) is not None and version < release_version
           ]
-          previous_tag = max(previous_candidates, default=(None, ""))[1]
-          previous_tags = [
+          candidate_tags = [
               tag
               for _version, tag in sorted(previous_candidates, reverse=True)
           ]
+          owner = os.environ["GITHUB_REPOSITORY_OWNER"].lower()
+          previous_tag = ""
+          for candidate in candidate_tags:
+              # A cancelled release can leave a Git tag without published
+              # images. Use the most recent tag whose core dbt image exists.
+              image = f"ghcr.io/{owner}/ampere-dbt:{candidate}"
+              probe = subprocess.run(
+                  ["docker", "buildx", "imagetools", "inspect", image],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  check=False,
+              )
+              if probe.returncode == 0:
+                  previous_tag = candidate
+                  break
+          previous_tags = (
+              candidate_tags[candidate_tags.index(previous_tag):]
+              if previous_tag else []
+          )
 
           changed = []
           unchanged = []

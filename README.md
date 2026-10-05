@@ -139,9 +139,10 @@ Default image resolution:
 Images are published through `.github/workflows/release-images.yml` when a
 numeric `vX.Y.Z` release tag is pushed, or when that workflow is run manually
 with a numeric release tag. The release workflow compares the new release with
-the nearest lower numeric release tag, rebuilds only images whose source
-directories changed, and re-tags unchanged images to the new release tag from
-the newest earlier release image that exists in GHCR. The per-image build
+the nearest lower numeric release tag whose core dbt image exists in GHCR,
+skipping tags left by cancelled releases. It rebuilds images whose source
+directories changed and re-tags unchanged images from the newest earlier
+release image that exists in GHCR. The per-image build
 workflows for the Delta images are manual maintenance tools. The two Iceberg
 build workflows also run on relevant pushes to `migration/iceberg`.
 
