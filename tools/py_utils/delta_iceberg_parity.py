@@ -18,6 +18,8 @@ def _required(name: str, fallback: str | None = None) -> str:
     value = os.getenv(name) or (os.getenv(fallback) if fallback else None)
     if not value:
         raise RuntimeError(f"Set {name} in the root .env or process environment")
+    if "<" in value or ">" in value:
+        raise ValueError(f"Replace the placeholder for {name} in the root .env")
     return value.strip()
 
 
@@ -69,7 +71,9 @@ def business_columns(contract: dict, layer: str, name: str) -> list[str]:
 
 def open_parity_connection(memory_limit: str = "4GB") -> duckdb.DuckDBPyConnection:
     """Attach all three Iceberg warehouses and Delta paths with local credentials."""
-    load_project_env()
+    # Notebook kernels retain environment values between cell runs. Reload the
+    # edited .env so a previous placeholder cannot remain in this process.
+    load_project_env(override=True)
     endpoint = _required("AMPERE_MINIO_ENDPOINT", "MINIO_S3_ENDPOINT")
     parsed = urlparse(endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
