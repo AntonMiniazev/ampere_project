@@ -156,7 +156,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                         self.assertNotIn("interval '7 day'", silver_sql)
                         self.assertNotIn("interval '7 day'", gold_sql)
                         self.assertIn("where true", silver_sql)
-                        self.assertIn("where true", gold_sql)
+                        self.assertIn("and true", gold_sql)
                     else:
                         self.assertIn("interval '7 day'", silver_sql)
                         self.assertIn("interval '7 day'", gold_sql)
