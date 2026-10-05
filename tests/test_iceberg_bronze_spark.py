@@ -29,7 +29,14 @@ class IcebergRegistryTests(unittest.TestCase):
 
     def test_unresolved_failures_anchor_landing_search(self) -> None:
         """Exclude retried successes but retain older failed partitions."""
-        spark = SparkSession.builder.master("local[2]").appName("iceberg-registry").getOrCreate()
+        builder = SparkSession.builder.master("local[2]").appName("iceberg-registry")
+        if os.getenv("ICEBERG_RUNTIME_JAR"):
+            builder = builder.config("spark.jars", os.environ["ICEBERG_RUNTIME_JAR"])
+            builder = builder.config(
+                "spark.sql.extensions",
+                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            )
+        spark = builder.getOrCreate()
         spark.sparkContext.setLogLevel("ERROR")
         try:
             history = spark.sql(
