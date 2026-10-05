@@ -27,7 +27,8 @@ def prepare() -> None:
     """Persist pod-local secrets so every dbt ADBC connection can attach catalogs."""
     secret_dir = Path(os.getenv("DUCKDB_SECRET_DIRECTORY", "/app/secret_store"))
     profile_dir = Path(os.getenv("DBT_PROFILES_DIR", "/app/profiles"))
-    workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_iceberg.duckdb"))
+    # dbt_project.yml places transient views in the ampere_work catalog.
+    workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_work.duckdb"))
     secret_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     secret_dir.chmod(0o700)
     profile_dir.mkdir(parents=True, exist_ok=True)

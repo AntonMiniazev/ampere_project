@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -58,7 +60,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                 settings = {
                     "DUCKDB_SECRET_DIRECTORY": str(Path(temp_dir) / "secrets"),
                     "DBT_PROFILES_DIR": str(Path(temp_dir) / "profiles"),
-                    "DUCKDB_PATH": str(Path(temp_dir) / "work.duckdb"),
+                    "DUCKDB_PATH": str(Path(temp_dir) / "ampere_work.duckdb"),
                     "MINIO_S3_ENDPOINT": "http://127.0.0.1:9000",
                     "MINIO_ACCESS_KEY": "dummy-access",
                     "MINIO_SECRET_KEY": "dummy-secret",
@@ -76,6 +78,9 @@ class DuckDBCatalogTests(unittest.TestCase):
                     module.prepare()
                     profile = Path(settings["DBT_PROFILES_DIR"]) / "profiles.yml"
                     self.assertNotIn("dummy-secret", profile.read_text())
+                    config = yaml.safe_load(profile.read_text())
+                    workspace = config["ampere_iceberg_project"]["outputs"]["prod"]["path"]
+                    self.assertEqual(Path(workspace).stem, "ampere_work")
                     completed = subprocess.run(
                         [
                             "dbt",
