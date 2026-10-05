@@ -7,6 +7,7 @@ from datetime import datetime
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable
 from kubernetes.client import (
     V1ConfigMapVolumeSource,
@@ -143,3 +144,14 @@ with DAG(
         get_logs=True,
         is_delete_operator_pod=True,
     )
+
+    # Refresh Curie's isolated Iceberg cache only after the Gold build succeeds.
+    trigger_curie_iceberg_cache_refresh = TriggerDagRunOperator(
+        task_id="trigger__curie__cache_refresh__post_iceberg_gold",
+        trigger_dag_id="ampere__curie__cache_refresh__post_iceberg_gold",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+        reset_dag_run=True,
+        wait_for_completion=False,
+    )
+
+    build >> trigger_curie_iceberg_cache_refresh
