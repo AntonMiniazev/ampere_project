@@ -52,8 +52,8 @@ with DAG(
         op_args=["##### startSilverFullRebuild #####"],
     )
 
-    # Full rebuild scans the complete bronze history and replaces published
-    # silver outputs, while preserving the same runtime and source preflight.
+    # Full rebuild Silver first, publish it, then let the entrypoint rebuild
+    # Gold from the refreshed published Delta Silver tables.
     run_silver_dbt = KubernetesPodOperator(
         task_id="run__silver__dbt_full_rebuild",
         name="ampere-dbt-silver-full-rebuild",
@@ -102,10 +102,19 @@ with DAG(
             )
             .strip()
             .lower(),
+            "GOLD_DBT_COMMAND": Variable.get(
+                "gold_full_rebuild_dbt_command",
+                default="dbt build --select tag:gold --full-refresh",
+            ),
             "RUN_DBT_ARTIFACT_UPLOAD": DAG_CONFIG.run_dbt_artifact_upload,
             "LOGICAL_DATE": "{{ ds }}",
         },
-        arguments=[DAG_CONFIG.full_rebuild_dbt_command],
+        arguments=[
+            Variable.get(
+                "silver_full_rebuild_silver_dbt_command",
+                default="dbt build --select tag:silver --full-refresh",
+            )
+        ],
         container_resources=V1ResourceRequirements(
             requests={
                 "cpu": DAG_CONFIG.full_rebuild_cpu_request,

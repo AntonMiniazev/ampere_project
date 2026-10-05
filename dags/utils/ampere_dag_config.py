@@ -568,8 +568,6 @@ class SilverDagConfig:
     bronze_source_schema: str
     dbt_target: str
     dbt_threads: str
-    dbt_command: str
-    full_rebuild_dbt_command: str
     full_rebuild_dbt_threads: str
     run_mode: str
     lookback_days: str
@@ -621,14 +619,6 @@ def load_silver_dag_config() -> SilverDagConfig:
         bronze_source_schema=Variable.get("bronze_source_schema", default="bronze"),
         dbt_target=Variable.get("silver_dbt_target", default="prod"),
         dbt_threads=Variable.get("silver_dbt_threads", default="2"),
-        dbt_command=Variable.get(
-            "silver_dbt_command",
-            default="dbt build",
-        ),
-        full_rebuild_dbt_command=Variable.get(
-            "silver_full_rebuild_dbt_command",
-            default="dbt build --full-refresh",
-        ),
         full_rebuild_dbt_threads=Variable.get(
             "silver_full_rebuild_dbt_threads",
             default="2",
