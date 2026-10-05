@@ -89,6 +89,17 @@ def prepare() -> None:
         "secret_directory": str(secret_dir),
         "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "6GB"),
     }
+    worker_threads = os.getenv("DUCKDB_WORKER_THREADS", "").strip()
+    if worker_threads:
+        worker_count = int(worker_threads)
+        if worker_count < 1:
+            raise ValueError("DUCKDB_WORKER_THREADS must be positive")
+        duckdb_settings["threads"] = worker_count
+    preserve_order = os.getenv("DUCKDB_PRESERVE_INSERTION_ORDER", "").strip().lower()
+    if preserve_order:
+        if preserve_order not in {"true", "false"}:
+            raise ValueError("DUCKDB_PRESERVE_INSERTION_ORDER must be true or false")
+        duckdb_settings["preserve_insertion_order"] = preserve_order == "true"
     if ca_cert_file:
         duckdb_settings["ca_cert_file"] = ca_cert_file
         duckdb_settings["enable_server_cert_verification"] = True

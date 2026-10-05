@@ -37,8 +37,9 @@ These models are tables and views, not incremental models, so full-history mode
 removes the daily source filters; dbt `--full-refresh` is not needed.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults
-shown): `iceberg_full_rebuild_dbt_threads` (`2`),
-`iceberg_full_rebuild_duckdb_memory_limit` (`6GB`),
+shown): `iceberg_full_rebuild_dbt_threads` (`1`),
+`iceberg_full_rebuild_duckdb_threads` (`2`),
+`iceberg_full_rebuild_duckdb_memory_limit` (`7GB`),
 `iceberg_full_rebuild_dbt_cpu_request` (`1`),
 `iceberg_full_rebuild_dbt_cpu_limit` (`4`),
 `iceberg_full_rebuild_dbt_pod_memory_request` (`5Gi`), and
@@ -46,6 +47,9 @@ shown): `iceberg_full_rebuild_dbt_threads` (`2`),
 `iceberg_dbt_threads`, `iceberg_dbt_duckdb_memory_limit`,
 `iceberg_dbt_cpu_request`, `iceberg_dbt_cpu_limit`,
 `iceberg_dbt_pod_memory_request`, and `iceberg_dbt_pod_memory_limit`.
+The full rebuild also disables DuckDB insertion-order preservation. These
+settings limit concurrent full-history sorts while retaining the 10 GiB pod
+limit; the daily pipeline keeps its existing settings.
 
 Before an Airflow run, the Bohr deployment must provide the three Lakekeeper
 warehouses and `lakekeeper-dbt-client` Secret. Validate the native Iceberg

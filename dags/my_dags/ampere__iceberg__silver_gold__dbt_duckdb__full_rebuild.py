@@ -80,10 +80,14 @@ def _catalog_env() -> dict[str, str]:
         "ICEBERG_GOLD_WAREHOUSE": Variable.get(
             "iceberg_gold_warehouse", default="gold"
         ),
-        "DBT_THREADS": Variable.get("iceberg_full_rebuild_dbt_threads", default="2"),
+        "DBT_THREADS": Variable.get("iceberg_full_rebuild_dbt_threads", default="1"),
         "DUCKDB_MEMORY_LIMIT": Variable.get(
-            "iceberg_full_rebuild_duckdb_memory_limit", default="6GB"
+            "iceberg_full_rebuild_duckdb_memory_limit", default="7GB"
         ),
+        "DUCKDB_WORKER_THREADS": Variable.get(
+            "iceberg_full_rebuild_duckdb_threads", default="2"
+        ),
+        "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
         "SILVER_RUN_MODE": "full_history",
         "SILVER_LOOKBACK_DAYS": Variable.get(
             "iceberg_silver_lookback_days", default="7"

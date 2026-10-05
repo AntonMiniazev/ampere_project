@@ -62,6 +62,8 @@ class DuckDBCatalogTests(unittest.TestCase):
                     "DUCKDB_SECRET_DIRECTORY": str(Path(temp_dir) / "secrets"),
                     "DBT_PROFILES_DIR": str(Path(temp_dir) / "profiles"),
                     "DUCKDB_PATH": str(Path(temp_dir) / "ampere_work.duckdb"),
+                    "DUCKDB_WORKER_THREADS": "2",
+                    "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
                     "MINIO_S3_ENDPOINT": "http://127.0.0.1:9000",
                     "MINIO_ACCESS_KEY": "dummy-access",
                     "MINIO_SECRET_KEY": "dummy-secret",
@@ -82,6 +84,9 @@ class DuckDBCatalogTests(unittest.TestCase):
                     config = yaml.safe_load(profile.read_text())
                     workspace = config["ampere_iceberg_project"]["outputs"]["prod"]["path"]
                     self.assertEqual(Path(workspace).stem, "ampere_work")
+                    duckdb_settings = config["ampere_iceberg_project"]["outputs"]["prod"]["settings"]
+                    self.assertEqual(duckdb_settings["threads"], 2)
+                    self.assertIs(duckdb_settings["preserve_insertion_order"], False)
                     completed = subprocess.run(
                         [
                             "dbt",
