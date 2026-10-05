@@ -3,10 +3,10 @@ with source_data as (
 ),
 deduped as (
     select
-        cast(id as smallint) as delivery_resource_id,
+        cast(id as integer) as delivery_resource_id,
         cast(fullname as varchar) as delivery_resource_name,
-        cast(delivery_type_id as smallint) as delivery_type_id,
-        cast(store_id as smallint) as store_id,
+        cast(delivery_type_id as integer) as delivery_type_id,
+        cast(store_id as integer) as store_id,
         cast(created_at as date) as created_at,
         cast(updated_at as date) as updated_at,
         cast(active_flag as boolean) as is_active,

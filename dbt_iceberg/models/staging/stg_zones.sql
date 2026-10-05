@@ -4,8 +4,8 @@ with source_data as (
 ,
 typed as (
     select
-        cast(id as smallint) as zone_id,
-        cast(store_id as smallint) as store_id,
+        cast(id as integer) as zone_id,
+        cast(store_id as integer) as store_id,
         cast(zone_name as varchar) as zone_name,
         {{ ampere_bronze_lineage_columns() }},
         {{ ampere_silver_lineage_columns() }}

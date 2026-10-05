@@ -8,7 +8,7 @@ with source_data as (
 deduped as (
     select
         cast(order_id as integer) as order_id,
-        cast(order_status_id as smallint) as order_status_id,
+        cast(order_status_id as integer) as order_status_id,
         cast(status_datetime as timestamp) as status_datetime,
         {{ ampere_bronze_lineage_columns() }}
     from source_data

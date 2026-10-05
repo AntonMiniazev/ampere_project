@@ -4,7 +4,7 @@ with source_data as (
 deduped as (
     select
         cast(product_id as integer) as product_id,
-        cast(store_id as smallint) as store_id,
+        cast(store_id as integer) as store_id,
         cast(avg_cost as decimal(10, 2)) as avg_cost,
         cast(valid_from as date) as valid_from,
         cast(valid_to as date) as valid_to,

@@ -7,7 +7,7 @@ deduped as (
         cast(product_name as varchar) as product_name,
         cast(price as decimal(10, 2)) as unit_price,
         cast(unit_type as varchar) as unit_type,
-        cast(category_id as smallint) as category_id,
+        cast(category_id as integer) as category_id,
         cast(chance as decimal(8, 2)) as selection_weight,
         cast(valid_from as date) as valid_from,
         cast(valid_to as date) as valid_to,

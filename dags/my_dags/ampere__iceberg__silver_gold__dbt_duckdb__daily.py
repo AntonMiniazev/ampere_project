@@ -84,7 +84,14 @@ with DAG(
             V1Volume(name="combined-ca-bundle", empty_dir=V1EmptyDirVolumeSource()),
         ],
         volume_mounts=[
-            V1VolumeMount(name="combined-ca-bundle", mount_path="/etc/ampere-ca-bundle", read_only=True)
+            V1VolumeMount(name="combined-ca-bundle", mount_path="/etc/ampere-ca-bundle", read_only=True),
+            # dbt v2's DuckDB driver does not retain ca_cert_file from profile settings.
+            V1VolumeMount(
+                name="combined-ca-bundle",
+                mount_path="/etc/ssl/certs/ca-certificates.crt",
+                sub_path="ca.crt",
+                read_only=True,
+            ),
         ],
         secrets=[
             _secret("MINIO_ACCESS_KEY", "minio-creds", "MINIO_ACCESS_KEY"),

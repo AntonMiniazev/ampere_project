@@ -4,7 +4,7 @@ with source_data as (
 ,
 typed as (
     select
-        cast(id as smallint) as category_id,
+        cast(id as integer) as category_id,
         cast(category_name as varchar) as category_name,
         {{ ampere_bronze_lineage_columns() }},
         {{ ampere_silver_lineage_columns() }}

@@ -5,7 +5,7 @@ deduped as (
     select
         cast(id as integer) as client_id,
         cast(fullname as varchar) as client_full_name,
-        cast(preferred_store_id as smallint) as preferred_store_id,
+        cast(preferred_store_id as integer) as preferred_store_id,
         cast(registration_date as date) as registration_date,
         cast(updated_at as date) as updated_at,
         cast(churned as boolean) as is_churned,

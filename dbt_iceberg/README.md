@@ -7,6 +7,9 @@ intermediate relations live in the pod-local `ampere_work` DuckDB file. The
 existing budget CSV is loaded as `silver.budget_orders_sales` and then consumed
 by the Gold budget model. The Delta dbt project is not changed.
 
+Iceberg does not store `SMALLINT`; the Iceberg staging models widen those IDs to
+`INTEGER` before publishing tables. Their values and join keys are unchanged.
+
 `docker/dbt_iceberg` installs dbt v2 and the DuckDB ADBC driver. The entrypoint
 prepares pod-local persistent DuckDB secrets because dbt v2 opens its own driver
 connections and needs `iceberg` plus `httpfs` extensions on each one. The

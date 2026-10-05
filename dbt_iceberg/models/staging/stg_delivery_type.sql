@@ -4,7 +4,7 @@ with source_data as (
 ,
 typed as (
     select
-        cast(id as smallint) as delivery_type_id,
+        cast(id as integer) as delivery_type_id,
         cast(courier_type as varchar) as courier_type,
         {{ ampere_bronze_lineage_columns() }},
         {{ ampere_silver_lineage_columns() }}
