@@ -12,6 +12,7 @@ from airflow.sdk import Variable
 from utils.ampere_dag_config import (
     load_bronze_dag_config,
     minio_ssl_enabled,
+    resolve_release_image,
     standard_default_args,
 )
 from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
@@ -24,10 +25,10 @@ TEMPLATE = "raw_to_bronze_template_iceberg.yaml"
 
 
 def _image() -> str:
-    """Select only the dedicated Iceberg image from an Airflow variable."""
+    """Resolve an optional pilot override or the shared release version."""
     image = Variable.get(
         "iceberg_spark_image",
-        default="ghcr.io/antonminiazev/ampere-spark-iceberg:migration-latest",
+        default=resolve_release_image("ghcr.io/antonminiazev/ampere-spark-iceberg"),
     )
     if not image.startswith("ghcr.io/antonminiazev/ampere-spark-iceberg:"):
         raise ValueError("iceberg_spark_image must name the Iceberg repository")

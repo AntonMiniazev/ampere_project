@@ -76,6 +76,27 @@ jobs:
                   ],
               },
               {
+                  "image": "ampere-spark-iceberg",
+                  "context": ".",
+                  "file": "docker/spark/iceberg_raw_etl/Dockerfile",
+                  "paths": [
+                      "docker/spark/iceberg_raw_etl/",
+                      "docker/spark/raw_etl/app/etl_utils.py",
+                      "docker/spark/raw_etl/app/etl_parser.py",
+                      "tools/uc/contracts/ampere_tables.json",
+                  ],
+              },
+              {
+                  "image": "ampere-dbt-iceberg",
+                  "context": ".",
+                  "file": "docker/dbt_iceberg/Dockerfile",
+                  "paths": [
+                      "dbt_iceberg/",
+                      "docker/dbt_iceberg/",
+                      "tools/budget_generation/budget_parameters_daily.csv",
+                  ],
+              },
+              {
                   "image": "init-source-preparation",
                   "context": "docker/init_source_preparation",
                   "file": "docker/init_source_preparation/Dockerfile",

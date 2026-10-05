@@ -18,7 +18,11 @@ from kubernetes.client import (
     V1VolumeMount,
 )
 
-from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
+from utils.ampere_dag_config import (
+    load_silver_dag_config,
+    resolve_release_image,
+    standard_default_args,
+)
 
 
 DAG_ID = "ampere__iceberg__silver_gold__dbt_duckdb__daily"
@@ -36,10 +40,10 @@ def _secret(key: str, deployment_name: str, env_name: str) -> Secret:
 
 
 def _image() -> str:
-    """Reject a production dbt image accidentally selected by variable."""
+    """Resolve an optional pilot override or the shared release version."""
     image = Variable.get(
         "iceberg_dbt_image",
-        default="ghcr.io/antonminiazev/ampere-dbt-iceberg:migration-latest",
+        default=resolve_release_image("ghcr.io/antonminiazev/ampere-dbt-iceberg"),
     )
     if not image.startswith("ghcr.io/antonminiazev/ampere-dbt-iceberg:"):
         raise ValueError("iceberg_dbt_image must name the Iceberg repository")

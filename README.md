@@ -38,11 +38,13 @@ flowchart LR
 The `migration/iceberg` branch contains an isolated Raw-to-Bronze Spark runtime,
 a dbt v2/DuckDB Silver and Gold project, and two manual Iceberg Airflow DAGs.
 The new images are `ampere-spark-iceberg` and `ampere-dbt-iceberg`. Their dedicated
-GitHub Actions workflows build immutable `sha-<commit>` tags on migration-branch
-pushes; they do not participate in the production `v*` release workflow. Set
-`iceberg_spark_image` and `iceberg_dbt_image` Airflow variables to tested SHA
-tags before a manual run. The current Delta DAGs and release images remain the
-production path until parity and cluster access have been validated.
+GitHub Actions workflows publish `migration-latest` and immutable `sha-<commit>`
+tags on migration-branch pushes. During validation, the two Iceberg image
+variables in Airflow may point to `migration-latest`; these variables live in
+Airflow's database. On a numeric `vX.Y.Z` release, both images participate in
+the shared release workflow. Removing the Iceberg image overrides makes their
+DAGs use `ampere_release_version`, like the Delta DAGs. The current Delta DAGs
+remain the production path until parity and cluster access are validated.
 
 See `docker/spark/iceberg_raw_etl/README.md` and `dbt_iceberg/README.md` for
 the new runtimes and their validation requirements.
@@ -131,6 +133,8 @@ Default image resolution:
 - `ghcr.io/antonminiazev/order-data-generator:<ampere_release_version>`
 - `ghcr.io/antonminiazev/ampere-spark:<ampere_release_version>`
 - `ghcr.io/antonminiazev/ampere-dbt:<ampere_release_version>`
+- `ghcr.io/antonminiazev/ampere-spark-iceberg:<ampere_release_version>`
+- `ghcr.io/antonminiazev/ampere-dbt-iceberg:<ampere_release_version>`
 
 Images are published through `.github/workflows/release-images.yml` when a
 numeric `vX.Y.Z` release tag is pushed, or when that workflow is run manually
@@ -138,8 +142,8 @@ with a numeric release tag. The release workflow compares the new release with
 the nearest lower numeric release tag, rebuilds only images whose source
 directories changed, and re-tags unchanged images to the new release tag from
 the newest earlier release image that exists in GHCR. The per-image build
-workflows are manual maintenance tools and do not run automatically on branch
-pushes.
+workflows for the Delta images are manual maintenance tools. The two Iceberg
+build workflows also run on relevant pushes to `migration/iceberg`.
 
 The release workflow logs in to GHCR with `GHCR_TOKEN` when that repository
 secret exists, falling back to `GITHUB_TOKEN` otherwise. `GHCR_TOKEN` is needed
