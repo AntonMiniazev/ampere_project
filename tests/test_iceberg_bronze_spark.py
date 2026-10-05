@@ -10,14 +10,17 @@ import unittest
 from pathlib import Path
 
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "docker/spark/iceberg_raw_etl/app"))
+sys.path.insert(0, str(ROOT / "docker/spark/raw_etl/app"))
 os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/uc/contracts/ampere_tables.json")
 
 from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402
+from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
 
 
 @unittest.skipUnless(os.getenv("ICEBERG_RUNTIME_JAR"), "Iceberg runtime JAR not supplied")
@@ -99,6 +102,38 @@ class IcebergSparkTests(unittest.TestCase):
                     [(row.id, row.fullname) for row in spark.table(dimension_table).collect()],
                     [(7, "second")],
                 )
+
+                # Raw lineage uses input_file_name(), which Spark treats as a
+                # non-deterministic source for Iceberg MERGE. The checkpointed
+                # source must still merge with static partition pruning.
+                payments_table = ensure_iceberg_table(
+                    spark,
+                    catalog="iceberg_bronze",
+                    schema="bronze",
+                    table="payments",
+                    logger=logger,
+                )
+                payment_source = spark.sql(
+                    "SELECT 9 AS order_id, DATE '2026-10-04' AS payment_date, "
+                    "'2026-10-04' AS event_date"
+                ).withColumn("method", F.rand().cast("string"))
+                aligned_payment = align_df_to_iceberg_schema(
+                    spark,
+                    payment_source,
+                    catalog="iceberg_bronze",
+                    schema="bronze",
+                    table="payments",
+                    logger=logger,
+                )
+                merge_to_iceberg(
+                    spark,
+                    stabilize_merge_source(aligned_payment),
+                    payments_table,
+                    ["order_id", "payment_date"],
+                    partition_column="event_date",
+                    partition_values=["2026-10-04"],
+                )
+                self.assertEqual(spark.table(payments_table).count(), 1)
             finally:
                 spark.stop()
 

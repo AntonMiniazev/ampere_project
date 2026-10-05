@@ -6,12 +6,18 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable
 
+from pyspark import StorageLevel
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import StructType
 from pyspark.sql.window import Window
 
 from etl_utils import manifest_ok
 from iceberg_bronze.apply_utils import build_registry_payload, merge_to_iceberg
+
+
+def stabilize_merge_source(df):
+    """Materialize file lineage so Spark sees a deterministic Iceberg MERGE source."""
+    return df.localCheckpoint(eager=True, storageLevel=StorageLevel.DISK_ONLY)
 
 
 def apply_facts_events_batches(
@@ -316,6 +322,9 @@ def apply_facts_events_batches(
         if align_to_target_schema is not None:
             df = align_to_target_schema(table, df)
         if do_merge:
+            # input_file_name() feeds Raw file lineage above. Cut that
+            # non-deterministic plan before Spark analyzes Iceberg MERGE.
+            df = stabilize_merge_source(df)
             logger.info(
                 "Merging %s with static %s values=%s",
                 table,
