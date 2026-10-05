@@ -50,6 +50,9 @@ def prepare() -> None:
     client_secret = required("LAKEKEEPER_CLIENT_SECRET")
     access_key = required("MINIO_ACCESS_KEY")
     secret_key = required("MINIO_SECRET_KEY")
+    ca_cert_file = os.getenv("DUCKDB_CA_CERT_FILE", "").strip()
+    if ca_cert_file and not Path(ca_cert_file).is_file():
+        raise ValueError(f"DUCKDB_CA_CERT_FILE does not exist: {ca_cert_file}")
 
     con = duckdb.connect(":memory:", config={"secret_directory": str(secret_dir)})
     try:
@@ -82,6 +85,14 @@ def prepare() -> None:
         }
         for layer in ("bronze", "silver", "gold")
     ]
+    duckdb_settings = {
+        "secret_directory": str(secret_dir),
+        "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "6GB"),
+    }
+    if ca_cert_file:
+        duckdb_settings["ca_cert_file"] = ca_cert_file
+        duckdb_settings["enable_server_cert_verification"] = True
+
     profile = {
         "ampere_iceberg_project": {
             "target": "prod",
@@ -92,10 +103,7 @@ def prepare() -> None:
                     "schema": "main",
                     "threads": int(os.getenv("DBT_THREADS", "2")),
                     "extensions": ["iceberg", "httpfs"],
-                    "settings": {
-                        "secret_directory": str(secret_dir),
-                        "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "6GB"),
-                    },
+                    "settings": duckdb_settings,
                     "attach": attach,
                 }
             },

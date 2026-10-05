@@ -8,7 +8,15 @@ from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.sdk import Variable
-from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
+from kubernetes.client import (
+    V1ConfigMapVolumeSource,
+    V1Container,
+    V1EmptyDirVolumeSource,
+    V1LocalObjectReference,
+    V1ResourceRequirements,
+    V1Volume,
+    V1VolumeMount,
+)
 
 from utils.ampere_dag_config import load_silver_dag_config, standard_default_args
 
@@ -56,6 +64,28 @@ with DAG(
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         service_account_name=CONFIG.service_account,
         node_selector=CONFIG.node_selector,
+        init_containers=[
+            V1Container(
+                name="combine-ca-bundle",
+                image="python:3.12-alpine",
+                command=["sh", "-ec"],
+                args=[
+                    "cat /etc/ssl/certs/ca-certificates.crt "
+                    "/etc/ampere-local-ca/ca.crt > /etc/ampere-ca-bundle/ca.crt"
+                ],
+                volume_mounts=[
+                    V1VolumeMount(name="local-ca-public", mount_path="/etc/ampere-local-ca", read_only=True),
+                    V1VolumeMount(name="combined-ca-bundle", mount_path="/etc/ampere-ca-bundle"),
+                ],
+            )
+        ],
+        volumes=[
+            V1Volume(name="local-ca-public", config_map=V1ConfigMapVolumeSource(name="local-ca-public")),
+            V1Volume(name="combined-ca-bundle", empty_dir=V1EmptyDirVolumeSource()),
+        ],
+        volume_mounts=[
+            V1VolumeMount(name="combined-ca-bundle", mount_path="/etc/ampere-ca-bundle", read_only=True)
+        ],
         secrets=[
             _secret("MINIO_ACCESS_KEY", "minio-creds", "MINIO_ACCESS_KEY"),
             _secret("MINIO_SECRET_KEY", "minio-creds", "MINIO_SECRET_KEY"),
@@ -63,6 +93,7 @@ with DAG(
             _secret("client-secret", "lakekeeper-dbt-client", "LAKEKEEPER_CLIENT_SECRET"),
         ],
         env_vars={
+            "DUCKDB_CA_CERT_FILE": "/etc/ampere-ca-bundle/ca.crt",
             "MINIO_S3_ENDPOINT": CONFIG.minio_endpoint,
             "LAKEKEEPER_CATALOG_URI": Variable.get(
                 "iceberg_lakekeeper_uri",
