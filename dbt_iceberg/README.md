@@ -32,10 +32,19 @@ DAG, dbt first builds and tests its Silver and Gold slice in pod-local DuckDB
 files. Only after dbt succeeds does `publish_catalog.py` attach Lakekeeper and
 publish the results. Silver facts and changing Gold facts use keyed Iceberg
 `MERGE INTO` updates/inserts, so rows outside the daily slice remain available.
-Small dimension and budget tables are rebuilt from complete source data. The
-publisher checks staged key uniqueness and expected model coverage before
-modifying any Iceberg table. A missing fact target fails closed; run the manual
-full rebuild to establish the historical baseline first.
+Complete dimension and budget tables use keyed `MERGE` for updates/inserts,
+then a separate `DELETE` removes published keys absent from the complete
+staged source. DuckDB-Iceberg 1.5.6 rejects a single `MERGE` with all three
+actions. Daily fact slices use update/insert `MERGE` without deleting absent
+keys. The publisher checks
+staged key uniqueness, nonempty complete snapshots, target presence, and
+expected model coverage before modifying any Iceberg table. A missing daily
+target fails closed; run the manual full rebuild to establish its baseline.
+The complete-source path retains Iceberg table identity and can also
+synchronize a staged full-history table. Upsert and cleanup are two Iceberg
+commits: a failed cleanup can temporarily leave stale rows, but rerunning
+converges. Curie refresh follows only a fully successful publish. Full-history
+merges on large facts need a measured cluster run before routine use.
 
 The staged Gold models consume the staged Silver slice without applying a
 second Gold date filter. Keyed updates preserve older rows even when a recent
@@ -50,9 +59,10 @@ deleted from the published table and need a separate deletion strategy.
 build with both modes set to `full_history`. It rebuilds the Iceberg Silver and
 Gold tables from the complete Bronze history currently present in Lakekeeper,
 then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
-The full rebuild keeps the direct dbt table materialization and replaces the
-published tables from all Bronze history. Run it once after deploying staged
-daily publication to restore the dates removed by earlier daily runs. dbt
+The full rebuild keeps direct dbt table materialization and replaces published
+tables from all Bronze history. It is the current recovery path; the staged
+full-history publisher path is available for a future measured migration. Run
+the direct rebuild to restore dates removed by earlier daily runs. dbt
 `--full-refresh` is not needed for these table and view models.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults
