@@ -1,0 +1,91 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Bronze Iceberg tables in the Lakekeeper Bronze warehouse.
+    database: iceberg_bronze
+    schema: bronze
+    config:
+      freshness:
+        warn_after: {count: 6, period: hour}
+    tables:
+      - name: stores
+        description: Bronze snapshot of store reference data.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: zones
+        description: Bronze snapshot of delivery zones.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: product_categories
+        description: Bronze snapshot of product categories.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: order_statuses
+        description: Bronze snapshot of order statuses.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_type
+        description: Bronze snapshot of delivery types.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_costing
+        description: Bronze snapshot of zone and delivery tariffs.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: assortment
+        description: Bronze snapshot of store assortments.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: clients
+        description: Bronze mutable-dimension table for clients.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: costing
+        description: Bronze mutable-dimension table for product costing history.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_resource
+        description: Bronze mutable-dimension table for delivery resources.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: products
+        description: Bronze mutable-dimension table for products and pricing history.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: orders
+        description: Bronze fact table for orders.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: order_product
+        description: Bronze fact table for order line items.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: payments
+        description: Bronze fact table for payments.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: order_status_history
+        description: Bronze event table for order status changes.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+      - name: delivery_tracking
+        description: Bronze event table for delivery tracking.
+        config:
+          loaded_at_field: "try_cast(_bronze_last_apply_ts as timestamp)"
+  - name: silver
+    description: Published Silver Iceberg tables in the Lakekeeper Silver warehouse.
+    database: iceberg_silver
+    schema: silver
+    tables:
+      - name: dim_clients
+      - name: dim_stores
+      - name: dim_zones
+      - name: dim_products
+      - name: dim_costing
+      - name: dim_delivery_resource
+      - name: dim_delivery_costing
+      - name: fact_orders
+      - name: fact_order_product
+      - name: fact_delivery_tracking
+      - name: budget_orders_sales

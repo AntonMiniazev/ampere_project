@@ -105,10 +105,10 @@ with DAG(
     )
 
     # After raw landing is written successfully, Airflow hands control to the
-    # bronze DAG that converts validated raw batches into Delta tables.
+    # bronze DAG that converts validated raw batches into Iceberg tables.
     trigger_bronze = TriggerDagRunOperator(
-        task_id="trigger__bronze__landing_to_delta__daily",
-        trigger_dag_id="ampere__bronze__landing_to_delta__daily",
+        task_id="trigger__iceberg__bronze__raw_to_iceberg__daily",
+        trigger_dag_id="ampere__iceberg__bronze__raw_to_iceberg__daily",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
         wait_for_completion=False,

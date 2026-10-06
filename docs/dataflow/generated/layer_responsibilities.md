@@ -2,9 +2,9 @@
 
 | Layer | Status | Engine | Storage | Catalog | Responsibility |
 |---|---|---|---|---|---|
-| Python generator + PostgreSQL | implemented | Python, PostgreSQL | PostgreSQL | - | Synthetic operational source data generation and storage. |
-| Raw landing | implemented | Spark | MinIO, Parquet | - | Immutable parquet landing batches with manifest, success markers, and extraction state. |
-| Bronze | implemented | Spark, Delta Lake | MinIO, Delta Lake | Unity Catalog OSS / ampere.bronze | Apply raw landing batches into Unity Catalog registered Delta tables. |
-| Silver | implemented | DuckDB, dbt, Delta Lake | MinIO, Delta Lake | Unity Catalog OSS / ampere.silver | Clean analytical dbt models built from Bronze through Unity Catalog metadata and DuckDB delta_scan source views. |
-| Gold | implemented | DuckDB, dbt, Delta Lake | MinIO, Delta Lake | Unity Catalog OSS / ampere.gold | Serving-oriented marts for BI and downstream consumers, built from Silver in the shared dbt runtime. |
-| Serving / BI | planned | BI / serving | - | - | Dashboard and downstream serving consumption from Gold marts. |
+| Python generator + PostgreSQL | implemented | Python, PostgreSQL | PostgreSQL | - | Generate synthetic operational data in PostgreSQL. |
+| Raw landing | implemented | Spark | MinIO, Parquet | - | Extract immutable Parquet batches with manifests, success markers, and extraction state. |
+| Bronze | implemented | Spark, Iceberg | MinIO, Iceberg | Lakekeeper / bronze warehouse / bronze and ops namespaces | Apply Raw batches to Iceberg tables and track processed batches in an Iceberg registry. |
+| Silver | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / silver warehouse / silver namespace | Build tested analytical entities from Bronze with dbt and DuckDB. |
+| Gold | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / gold warehouse / gold namespace | Publish serving marts for sales, delivery, product cost, and margin. |
+| Serving / BI | implemented | Curie | Cache | - | Refresh Curie caches from Gold marts for application and dashboard reads. |

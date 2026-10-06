@@ -3,22 +3,20 @@ name: Generate dataflow docs
 on:
   push:
     paths:
-      - "docs/data_contracts/**"
       - "docs/dataflow/**"
       - "docs/README.md"
       - "tools/docs/**"
       - "dags/config/**"
       - "dags/my_dags/**"
-      - "dbt/**"
+      - "dbt_iceberg/**"
   pull_request:
     paths:
-      - "docs/data_contracts/**"
       - "docs/dataflow/**"
       - "docs/README.md"
       - "tools/docs/**"
       - "dags/config/**"
       - "dags/my_dags/**"
-      - "dbt/**"
+      - "dbt_iceberg/**"
 
 permissions:
   contents: read
@@ -41,8 +39,6 @@ jobs:
           pip install pyyaml
 
       - name: Generate dataflow docs
-        env:
-          UC_INVENTORY_MODE: preserve
         run: |
           python tools/docs/generate_dataflow_docs.py
 

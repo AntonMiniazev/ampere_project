@@ -1,0 +1,349 @@
+"""Mutable dimension writer for Bronze Iceberg tables."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Callable
+
+from pyspark.sql import SparkSession, functions as F
+from pyspark.sql.types import StructType
+from pyspark.sql.window import Window
+
+from etl_utils import manifest_ok
+from iceberg_bronze.apply_utils import build_registry_payload, merge_to_iceberg
+
+
+def latest_rows_by_merge_key(df, merge_keys: list[str]):
+    """Select the last Raw run for each mutable dimension business key."""
+    window = Window.partitionBy(*[F.col(key) for key in merge_keys]).orderBy(
+        F.col("_bronze_last_apply_ts").desc(),
+        F.col("_bronze_last_run_id").desc(),
+        F.col("_bronze_last_manifest_path").desc(),
+    )
+    return (
+        df.withColumn("_bronze_merge_rank", F.row_number().over(window))
+        .filter(F.col("_bronze_merge_rank") == 1)
+        .drop("_bronze_merge_rank")
+    )
+
+
+def apply_mutable_dim_batches(
+    spark: SparkSession,
+    table: str,
+    bronze_table_name: str,
+    merge_keys: list[str],
+    registry_schema: StructType,
+    registry_rows: list[dict],
+    source_system: str,
+    source_schema: str,
+    sorted_batches: list[dict],
+    expected_schema_hash: str | None,
+    expected_contract_version: str | None,
+    logger: logging.Logger,
+    align_to_target_schema: Callable | None = None,
+) -> None:
+    """Apply mutable-dimension batches grouped by extract_date.
+
+    Batches with the same partition_value are unioned into a single write to
+    reduce per-batch overhead while keeping one registry row per run_id.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        table: Source table name, e.g. "clients".
+        bronze_table_name: Iceberg Bronze table name, e.g. "`iceberg_bronze`.`bronze`.`clients`".
+        merge_keys: Stable business keys, e.g. ["client_id"].
+        registry_schema: Registry schema StructType, e.g. StructType([...]).
+        registry_rows: Output list to collect registry rows for a single write.
+        source_system: Source system id, e.g. "postgres-pre-raw".
+        source_schema: Source schema name, e.g. "source".
+        sorted_batches: Ordered batch list with manifest metadata.
+        expected_schema_hash: Schema hash to enforce, e.g. "abc123" or None.
+        expected_contract_version: Contract version to enforce, e.g. "v2" or None.
+        logger: Logger for run output, e.g. logging.getLogger("raw-to-bronze-etl").
+
+    Examples:
+        apply_mutable_dim_batches(
+            spark=spark,
+            table="clients",
+            bronze_table_name="`ampere`.`bronze`.`clients`",
+            merge_keys=["client_id"],
+            registry_schema=registry_schema,
+            registry_rows=[],
+            source_system="postgres-pre-raw",
+            source_schema="source",
+            sorted_batches=sorted_queue,
+            expected_schema_hash=None,
+            expected_contract_version=None,
+            logger=logging.getLogger("raw-to-bronze-etl"),
+        )
+    """
+    if not merge_keys:
+        raise ValueError(f"merge_keys are required for mutable dim {table}.")
+
+    grouped_batches = {}
+    for batch in sorted_batches:
+        key = (batch.get("partition_kind"), batch.get("partition_value"))
+        grouped_batches.setdefault(key, []).append(batch)
+
+    for (partition_kind, partition_value), batches in grouped_batches.items():
+        valid_batches = []
+        for batch in batches:
+            # Step A: Validate each manifest and build a per-batch apply plan.
+            # This keeps registry rows accurate even when a batch is skipped.
+            # The expected outcome is a list of validated batches for this date.
+            manifest = batch["manifest"]
+            batch_apply_ts = datetime.now(timezone.utc).isoformat()
+            ok, reason = manifest_ok(manifest)
+            if not ok:
+                logger.warning(
+                    "Manifest validation failed for %s run_id=%s %s=%s reason=%s",
+                    table,
+                    manifest.get("run_id", batch.get("run_id")),
+                    partition_kind,
+                    partition_value,
+                    reason,
+                )
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        batch,
+                        source_system,
+                        source_schema,
+                        table,
+                        batch_apply_ts,
+                        "failed",
+                        reason,
+                    )
+                )
+                continue
+
+            if (
+                manifest.get("row_count", 0) == 0
+                or manifest.get("file_count", 0) == 0
+            ):
+                logger.info(
+                    "Skipping empty batch for %s run_id=%s %s=%s",
+                    table,
+                    manifest.get("run_id", batch.get("run_id")),
+                    partition_kind,
+                    partition_value,
+                )
+                watermark_from = None
+                watermark_to = None
+                if manifest.get("watermark"):
+                    watermark_from = manifest["watermark"].get("from")
+                    watermark_to = manifest["watermark"].get("to")
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        batch,
+                        source_system,
+                        source_schema,
+                        table,
+                        batch_apply_ts,
+                        "skipped",
+                        "empty batch",
+                        watermark_from,
+                        watermark_to,
+                    )
+                )
+                continue
+
+            if (
+                expected_schema_hash
+                and manifest.get("schema_hash") != expected_schema_hash
+            ):
+                logger.warning(
+                    "Schema hash mismatch for %s run_id=%s expected=%s actual=%s",
+                    table,
+                    manifest.get("run_id"),
+                    expected_schema_hash,
+                    manifest.get("schema_hash"),
+                )
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        batch,
+                        source_system,
+                        source_schema,
+                        table,
+                        batch_apply_ts,
+                        "skipped",
+                        "schema_hash mismatch",
+                    )
+                )
+                continue
+
+            if (
+                expected_contract_version
+                and manifest.get("contract_version") != expected_contract_version
+            ):
+                logger.warning(
+                    "Contract version mismatch for %s run_id=%s expected=%s actual=%s",
+                    table,
+                    manifest.get("run_id"),
+                    expected_contract_version,
+                    manifest.get("contract_version"),
+                )
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        batch,
+                        source_system,
+                        source_schema,
+                        table,
+                        batch_apply_ts,
+                        "skipped",
+                        "contract_version mismatch",
+                    )
+                )
+                continue
+
+            if not partition_kind or not partition_value:
+                logger.warning(
+                    "Missing partition info for %s run_id=%s",
+                    table,
+                    manifest.get("run_id"),
+                )
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        batch,
+                        source_system,
+                        source_schema,
+                        table,
+                        batch_apply_ts,
+                        "failed",
+                        "missing partition info",
+                    )
+                )
+                continue
+
+            file_paths = [
+                f["path"] for f in manifest.get("files", []) if f.get("path")
+            ]
+            if not file_paths:
+                logger.warning(
+                    "No file paths in manifest for %s run_id=%s",
+                    table,
+                    manifest.get("run_id"),
+                )
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        batch,
+                        source_system,
+                        source_schema,
+                        table,
+                        batch_apply_ts,
+                        "failed",
+                        "no files in manifest",
+                    )
+                )
+                continue
+
+            valid_batches.append(
+                {
+                    "batch": batch,
+                    "manifest": manifest,
+                    "apply_ts": batch_apply_ts,
+                    "file_paths": file_paths,
+                }
+            )
+
+        if not valid_batches:
+            continue
+
+        # Step B: Read all batch files for the partition and merge once.
+        # This reduces per-batch scheduling overhead while preserving lineage.
+        # The expected outcome is one merged Iceberg write per extract_date.
+        try:
+            dfs = []
+            for info in valid_batches:
+                manifest = info["manifest"]
+                df_part = spark.read.parquet(*info["file_paths"])
+                df_part = df_part.withColumn(
+                    "_bronze_last_run_id", F.lit(manifest.get("run_id"))
+                )
+                df_part = df_part.withColumn(
+                    "_bronze_last_apply_ts", F.lit(info["apply_ts"])
+                )
+                df_part = df_part.withColumn(
+                    "_bronze_last_manifest_path",
+                    F.lit(info["batch"]["manifest_path"]),
+                )
+                dfs.append(df_part)
+
+            df = dfs[0]
+            for extra in dfs[1:]:
+                df = df.unionByName(extra, allowMissingColumns=True)
+
+            # Several Raw runs can cover the same extract_date and business key.
+            # Keep the latest run so Iceberg MERGE sees one source row per key.
+            df = latest_rows_by_merge_key(df, merge_keys)
+
+            if align_to_target_schema is not None:
+                df = align_to_target_schema(table, df)
+            merge_to_iceberg(
+                spark,
+                df,
+                bronze_table_name,
+                merge_keys,
+                source_extract_date=partition_value,
+            )
+
+            # Step C: Emit registry rows for every batch in the partition.
+            # This keeps the registry granular while the write is consolidated.
+            # The expected outcome is one applied row per run_id.
+            for info in valid_batches:
+                manifest = info["manifest"]
+                watermark_from = None
+                watermark_to = None
+                if manifest.get("watermark"):
+                    watermark_from = manifest["watermark"].get("from")
+                    watermark_to = manifest["watermark"].get("to")
+
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        info["batch"],
+                        source_system,
+                        source_schema,
+                        table,
+                        info["apply_ts"],
+                        "applied",
+                        "ok",
+                        watermark_from,
+                        watermark_to,
+                    )
+                )
+                logger.info(
+                    "Applied batch run_id=%s %s=%s for %s manifest=%s",
+                    manifest.get("run_id"),
+                    partition_kind,
+                    partition_value,
+                    table,
+                    info["batch"]["manifest_path"],
+                )
+        except Exception as exc:  # noqa: BLE001
+            for info in valid_batches:
+                manifest = info["manifest"]
+                registry_rows.append(
+                    build_registry_payload(
+                        manifest,
+                        info["batch"],
+                        source_system,
+                        source_schema,
+                        table,
+                        info["apply_ts"],
+                        "failed",
+                        f"bronze apply failed: {exc}",
+                    )
+                )
+            logger.exception(
+                "Failed applying batches %s=%s for %s",
+                partition_kind,
+                partition_value,
+                table,
+            )

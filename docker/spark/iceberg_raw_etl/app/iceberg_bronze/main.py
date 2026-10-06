@@ -1,0 +1,693 @@
+"""Apply raw landing batches to isolated Bronze Iceberg tables."""
+
+import logging
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from typing import Optional
+
+from pyspark.sql import SparkSession, functions as F
+
+from etl_utils import (
+    configure_s3,
+    exists,
+    get_env,
+    list_dirs,
+    parse_optional_datetime,
+    partition_info,
+    read_json,
+    set_spark_log_level,
+    setup_logging,
+    state_path,
+    table_base_path,
+)
+from iceberg_bronze.apply_utils import load_registry_schema, write_registry_rows
+from iceberg_bronze.facts_events import apply_facts_events_batches
+from iceberg_bronze.mutable_dims import apply_mutable_dim_batches
+from iceberg_bronze.snapshots import apply_snapshot_batches
+from iceberg_bronze.catalog import (
+    align_df_to_iceberg_schema,
+    configure_lakekeeper_catalog,
+    ensure_iceberg_table,
+    parse_bool_flag,
+)
+from iceberg_bronze.parser import parse_iceberg_bronze_args
+from etl_parser import resolve_bronze_groups
+
+APP_NAME = "raw-to-iceberg-bronze-etl"
+
+
+def _list_partitions(
+    spark: SparkSession, base_path: str, partition_key: str
+) -> list[date]:
+    """List available partition dates for a landing table.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+        partition_key: Partition type, e.g. "snapshot_date" or "event_date".
+
+    Examples:
+        _list_partitions(spark, "s3a://ampere-raw/.../orders", "event_date")
+    """
+    mode_path = (
+        f"{base_path}/mode=snapshot"
+        if partition_key == "snapshot_date"
+        else f"{base_path}/mode=incremental"
+    )
+    partition_dirs = list_dirs(spark, mode_path)
+    dates = []
+    prefix = f"{partition_key}="
+    for entry in partition_dirs:
+        if entry.startswith(prefix):
+            dates.append(date.fromisoformat(entry.split("=", 1)[1]))
+    return sorted(dates)
+
+
+def _search_start_date(
+    partition_key: str,
+    registry_date: Optional[date],
+    state_last_ingest: Optional[datetime],
+    run_date: date,
+    lookback_days: int,
+    has_registry_rows: bool,
+) -> Optional[date]:
+    """Find the earliest date to consider for new batches.
+
+    Args:
+        partition_key: Partition type, e.g. "snapshot_date", "extract_date", "event_date".
+        registry_date: Latest registry partition date for this table, if any.
+        state_last_ingest: Last ingest timestamp, e.g. datetime(2026, 1, 24, tzinfo=UTC).
+        run_date: Run date, e.g. date(2026, 1, 24).
+        lookback_days: Lookback window in days, e.g. 2.
+        has_registry_rows: Whether registry has any rows for the table, e.g. True.
+
+    Examples:
+        _search_start_date("event_date", None, None, date(2026, 1, 24), 2, False)
+    """
+    candidates = []
+    if registry_date:
+        candidates.append(registry_date)
+    if state_last_ingest and not (
+        partition_key == "extract_date" and not has_registry_rows
+    ):
+        candidates.append(state_last_ingest.date())
+
+    if not candidates:
+        if partition_key == "event_date":
+            if not has_registry_rows and state_last_ingest is None:
+                return None
+            if lookback_days < 1:
+                lookback_days = 1
+            return run_date - timedelta(days=lookback_days - 1)
+        return None
+
+    start = min(candidates)
+    buffer_days = 0
+    if partition_key == "extract_date":
+        buffer_days = 1
+    elif partition_key == "event_date":
+        buffer_days = lookback_days
+    return start - timedelta(days=buffer_days)
+
+
+def _candidate_runs(
+    spark: SparkSession,
+    base_path: str,
+    partition_key: str,
+    search_start: Optional[date],
+) -> list[dict]:
+    """Collect run folders that contain _SUCCESS and _manifest.json.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+        partition_key: Partition type, e.g. "snapshot_date".
+        search_start: Earliest date to consider, e.g. date(2026, 1, 20) or None.
+
+    Examples:
+        _candidate_runs(spark, "s3a://ampere-raw/.../orders", "event_date", date(2026, 1, 20))
+    """
+    candidates = []
+    partitions = _list_partitions(spark, base_path, partition_key)
+
+    for partition_date in partitions:
+        if search_start and partition_date < search_start:
+            continue
+        if partition_key == "snapshot_date":
+            partition_path = (
+                f"{base_path}/mode=snapshot/snapshot_date={partition_date.isoformat()}"
+            )
+        else:
+            partition_path = f"{base_path}/mode=incremental/{partition_key}={partition_date.isoformat()}"
+        run_dirs = list_dirs(spark, partition_path)
+        for run_dir in run_dirs:
+            if not run_dir.startswith("run_id="):
+                continue
+            run_id = run_dir.split("=", 1)[1]
+            run_path = f"{partition_path}/{run_dir}"
+            success_path = f"{run_path}/_SUCCESS"
+            manifest_path = f"{run_path}/_manifest.json"
+            if not exists(spark, success_path):
+                continue
+            if not exists(spark, manifest_path):
+                continue
+            candidates.append(
+                {
+                    "run_id": run_id,
+                    "manifest_path": manifest_path,
+                    "partition_kind": partition_key,
+                    "partition_value": partition_date.isoformat(),
+                }
+            )
+    return candidates
+
+
+def _apply_group_shuffle(
+    spark: SparkSession,
+    group_name: str,
+    shuffle_partitions: Optional[int],
+    files_max_partition_bytes: Optional[str],
+    files_open_cost_bytes: Optional[str],
+    adaptive_coalesce: Optional[bool],
+) -> None:
+    """Override spark.sql.shuffle.partitions for the current group when set.
+
+    Args:
+        spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
+        group_name: Group label, e.g. "snapshots" or "facts".
+        shuffle_partitions: Partition count, e.g. 1 or None to keep Spark default.
+
+    Examples:
+        _apply_group_shuffle(spark, "facts", 4)
+    """
+    if shuffle_partitions:
+        spark.conf.set("spark.sql.shuffle.partitions", str(shuffle_partitions))
+        spark.conf.set("spark.default.parallelism", str(shuffle_partitions))
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.shuffle.partitions=%s and spark.default.parallelism=%s for group=%s",
+            shuffle_partitions,
+            shuffle_partitions,
+            group_name,
+        )
+    if files_max_partition_bytes:
+        spark.conf.set("spark.sql.files.maxPartitionBytes", files_max_partition_bytes)
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.files.maxPartitionBytes=%s for group=%s",
+            files_max_partition_bytes,
+            group_name,
+        )
+    if files_open_cost_bytes:
+        spark.conf.set("spark.sql.files.openCostInBytes", files_open_cost_bytes)
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.files.openCostInBytes=%s for group=%s",
+            files_open_cost_bytes,
+            group_name,
+        )
+    if adaptive_coalesce is not None:
+        spark.conf.set(
+            "spark.sql.adaptive.coalescePartitions.enabled",
+            "true" if adaptive_coalesce else "false",
+        )
+        logging.getLogger(APP_NAME).info(
+            "Set spark.sql.adaptive.coalescePartitions.enabled=%s for group=%s",
+            "true" if adaptive_coalesce else "false",
+            group_name,
+        )
+
+
+def _registry_status_counts(rows: list[dict]) -> dict[str, int]:
+    """Count registry row statuses for concise table progress logging."""
+    counts = {"applied": 0, "skipped": 0, "failed": 0}
+    for row in rows:
+        status = str(row.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _registry_progress(registry_history):
+    """Find the latest successful partition and oldest unresolved failure per table."""
+    key_columns = ["source_table", "run_id", "partition_value"]
+    successful = registry_history.filter(F.col("status").isin("applied", "skipped"))
+    successful_keys = successful.select(*key_columns).distinct()
+    unresolved_failures = (
+        registry_history.filter(F.col("status") == "failed")
+        .select(*key_columns)
+        .distinct()
+        .join(successful_keys, key_columns, "left_anti")
+    )
+    latest_success = successful.groupBy("source_table").agg(
+        F.max("partition_value").alias("latest_partition_value"),
+        F.max_by("contract_version", "apply_ts_utc").alias(
+            "latest_contract_version"
+        ),
+    )
+    oldest_failure = unresolved_failures.groupBy("source_table").agg(
+        F.min("partition_value").alias("earliest_failed_partition_value")
+    )
+    progress_rows = latest_success.join(
+        oldest_failure, "source_table", "full_outer"
+    ).collect()
+    return {row.source_table: row for row in progress_rows}
+
+
+def main() -> None:
+    """Apply raw landing batches to Bronze Iceberg tables.
+
+    The flow loads registry metadata, discovers candidate runs, validates manifests,
+    writes Iceberg data, and appends status rows into an isolated registry.
+
+    Examples:
+        python raw_to_bronze_etl.py --groups-config '[{"group":"facts","tables":["orders"]}]'
+    """
+    # Step 1: Initialize logging and parse CLI inputs.
+    # This fixes the runtime configuration for tables, groups, and run date.
+    # The expected outcome is a fully populated args object before Spark starts.
+    setup_logging()
+    logger = logging.getLogger(APP_NAME)
+
+    args = parse_iceberg_bronze_args()
+    iceberg_catalog = args.iceberg_catalog.strip()
+    iceberg_bronze_schema = args.iceberg_bronze_schema.strip()
+    iceberg_ops_schema = args.iceberg_ops_schema.strip()
+    if not iceberg_catalog or not iceberg_bronze_schema or not iceberg_ops_schema:
+        raise ValueError("Iceberg catalog and schemas must be non-empty")
+    run_date_str = args.run_date or date.today().isoformat()
+    run_date = date.fromisoformat(run_date_str)
+
+    # Step 2: Normalize group config and shuffle settings.
+    # This decides how many groups run and which shuffle override each group gets.
+    # The expected outcome is a structured list of groups ready for execution.
+    groups, default_tables, using_groups_config = resolve_bronze_groups(args)
+
+    minio_endpoint = get_env(
+        "MINIO_S3_ENDPOINT", "http://minio.ampere.svc.cluster.local:9000"
+    )
+    minio_access_key = get_env("MINIO_ACCESS_KEY")
+    minio_secret_key = get_env("MINIO_SECRET_KEY")
+    if not minio_access_key or not minio_secret_key:
+        raise ValueError("Missing MINIO_ACCESS_KEY/MINIO_SECRET_KEY for MinIO.")
+
+    if using_groups_config:
+        group_names = ",".join([g.get("group", "group") for g in groups])
+        logger.info(
+            "Starting bronze load for %s groups (%s), run_date=%s",
+            len(groups),
+            group_names,
+            run_date_str,
+        )
+    else:
+        logger.info(
+            "Starting bronze load for %s (mode=%s, run_date=%s)",
+            ",".join(default_tables or []),
+            args.mode,
+            run_date_str,
+        )
+
+    # Step 3: Start Spark and configure MinIO access.
+    # This prepares the session for reading raw data and writing Iceberg outputs.
+    # The expected outcome is a SparkSession configured with S3A credentials.
+    spark = (
+        SparkSession.builder.appName(args.app_name)
+        .config("spark.sql.session.timeZone", "UTC")
+        .config("spark.redaction.regex", "(?i)secret|password|token|credential|access.key")
+        .getOrCreate()
+    )
+    configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
+    set_spark_log_level(spark)
+    configure_lakekeeper_catalog(
+        spark,
+        catalog=iceberg_catalog,
+        warehouse=args.lakekeeper_warehouse,
+        uri=args.lakekeeper_uri,
+        oauth_uri=args.lakekeeper_oauth_uri,
+        scope=args.lakekeeper_scope,
+        client_id=get_env("LAKEKEEPER_CLIENT_ID"),
+        client_secret=get_env("LAKEKEEPER_CLIENT_SECRET"),
+        minio_endpoint=minio_endpoint,
+    )
+    logger.info(
+        "Iceberg Bronze uses Lakekeeper warehouse %s and its own apply registry.",
+        args.lakekeeper_warehouse,
+    )
+
+    # Step 4: Load the registry table to track applied batches.
+    # This drives idempotency and prevents duplicate loads per partition.
+    # The Iceberg registry is the source of truth for applied landing batches.
+    schema_path = get_env(
+        "BRONZE_REGISTRY_SCHEMA_PATH",
+        str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
+    )
+    registry_schema = load_registry_schema(schema_path)
+    registry_table_name = ensure_iceberg_table(
+        spark=spark,
+        catalog=iceberg_catalog,
+        schema=iceberg_ops_schema,
+        table="bronze_apply_registry",
+        logger=logger,
+    )
+    registry_df = spark.read.table(registry_table_name)
+    # Read historical registry metadata once; per-table status checks below only
+    # inspect run ids discovered in the current landing window.
+    registry_history = registry_df.filter(
+        (F.col("source_system") == args.source_system)
+        & (F.col("source_schema") == args.schema)
+    )
+    registry_summaries = _registry_progress(registry_history)
+
+    def _align_to_iceberg_bronze_schema(table_name: str, df):
+        """Align a table DataFrame to the Bronze contract before write/merge."""
+        return align_df_to_iceberg_schema(
+            spark=spark,
+            df=df,
+            catalog=iceberg_catalog,
+            schema=iceberg_bronze_schema,
+            table=table_name,
+            logger=logger,
+        )
+
+    for group in groups:
+        # Step 5: Apply group-level overrides and resolve tables to process.
+        # This allows per-group tuning (like shuffle partitions) before table work.
+        # The expected outcome is a non-empty table list for the group.
+        group_name = group.get("group", "group")
+        group_tables = group.get("tables", [])
+        if not group_tables:
+            logger.info("No tables configured for group %s", group_name)
+            continue
+        _apply_group_shuffle(
+            spark,
+            group_name,
+            group.get("shuffle_partitions"),
+            group.get("files_max_partition_bytes"),
+            group.get("files_open_cost_bytes"),
+            group.get("adaptive_coalesce"),
+        )
+        table_config = group.get("table_config", {})
+        partition_key = group.get("partition_key", "snapshot_date")
+        lookback_days = group.get("lookback_days", 0)
+        logger.info(
+            "Processing group %s (%s tables) partition_key=%s lookback_days=%s",
+            group_name,
+            ",".join(group_tables),
+            partition_key,
+            lookback_days,
+        )
+
+        for table in group_tables:
+            # Step 6: Build per-table context from the registry and state files.
+            # This determines the search window and expected schema/contract.
+            # The expected outcome is a search_start date and applied batch set.
+            registry_rows = []
+            table_meta = table_config.get(table, {})
+            merge_keys = table_meta.get("merge_keys", [])
+            bronze_strategy = table_meta.get("bronze_strategy")
+            table_lookback_days = table_meta.get("lookback_days")
+            if table_lookback_days is None:
+                table_lookback_days = lookback_days
+            table_lookback_days = int(table_lookback_days or 0)
+            logger.info(
+                "Table %s uses lookback_days=%s bronze_strategy=%s",
+                table,
+                table_lookback_days,
+                bronze_strategy,
+            )
+            raw_base = table_base_path(
+                args.raw_bucket, args.raw_prefix, args.schema, table
+            )
+            bronze_table_name = ensure_iceberg_table(
+                spark=spark,
+                catalog=iceberg_catalog,
+                schema=iceberg_bronze_schema,
+                table=table,
+                logger=logger,
+            )
+
+            summary = registry_summaries.get(table)
+            expected_schema_hash = None
+            expected_contract_version = (
+                summary.latest_contract_version if summary else None
+            )
+            # A failed historical batch must remain in the landing search
+            # window even when newer partitions already succeeded.
+            registry_dates = []
+            if summary:
+                registry_dates = [
+                    date.fromisoformat(value)
+                    for value in (
+                        summary.latest_partition_value,
+                        summary.earliest_failed_partition_value,
+                    )
+                    if value
+                ]
+            registry_date = min(registry_dates) if registry_dates else None
+            has_registry_rows = summary is not None
+
+            state_last_ingest = None
+            if partition_key == "extract_date":
+                state_path_value = state_path(
+                    args.raw_bucket, args.source_system, args.schema, table
+                )
+                state = read_json(spark, state_path_value, logger)
+                if state and state.get("last_successful_ingest_ts_utc"):
+                    state_last_ingest = parse_optional_datetime(
+                        state["last_successful_ingest_ts_utc"]
+                    )
+
+            search_start = _search_start_date(
+                partition_key,
+                registry_date,
+                state_last_ingest,
+                run_date,
+                table_lookback_days,
+                has_registry_rows,
+            )
+
+            # Step 7: Discover candidate runs and load manifests.
+            # This filters to batches with _SUCCESS and builds the apply queue.
+            # The expected outcome is a list of candidate batches ready for validation.
+            candidates = _candidate_runs(spark, raw_base, partition_key, search_start)
+            if not candidates:
+                logger.info(
+                    "BRONZE_TABLE_PROGRESS status=no_candidates group=%s table=%s "
+                    "partition_key=%s search_start=%s",
+                    group_name,
+                    table,
+                    partition_key,
+                    search_start,
+                )
+                continue
+
+            # A run id is only unique together with its partition. Fetch all
+            # registry partitions for candidate run ids, then compare both keys.
+            candidate_run_ids = sorted({candidate["run_id"] for candidate in candidates})
+            applied_batches = {
+                (row.run_id, row.partition_value)
+                for row in registry_history.filter(
+                    (F.col("source_table") == table)
+                    & F.col("status").isin("applied", "skipped")
+                    & F.col("run_id").isin(candidate_run_ids)
+                )
+                .select("run_id", "partition_value")
+                .collect()
+            }
+
+            apply_queue = []
+            seen_batches = set()
+            for candidate in candidates:
+                manifest = read_json(spark, candidate["manifest_path"], logger)
+                if not manifest:
+                    batch_apply_ts = datetime.now(timezone.utc).isoformat()
+                    logger.warning(
+                        "Manifest missing or invalid for %s run_id=%s path=%s",
+                        table,
+                        candidate["run_id"],
+                        candidate["manifest_path"],
+                    )
+                    registry_rows.append(
+                        {
+                            "source_system": args.source_system,
+                            "source_schema": args.schema,
+                            "source_table": table,
+                            "run_id": candidate["run_id"],
+                            "manifest_path": candidate["manifest_path"],
+                            "batch_type": None,
+                            "partition_kind": candidate["partition_kind"],
+                            "partition_value": candidate["partition_value"],
+                            "ingest_ts_utc": None,
+                            "schema_hash": None,
+                            "contract_version": None,
+                            "apply_ts_utc": batch_apply_ts,
+                            "status": "failed",
+                            "details": "missing or invalid manifest",
+                            "watermark_from": None,
+                            "watermark_to": None,
+                            "lookback_days": None,
+                            "window_from": None,
+                            "window_to": None,
+                            "row_count": None,
+                            "file_count": None,
+                        }
+                    )
+                    continue
+                candidate["manifest"] = manifest
+                candidate["ingest_ts_utc"] = manifest.get("ingest_ts_utc")
+                candidate["run_id"] = manifest.get("run_id", candidate["run_id"])
+                partition_kind, partition_value = partition_info(manifest)
+                if not partition_kind or not partition_value:
+                    partition_kind = candidate["partition_kind"]
+                    partition_value = candidate["partition_value"]
+                    logger.warning(
+                        "Manifest missing partition info for %s run_id=%s, using path %s=%s",
+                        table,
+                        candidate["run_id"],
+                        partition_kind,
+                        partition_value,
+                    )
+                candidate["partition_kind"] = partition_kind
+                candidate["partition_value"] = partition_value
+                batch_key = (candidate["run_id"], candidate["partition_value"])
+                if batch_key in applied_batches or batch_key in seen_batches:
+                    continue
+                seen_batches.add(batch_key)
+                apply_queue.append(candidate)
+            if not apply_queue:
+                write_registry_rows(
+                    spark,
+                    registry_table_name,
+                    registry_schema,
+                    registry_rows,
+                )
+                counts = _registry_status_counts(registry_rows)
+                logger.info(
+                    "BRONZE_TABLE_PROGRESS status=no_new_batches group=%s table=%s "
+                    "candidate_batches=%s applied=%s skipped=%s failed=%s "
+                    "registry_rows=%s",
+                    group_name,
+                    table,
+                    len(candidates),
+                    counts.get("applied", 0),
+                    counts.get("skipped", 0),
+                    counts.get("failed", 0),
+                    len(registry_rows),
+                )
+                continue
+
+            def _apply_sort_key(batch: dict) -> tuple:
+                """Sort by partition, ingest timestamp, then run id.
+
+                Args:
+                    batch: Candidate batch dict, e.g. {"partition_value": "2026-01-24"}.
+
+                Examples:
+                    _apply_sort_key({"partition_value": "2026-01-24", "run_id": "r1"})
+                """
+                ingest_dt = parse_optional_datetime(batch.get("ingest_ts_utc") or "")
+                if ingest_dt and ingest_dt.tzinfo is None:
+                    ingest_dt = ingest_dt.replace(tzinfo=timezone.utc)
+                ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
+                return (batch["partition_value"], ingest_key, batch["run_id"])
+
+            # Step 8: Apply batches to bronze and record outcomes in the registry.
+            # The ETL delegates to per-table-type writers to keep logic easy to follow.
+            # The expected outcome is applied/skipped rows in the registry for each batch.
+            sorted_queue = sorted(apply_queue, key=_apply_sort_key)
+            partition_values = sorted(
+                {
+                    str(batch.get("partition_value"))
+                    for batch in sorted_queue
+                    if batch.get("partition_value")
+                }
+            )
+            logger.info(
+                "BRONZE_TABLE_PROGRESS status=applying group=%s table=%s "
+                "partition_key=%s new_batches=%s partitions=%s strategy=%s "
+                "lookback_days=%s",
+                group_name,
+                table,
+                partition_key,
+                len(sorted_queue),
+                ",".join(partition_values),
+                bronze_strategy,
+                table_lookback_days,
+            )
+            if partition_key == "snapshot_date":
+                apply_snapshot_batches(
+                    spark=spark,
+                    table=table,
+                    bronze_table_name=bronze_table_name,
+                    registry_schema=registry_schema,
+                    registry_rows=registry_rows,
+                    source_system=args.source_system,
+                    source_schema=args.schema,
+                    sorted_batches=sorted_queue,
+                    expected_schema_hash=expected_schema_hash,
+                    expected_contract_version=expected_contract_version,
+                    logger=logger,
+                    align_to_target_schema=_align_to_iceberg_bronze_schema,
+                )
+            elif partition_key == "extract_date":
+                apply_mutable_dim_batches(
+                    spark=spark,
+                    table=table,
+                    bronze_table_name=bronze_table_name,
+                    merge_keys=merge_keys,
+                    registry_schema=registry_schema,
+                    registry_rows=registry_rows,
+                    source_system=args.source_system,
+                    source_schema=args.schema,
+                    sorted_batches=sorted_queue,
+                    expected_schema_hash=expected_schema_hash,
+                    expected_contract_version=expected_contract_version,
+                    logger=logger,
+                    align_to_target_schema=_align_to_iceberg_bronze_schema,
+                )
+            else:
+                apply_facts_events_batches(
+                    spark=spark,
+                    table=table,
+                    bronze_table_name=bronze_table_name,
+                    merge_keys=merge_keys,
+                    registry_schema=registry_schema,
+                    registry_rows=registry_rows,
+                    source_system=args.source_system,
+                    source_schema=args.schema,
+                    sorted_batches=sorted_queue,
+                    lookback_days=table_lookback_days,
+                    append_only_override=(
+                        parse_bool_flag(table_meta.get("append_only"))
+                        if table_meta.get("append_only") is not None
+                        else None
+                    ),
+                    expected_schema_hash=expected_schema_hash,
+                    expected_contract_version=expected_contract_version,
+                    logger=logger,
+                    align_to_target_schema=_align_to_iceberg_bronze_schema,
+                )
+            write_registry_rows(
+                spark,
+                registry_table_name,
+                registry_schema,
+                registry_rows,
+            )
+            counts = _registry_status_counts(registry_rows)
+            table_status = "failed" if counts.get("failed", 0) else "done"
+            logger.info(
+                "BRONZE_TABLE_PROGRESS status=%s group=%s table=%s applied=%s "
+                "skipped=%s failed=%s registry_rows=%s partitions=%s",
+                table_status,
+                group_name,
+                table,
+                counts.get("applied", 0),
+                counts.get("skipped", 0),
+                counts.get("failed", 0),
+                len(registry_rows),
+                ",".join(partition_values),
+            )
+            # Release cached data between tables to limit driver memory growth.
+            spark.catalog.clearCache()
+
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
