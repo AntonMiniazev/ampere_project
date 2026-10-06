@@ -16,8 +16,7 @@ from pyspark.sql import functions as F
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "docker/spark/iceberg_raw_etl/app"))
-sys.path.insert(0, str(ROOT / "docker/spark/raw_etl/app"))
-os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/uc/contracts/ampere_tables.json")
+os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/iceberg/contracts/ampere_tables.json")
 
 from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402

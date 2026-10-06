@@ -1,4 +1,4 @@
-"""Manually run Raw-to-Iceberg Bronze without touching the Delta DAG."""
+"""Apply completed Raw batches to Bronze Iceberg tables."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from airflow.sdk import Variable
 from utils.ampere_dag_config import (
     load_bronze_dag_config,
     minio_ssl_enabled,
-    resolve_release_image,
+    resolve_spark_image,
     standard_default_args,
 )
 from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
@@ -25,18 +25,12 @@ TEMPLATE = "raw_to_bronze_template_iceberg.yaml"
 
 
 def _image() -> str:
-    """Resolve an optional pilot override or the shared release version."""
-    image = Variable.get(
-        "iceberg_spark_image",
-        default=resolve_release_image("ghcr.io/antonminiazev/ampere-spark-iceberg"),
-    )
-    if not image.startswith("ghcr.io/antonminiazev/ampere-spark-iceberg:"):
-        raise ValueError("iceberg_spark_image must name the Iceberg repository")
-    return image
+    """Resolve the same Spark image used by Raw landing."""
+    return resolve_spark_image()
 
 
 def _base_params() -> dict:
-    """Reuse production resource sizing while isolating catalog settings."""
+    """Assemble Spark resources and Lakekeeper catalog settings."""
     return {
         "namespace": CONFIG.spark_namespace,
         "image": _image(),

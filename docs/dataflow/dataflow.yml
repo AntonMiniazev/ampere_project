@@ -4,109 +4,85 @@ layers:
   source:
     title: Python generator + PostgreSQL
     status: implemented
-    responsibility: Synthetic operational source data generation and storage.
-    diagram_note: "Synthetic transactions and mutable source rows."
-    engine:
-      - Python
-      - PostgreSQL
-    storage:
-      - PostgreSQL
+    responsibility: Generate synthetic operational data in PostgreSQL.
+    diagram_note: Synthetic transactions and mutable source rows.
+    engine: [Python, PostgreSQL]
+    storage: [PostgreSQL]
 
   raw:
     title: Raw landing
     status: implemented
-    responsibility: Immutable parquet landing batches with manifest, success markers, and extraction state.
-    diagram_note: "Immutable parquet batches with manifest, success marker, and extract state."
-    engine:
-      - Spark
-    storage:
-      - MinIO
-      - Parquet
-    controls:
-      - _manifest.json
-      - _SUCCESS
-      - _state_<table>.json
+    responsibility: Extract immutable Parquet batches with manifests, success markers, and extraction state.
+    diagram_note: Immutable Parquet batches with manifest, success marker, and extract state.
+    engine: [Spark]
+    storage: [MinIO, Parquet]
+    controls: [_manifest.json, _SUCCESS, _state_<table>.json]
 
   bronze:
     title: Bronze
     status: implemented
-    responsibility: Apply raw landing batches into Unity Catalog registered Delta tables.
-    diagram_note: "Delta apply logic by table behavior: replace snapshots, merge mutable/events, increment facts."
-    engine:
-      - Spark
-      - Delta Lake
-    storage:
-      - MinIO
-      - Delta Lake
-    catalog: Unity Catalog OSS
-    catalog_schema: ampere.bronze
+    responsibility: Apply Raw batches to Iceberg tables and track processed batches in an Iceberg registry.
+    diagram_note: Replace snapshot partitions, merge mutable dimensions and events, and append or merge facts.
+    engine: [Spark, Iceberg]
+    storage: [MinIO, Iceberg]
+    catalog: Lakekeeper
+    catalog_schema: bronze warehouse / bronze and ops namespaces
 
   silver:
     title: Silver
     status: implemented
-    responsibility: Clean analytical dbt models built from Bronze through Unity Catalog metadata and DuckDB delta_scan source views.
-    diagram_note: "dbt cleans types, joins entities, tests relationships, and publishes reusable Delta tables."
-    engine:
-      - DuckDB
-      - dbt
-      - Delta Lake
-    storage:
-      - MinIO
-      - Delta Lake
-    catalog: Unity Catalog OSS
-    catalog_schema: ampere.silver
+    responsibility: Build tested analytical entities from Bronze with dbt and DuckDB.
+    diagram_note: Clean types, join entities, test relationships, and publish reusable Iceberg tables.
+    engine: [DuckDB, dbt, Iceberg]
+    storage: [MinIO, Iceberg]
+    catalog: Lakekeeper
+    catalog_schema: silver warehouse / silver namespace
 
   gold:
     title: Gold
     status: implemented
-    responsibility: Serving-oriented marts for BI and downstream consumers, built from Silver in the shared dbt runtime.
-    diagram_note: "BI marts calculate sales, delivery, product cost, and order margin."
-    engine:
-      - DuckDB
-      - dbt
-      - Delta Lake
-    storage:
-      - MinIO
-      - Delta Lake
-    catalog: Unity Catalog OSS
-    catalog_schema: ampere.gold
+    responsibility: Publish serving marts for sales, delivery, product cost, and margin.
+    diagram_note: Publish BI marts from Silver with keyed updates and complete dimension synchronization.
+    engine: [DuckDB, dbt, Iceberg]
+    storage: [MinIO, Iceberg]
+    catalog: Lakekeeper
+    catalog_schema: gold warehouse / gold namespace
 
   serving:
     title: Serving / BI
-    status: planned
-    responsibility: Dashboard and downstream serving consumption from Gold marts.
-    diagram_note: "Dashboards read governed Gold tables only."
-    engine:
-      - BI / serving
-    storage: []
+    status: implemented
+    responsibility: Refresh Curie caches from Gold marts for application and dashboard reads.
+    diagram_note: Curie refreshes its Iceberg cache after a successful Gold publish.
+    engine: [Curie]
+    storage: [Cache]
 
 flows:
   - from: source
     to: raw
     engine: Spark
-    artifact: Raw parquet batches
-    description: Extract PostgreSQL source tables into raw landing batches with manifests and state files.
+    artifact: Raw Parquet batches
+    description: Extract PostgreSQL source tables into validated Raw batches.
 
   - from: raw
     to: bronze
-    engine: Spark + Delta Lake
-    artifact: UC registered Delta tables
-    description: Apply raw batches into Bronze Delta tables registered in Unity Catalog OSS.
+    engine: Spark + Iceberg
+    artifact: Bronze Iceberg tables
+    description: Apply complete Raw batches through the Lakekeeper catalog.
 
   - from: bronze
     to: silver
     engine: DuckDB + dbt
-    artifact: Silver Delta tables
-    description: Transform Bronze into clean analytical Silver models through Unity Catalog metadata and DuckDB delta_scan source views.
+    artifact: Silver Iceberg tables
+    description: Build and publish reusable analytical entities.
 
   - from: silver
     to: gold
-    engine: DuckDB + dbt + Delta Lake
-    artifact: Gold marts
-    description: Build Gold marts from Silver models in the normal silver-gold dbt flow or from published Silver during recovery.
+    engine: DuckDB + dbt
+    artifact: Gold Iceberg marts
+    description: Build and publish serving marts from the Silver slice.
 
   - from: gold
     to: serving
-    engine: BI / serving
-    artifact: Dashboards and downstream consumers
-    description: Expose Gold data to BI and serving workloads.
+    engine: Curie cache refresh
+    artifact: Serving cache
+    description: Refresh Curie after a successful Gold publish.

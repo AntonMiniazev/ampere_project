@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import grpc
 import polars as pl
 
 from .env import load_project_env
@@ -72,6 +73,26 @@ def check_spark_connect_tcp(remote: str | None = None, timeout_seconds: float = 
         return endpoint
 
 
+def check_spark_connect_grpc(remote: str, timeout_seconds: float = 5.0) -> None:
+    """Bound the gRPC handshake before PySpark starts retrying session RPCs."""
+    from pyspark.sql.connect.client import DefaultChannelBuilder
+
+    configure_grpc_roots()
+    endpoint = parse_spark_remote(remote)
+    channel = DefaultChannelBuilder(remote).toChannel()
+    try:
+        grpc.channel_ready_future(channel).result(timeout=timeout_seconds)
+    except grpc.FutureTimeoutError as exc:
+        raise TimeoutError(
+            f"Spark Connect gRPC is unavailable at {endpoint.host}:{endpoint.port} "
+            f"after {timeout_seconds:g} seconds. Check the Spark Connect pod, "
+            "service endpoints, and gRPC gateway route. A TCP check alone "
+            "does not verify the gRPC service."
+        ) from exc
+    finally:
+        channel.close()
+
+
 def create_spark_session(app_name: str, remote: str | None = None):
     """Create a Spark Connect session for local notebooks."""
     configure_grpc_roots()
@@ -86,13 +107,13 @@ def quote_ident(value: str) -> str:
 
 
 def table_name(catalog: str, schema: str, table: str) -> str:
-    """Build a fully qualified Unity Catalog table name for Spark SQL."""
+    """Build a fully qualified Iceberg catalog table name for Spark SQL."""
     return ".".join((quote_ident(catalog), quote_ident(schema), quote_ident(table)))
 
 
 def _to_polars(df: Any) -> pl.DataFrame:
     """Convert a Spark DataFrame to a Polars DataFrame."""
-    return pl.from_pandas(df.toPandas())
+    return pl.from_arrow(df.toArrow())
 
 
 def _exception_messages(exc: Exception) -> list[str]:
@@ -145,7 +166,7 @@ def apply_namespace(spark: Any, catalog: str, schema: str) -> None:
     )
 
 
-def init_delta_check(
+def init_iceberg_check(
     *,
     catalog: str,
     schema: str,
@@ -155,7 +176,7 @@ def init_delta_check(
     connect_timeout_seconds: float = 5.0,
     auto_connect: bool = False,
 ) -> dict[str, Callable[..., Any]]:
-    """Create lazy Spark Connect helpers for delta-check notebooks."""
+    """Create lazy Spark Connect helpers for Iceberg notebooks."""
     spark = None
 
     def remote_uri() -> str:
@@ -173,6 +194,8 @@ def init_delta_check(
             "Spark Connect TCP preflight ok: "
             f"{endpoint.host}:{endpoint.port}, ssl={endpoint.use_ssl}"
         )
+        check_spark_connect_grpc(remote, timeout_seconds=connect_timeout_seconds)
+        print("Spark Connect gRPC preflight ok")
         print("Creating Spark Connect session...")
         spark = create_spark_session(app_name, remote=remote)
         apply_namespace(spark, catalog, schema)
@@ -204,12 +227,6 @@ def init_delta_check(
     def describe(table: str):
         return sql(f"DESCRIBE TABLE {fqtn(table)}")
 
-    def optimize(table: str):
-        return sql(f"OPTIMIZE {fqtn(table)}")
-
-    def vacuum(table: str, retain_hours: int = 168):
-        return sql(f"VACUUM {fqtn(table)} RETAIN {int(retain_hours)} HOURS")
-
     def warmup():
         session = connect()
         session.sql("SELECT 1 AS ok").collect()
@@ -240,7 +257,5 @@ def init_delta_check(
         "fqtn": fqtn,
         "show_table": show_table,
         "describe": describe,
-        "optimize": optimize,
-        "vacuum": vacuum,
         "warmup": warmup,
     }

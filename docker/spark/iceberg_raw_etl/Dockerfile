@@ -18,11 +18,10 @@ RUN mkdir -p /opt/spark/iceberg-jars /opt/spark/app
 ADD https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-4.1_2.13/1.12.0/iceberg-spark-runtime-4.1_2.13-1.12.0.jar /opt/spark/iceberg-jars/
 ADD https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/3.4.1/hadoop-aws-3.4.1.jar /opt/spark/iceberg-jars/
 ADD https://repo.maven.apache.org/maven2/software/amazon/awssdk/bundle/2.35.4/bundle-2.35.4.jar /opt/spark/iceberg-jars/
+ADD https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.3/postgresql-42.7.3.jar /opt/spark/iceberg-jars/
 RUN chmod 644 /opt/spark/iceberg-jars/*.jar
 
 WORKDIR /opt/spark/app
-COPY docker/spark/raw_etl/app/etl_utils.py /opt/spark/app/
-COPY docker/spark/raw_etl/app/etl_parser.py /opt/spark/app/
 COPY docker/spark/iceberg_raw_etl/app/ /opt/spark/app/
-COPY tools/uc/contracts/ampere_tables.json /opt/spark/app/bronze_contract.json
+COPY tools/iceberg/contracts/ampere_tables.json /opt/spark/app/bronze_contract.json
 USER 185

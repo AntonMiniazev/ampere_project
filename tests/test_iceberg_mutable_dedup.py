@@ -12,7 +12,6 @@ from pyspark.sql import SparkSession
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "docker" / "spark" / "iceberg_raw_etl" / "app"))
-sys.path.insert(0, str(ROOT / "docker" / "spark" / "raw_etl" / "app"))
 
 from iceberg_bronze.mutable_dims import latest_rows_by_merge_key  # noqa: E402
 

@@ -1,11 +1,11 @@
 # Iceberg Silver and Gold dbt project
 
-This separate dbt v2 project copies the current Silver and Gold SQL and tests.
+This dbt v2 project defines the Silver and Gold SQL models and tests.
 Bronze sources resolve to `iceberg_bronze.bronze`, published Silver models to
 `iceberg_silver.silver`, and Gold models to `iceberg_gold.gold`. Staging and
 intermediate relations live in the pod-local `ampere_work` DuckDB file. The
-existing budget CSV is loaded as `silver.budget_orders_sales` and then consumed
-by the Gold budget model. The Delta dbt project is not changed.
+budget CSV is loaded as `silver.budget_orders_sales` and then consumed
+by the Gold budget model.
 
 Iceberg does not store `SMALLINT`; the Iceberg staging models widen those IDs to
 `INTEGER` before publishing tables. Their values and join keys are unchanged.
@@ -27,7 +27,7 @@ database aliases and point `BUDGET_DAILY_CSV_PATH` at the tracked CSV. A full
 `ampere__iceberg__silver_gold__dbt_duckdb__daily` runs Silver and Gold using
 separate `iceberg_silver_run_mode` and `iceberg_gold_run_mode` variables
 (default `daily_refresh`) and their corresponding `iceberg_*_lookback_days`
-variables. The modes and dbt pod sizing are independent of Delta. In the daily
+variables. In the daily
 DAG, dbt first builds and tests its Silver and Gold slice in pod-local DuckDB
 files. Only after dbt succeeds does `publish_catalog.py` attach Lakekeeper and
 publish the results. Silver facts and changing Gold facts use keyed Iceberg
@@ -59,10 +59,9 @@ deleted from the published table and need a separate deletion strategy.
 build with both modes set to `full_history`. It rebuilds the Iceberg Silver and
 Gold tables from the complete Bronze history currently present in Lakekeeper,
 then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
-The full rebuild keeps direct dbt table materialization and replaces published
-tables from all Bronze history. It is the current recovery path; the staged
-full-history publisher path is available for a future measured migration. Run
-the direct rebuild to restore dates removed by earlier daily runs. dbt
+The full rebuild uses direct dbt table materialization and replaces published
+tables from all Bronze history. It is the recovery path; the staged
+full-history publisher path is available for a future measured change. dbt
 `--full-refresh` is not needed for these table and view models.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults

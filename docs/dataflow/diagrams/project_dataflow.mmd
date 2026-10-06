@@ -1,13 +1,13 @@
 flowchart LR
     L_SOURCE["Python generator + PostgreSQL<br/>Logic: Synthetic transactions and mutable source rows.<br/>Python, PostgreSQL<br/>PostgreSQL"]
-    L_RAW["Raw landing<br/>Logic: Immutable parquet batches with manifest, success marker, and extract state.<br/>Spark<br/>MinIO, Parquet"]
-    L_BRONZE["Bronze<br/>Logic: Delta apply logic by table behavior: replace snapshots, merge mutable/events, increment facts.<br/>Spark, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
-    L_SILVER["Silver<br/>Logic: dbt cleans types, joins entities, tests relationships, and publishes reusable Delta tables.<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
-    L_GOLD["Gold<br/>Logic: BI marts calculate sales, delivery, product cost, and order margin.<br/>DuckDB, dbt, Delta Lake<br/>MinIO, Delta Lake<br/>Unity Catalog OSS"]
-    L_SERVING["Serving / BI<br/>Logic: Dashboards read governed Gold tables only.<br/>BI / serving"]
+    L_RAW["Raw landing<br/>Logic: Immutable Parquet batches with manifest, success marker, and extract state.<br/>Spark<br/>MinIO, Parquet"]
+    L_BRONZE["Bronze<br/>Logic: Replace snapshot partitions, merge mutable dimensions and events, and append or merge facts.<br/>Spark, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
+    L_SILVER["Silver<br/>Logic: Clean types, join entities, test relationships, and publish reusable Iceberg tables.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
+    L_GOLD["Gold<br/>Logic: Publish BI marts from Silver with keyed updates and complete dimension synchronization.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
+    L_SERVING["Serving / BI<br/>Logic: Curie refreshes its Iceberg cache after a successful Gold publish.<br/>Curie<br/>Cache"]
 
     L_SOURCE -->|"Spark"| L_RAW
-    L_RAW -->|"Spark + Delta Lake"| L_BRONZE
+    L_RAW -->|"Spark + Iceberg"| L_BRONZE
     L_BRONZE -->|"DuckDB + dbt"| L_SILVER
-    L_SILVER -->|"DuckDB + dbt + Delta Lake"| L_GOLD
-    L_GOLD -->|"BI / serving"| L_SERVING
+    L_SILVER -->|"DuckDB + dbt"| L_GOLD
+    L_GOLD -->|"Curie cache refresh"| L_SERVING

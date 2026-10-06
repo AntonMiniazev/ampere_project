@@ -1,4 +1,4 @@
-"""Check that the parallel Iceberg Bronze tables match the canonical contract."""
+"""Check that Iceberg Bronze tables match the canonical contract."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class IcebergContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         """Load the production Bronze contract once for the suite."""
-        cls.contract_path = ROOT / "tools" / "uc" / "contracts" / "ampere_tables.json"
+        cls.contract_path = ROOT / "tools" / "iceberg" / "contracts" / "ampere_tables.json"
         cls.tables = json.loads(cls.contract_path.read_text(encoding="utf-8"))["catalog"][
             "layers"
         ]["bronze"]["tables"]

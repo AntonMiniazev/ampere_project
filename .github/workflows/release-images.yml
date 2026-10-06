@@ -69,31 +69,12 @@ jobs:
               )
           configs = [
               {
-                  "image": "ampere-spark",
-                  "context": "docker/spark/raw_etl",
-                  "file": "docker/spark/raw_etl/Dockerfile",
-                  "paths": [
-                      "docker/spark/raw_etl/",
-                  ],
-              },
-              {
-                  "image": "ampere-dbt",
-                  "context": ".",
-                  "file": "docker/dbt/Dockerfile",
-                  "paths": [
-                      "dbt/",
-                      "docker/dbt/",
-                  ],
-              },
-              {
                   "image": "ampere-spark-iceberg",
                   "context": ".",
                   "file": "docker/spark/iceberg_raw_etl/Dockerfile",
                   "paths": [
                       "docker/spark/iceberg_raw_etl/",
-                      "docker/spark/raw_etl/app/etl_utils.py",
-                      "docker/spark/raw_etl/app/etl_parser.py",
-                      "tools/uc/contracts/ampere_tables.json",
+                      "tools/iceberg/contracts/ampere_tables.json",
                   ],
               },
               {
@@ -142,8 +123,8 @@ jobs:
           previous_tag = ""
           for candidate in candidate_tags:
               # A cancelled release can leave a Git tag without published
-              # images. Use the most recent tag whose core dbt image exists.
-              image = f"ghcr.io/{owner}/ampere-dbt:{candidate}"
+              # images. Use the most recent tag whose dbt image exists.
+              image = f"ghcr.io/{owner}/ampere-dbt-iceberg:{candidate}"
               probe = subprocess.run(
                   ["docker", "buildx", "imagetools", "inspect", image],
                   stdout=subprocess.DEVNULL,
@@ -209,14 +190,6 @@ jobs:
         id: owner
         shell: bash
         run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Validate dbt project
-        if: ${{ matrix.image == 'ampere-dbt' }}
-        run: |
-          test -f dbt/dbt_project.yml || {
-            echo "Missing dbt/dbt_project.yml. The shared dbt image is built from repo root and requires the dbt project." >&2
-            exit 1
-          }
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

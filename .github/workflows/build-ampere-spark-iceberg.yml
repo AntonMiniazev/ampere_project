@@ -3,12 +3,10 @@ name: Build ampere-spark-iceberg image
 on:
   workflow_dispatch:
   push:
-    branches: [migration/iceberg]
+    branches: [migration/iceberg, main]
     paths:
       - docker/spark/iceberg_raw_etl/**
-      - docker/spark/raw_etl/app/etl_utils.py
-      - docker/spark/raw_etl/app/etl_parser.py
-      - tools/uc/contracts/ampere_tables.json
+      - tools/iceberg/contracts/ampere_tables.json
       - tests/test_iceberg_bronze_contract.py
       - tests/test_iceberg_bronze_spark.py
       - tests/test_iceberg_mutable_dedup.py

@@ -1,1 +1,0 @@
-"""Unity Catalog local tooling."""

@@ -3,7 +3,7 @@ name: Build ampere-dbt-iceberg image
 on:
   workflow_dispatch:
   push:
-    branches: [migration/iceberg]
+    branches: [migration/iceberg, main]
     paths:
       - dbt_iceberg/**
       - docker/dbt_iceberg/**

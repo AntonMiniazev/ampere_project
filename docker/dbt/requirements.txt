@@ -1,6 +1,0 @@
-dbt-duckdb==1.9.6
-duckdb==1.5.2
-boto3==1.40.18
-pyyaml==6.0.2
-deltalake==1.5.0
-pyarrow==23.0.1

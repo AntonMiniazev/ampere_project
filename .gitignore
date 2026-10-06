@@ -1,7 +1,6 @@
 # =========================
 # Internal docs
 # =========================
-tools/uc/reports/
 
 # =========================
 # Python
@@ -45,9 +44,9 @@ kube-cluster/
 # =========================
 # Project temp / old
 # =========================
-_old/
-_archive/
-_internal/
+.old/
+.archive/
+.local/
 other/
 data_source/
 deployment/sql_scripts/
@@ -60,12 +59,12 @@ test/
 # =========================
 # dbt
 # =========================
-/dbt/target/
-/dbt/logs/
-/dbt/dbt_packages/
-/dbt/.dbt_local/
+/dbt_iceberg/target/
+/dbt_iceberg/logs/
+/dbt_iceberg/dbt_packages/
+/dbt_iceberg/.dbt_local/
 .dbt/
 .dbt_local/
-/dbt/local.duckdb
+/dbt_iceberg/local.duckdb
 /dbt_profiles
 /logs
