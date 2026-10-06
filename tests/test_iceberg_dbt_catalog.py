@@ -105,6 +105,42 @@ class DuckDBCatalogTests(unittest.TestCase):
                 for layer in ("bronze", "silver", "gold"):
                     self.assertIn(f"iceberg_{layer}", completed.stdout)
 
+                # The daily run builds Silver/Gold into pod-local DuckDB files
+                # before a separate publisher touches the Iceberg catalogs.
+                with patch.dict(os.environ, settings | {"ICEBERG_PUBLISH_MODE": "staged"}):
+                    module.prepare()
+                    staged = yaml.safe_load(profile.read_text())["ampere_iceberg_project"]["outputs"]["prod"]
+                    attaches = {item["alias"]: item for item in staged["attach"]}
+                    self.assertEqual(attaches["iceberg_bronze"]["type"], "iceberg")
+                    for layer in ("silver", "gold"):
+                        attachment = attaches[f"iceberg_{layer}"]
+                        self.assertNotIn("type", attachment)
+                        self.assertEqual(
+                            Path(attachment["path"]).name, f"staged_{layer}.duckdb"
+                        )
+                    completed = subprocess.run(
+                        ["dbt", "debug", "--project-dir", str(ROOT / "dbt_iceberg"),
+                         "--profiles-dir", settings["DBT_PROFILES_DIR"]],
+                        capture_output=True, text=True, timeout=30, check=False,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+                    completed = subprocess.run(
+                        [
+                            "dbt", "build", "--project-dir", str(ROOT / "dbt_iceberg"),
+                            "--profiles-dir", settings["DBT_PROFILES_DIR"],
+                            "--target-path", str(Path(temp_dir) / "target-budget"),
+                            "--select", "silver_budget_orders_sales", "budget_orders_sales",
+                        ],
+                        env=os.environ | {
+                            "BUDGET_DAILY_CSV_PATH": str(
+                                ROOT / "tools/budget_generation/budget_parameters_daily.csv"
+                            )
+                        },
+                        capture_output=True, text=True, timeout=60, check=False,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
                 # Compile representative Silver and Gold models in each mode
                 # to verify full_history removes both layers' date windows.
                 for mode in ("daily_refresh", "full_history"):
@@ -160,6 +196,29 @@ class DuckDBCatalogTests(unittest.TestCase):
                     else:
                         self.assertIn("interval '7 day'", silver_sql)
                         self.assertIn("interval '7 day'", gold_sql)
+
+                with patch.dict(os.environ, settings | {"ICEBERG_PUBLISH_MODE": "staged"}):
+                    target_path = Path(temp_dir) / "target-staged"
+                    completed = subprocess.run(
+                        [
+                            "dbt", "compile", "--project-dir", str(ROOT / "dbt_iceberg"),
+                            "--profiles-dir", settings["DBT_PROFILES_DIR"],
+                            "--target-path", str(target_path),
+                            "--select", "stg_order_product", "fct_orders_sales_mart",
+                        ],
+                        capture_output=True, text=True, timeout=60, check=False,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                    staged_sql = (
+                        target_path / "compiled/ampere_iceberg_project/models/gold/marts/"
+                        "fct_orders_sales_mart.sql"
+                    ).read_text(encoding="utf-8").lower()
+                    self.assertIn("and true", staged_sql)
+                    product_sql = (
+                        target_path / "compiled/ampere_iceberg_project/models/staging/"
+                        "stg_order_product.sql"
+                    ).read_text(encoding="utf-8").lower()
+                    self.assertIn("stg_orders", product_sql)
         finally:
             server.shutdown()
             server.server_close()

@@ -33,6 +33,8 @@ Local development uses a workspace DuckDB file under `dbt/.dbt_local/`, the chec
 - Silver model SQL remains path-agnostic and uses `source()` only.
 - Gold model SQL reads published Silver through `source('silver', ...)`; it does not use same-run `ref()` sources.
 - Large transactional staging models are materialized as DuckDB tables so tests, intermediate rollups, and fact models reuse one prepared relation instead of repeatedly scanning bronze Delta files.
+- Daily staging selects every event for orders touched in the lookback window. The Delta publisher merges partitioned Silver and Gold facts by business key, retaining unrelated rows on the same business date. A full rebuild republishes all partitions and repairs history lost by earlier daily partition replacement.
+- The full rebuild DAG defaults to one dbt thread and a 5 GB DuckDB limit in a 10 GiB pod. Airflow variables `silver_full_rebuild_dbt_threads` and `silver_full_rebuild_duckdb_memory_limit` can override these defaults.
 - `stg_order_product` uses a latest-row window deduplication and avoids the memory-heavy hash aggregate path.
 - `int_order_value_rollup` and `int_orders_latest_status` are materialized as tables because they are shared by facts and tests.
 - Required runtime variables:

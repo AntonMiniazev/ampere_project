@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import date
 from pathlib import Path
 
 from pyspark.sql import SparkSession
@@ -170,6 +171,7 @@ def merge_to_iceberg(
     partition_column: str | None = None,
     partition_value: str | None = None,
     partition_values: list[str] | None = None,
+    source_extract_date: str | None = None,
 ) -> None:
     """Merge source rows into an Iceberg table using stable business keys.
 
@@ -181,6 +183,8 @@ def merge_to_iceberg(
         partition_column: Optional partition column for pruning, e.g. "event_date".
         partition_value: Optional partition value for pruning, e.g. "2026-01-24".
         partition_values: Optional partition values for static target pruning.
+        source_extract_date: Logical Raw extract date for mutable dimensions; an
+            older retry cannot replace a row from a newer extract date.
 
     Examples:
         merge_to_iceberg(
@@ -208,6 +212,8 @@ def merge_to_iceberg(
 
     if not merge_keys:
         raise ValueError(f"Iceberg merge requires business keys for {target_table}")
+    if source_extract_date and date.fromisoformat(source_extract_date).isoformat() != source_extract_date:
+        raise ValueError(f"Invalid source extract date: {source_extract_date}")
     source_view = "ampere_iceberg_merge_source"
     df.createOrReplaceTempView(source_view)
     conditions = " AND ".join(
@@ -239,9 +245,23 @@ def merge_to_iceberg(
     )
     insert_columns = ", ".join(_quote_column(column) for column in columns)
     insert_values = ", ".join(_qualified_column("s", column) for column in columns)
+    update_guard = ""
+    if source_extract_date:
+        # A failed historical Raw batch can be retried after newer batches.
+        # Compare its logical extract date with the date in the target lineage,
+        # rather than the wall-clock time of the retry.
+        target_manifest = _qualified_column("t", "_bronze_last_manifest_path")
+        target_date = (
+            f"regexp_extract({target_manifest}, "
+            "'extract_date=([0-9]{4}-[0-9]{2}-[0-9]{2})', 1)"
+        )
+        update_guard = (
+            f"AND ({target_manifest} IS NULL OR {target_date} = '' "
+            f"OR {target_date} <= {_quote_literal(source_extract_date)}) "
+        )
     spark.sql(
         f"MERGE INTO {target_table} AS t USING {source_view} AS s "
         f"ON {conditions} "
-        f"WHEN MATCHED THEN UPDATE SET {update_sql} "
+        f"WHEN MATCHED {update_guard}THEN UPDATE SET {update_sql} "
         f"WHEN NOT MATCHED THEN INSERT ({insert_columns}) VALUES ({insert_values})"
     )

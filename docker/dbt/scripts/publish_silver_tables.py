@@ -75,6 +75,21 @@ PARTITIONED_PUBLISH_MODELS = {
         "fct_order_margin": "order_date",
     },
 }
+PARTITIONED_MERGE_KEYS = {
+    "silver": {
+        "fact_orders": ("order_id",),
+        "fact_order_product": ("fact_order_product_key",),
+        "fact_payments": ("fact_payments_key",),
+        "fact_order_status_history": ("fact_order_status_history_key",),
+        "fact_delivery_tracking": ("fact_delivery_tracking_key",),
+    },
+    "gold": {
+        "dim_costing": ("order_id", "order_date", "product_id"),
+        "fct_orders_sales": ("order_id",),
+        "fct_deliveries": ("order_id", "status_datetime"),
+        "fct_order_margin": ("order_id",),
+    },
+}
 PUBLISH_PARTITION_COLUMNS = {
     "silver": "_silver_partition_date",
     "gold": "_gold_partition_date",
@@ -458,14 +473,67 @@ def validate_existing_delta_schema_for_daily_refresh(
     )
 
 
-def partition_predicate(
+def assert_partition_merge_keys(
+    connection: duckdb.DuckDBPyConnection,
+    relation_name: str,
+    partition_column: str,
+    partition_value: str,
+    merge_keys: tuple[str, ...],
+) -> None:
+    """Fail before a daily merge when its business grain is ambiguous."""
+    predicate = f"cast({partition_column} as date) = date '{partition_value}'"
+    nulls = " or ".join(f'"{key}" is null' for key in merge_keys)
+    if connection.execute(
+        f"select 1 from {relation_name} where {predicate} and ({nulls}) limit 1"
+    ).fetchone():
+        raise ValueError(f"Null merge key in {relation_name} for {partition_value}")
+    keys = ", ".join(f'"{key}"' for key in merge_keys)
+    if connection.execute(
+        f"select 1 from {relation_name} where {predicate} "
+        f"group by {keys} having count(*) > 1 limit 1"
+    ).fetchone():
+        raise ValueError(f"Duplicate merge key in {relation_name} for {partition_value}")
+
+
+def merge_partitioned_delta(
+    connection: duckdb.DuckDBPyConnection,
+    target_uri: str,
+    relation_name: str,
+    partition_column: str,
     publish_partition_column: str,
-    partition_values_to_replace: list[str],
-) -> str | None:
-    if not partition_values_to_replace:
-        return None
-    values = ", ".join(f"'{value}'" for value in partition_values_to_replace)
-    return f"{publish_partition_column} in ({values})"
+    partition_value: str,
+    merge_keys: tuple[str, ...],
+    storage_options: dict[str, str],
+) -> None:
+    """Upsert a daily slice while retaining other rows on the same date."""
+    assert_partition_merge_keys(
+        connection, relation_name, partition_column, partition_value, merge_keys
+    )
+    source = relation_as_arrow(
+        connection,
+        relation_name,
+        publish_partition_column,
+        partition_column,
+        where_clause=f"cast({partition_column} as date) = date '{partition_value}'",
+    )
+    try:
+        predicate = " and ".join(
+            [
+                f"target.{publish_partition_column} = source.{publish_partition_column}",
+                f"target.{publish_partition_column} = date '{partition_value}'",
+                *(f"target.{key} = source.{key}" for key in merge_keys),
+            ]
+        )
+        (
+            DeltaTable(target_uri, storage_options=storage_options)
+            .merge(source, predicate, source_alias="source", target_alias="target")
+            .when_matched_update_all()
+            .when_not_matched_insert_all()
+            .execute()
+        )
+    finally:
+        del source
+        gc.collect()
 
 
 def write_partitioned_delta(
@@ -565,24 +633,28 @@ def publish_partitioned_model(
         if run_mode == "full_rebuild":
             mode = "overwrite" if index == 1 else "append"
             schema_mode = "overwrite" if index == 1 else None
-            predicate = None
+            write_partitioned_delta(
+                connection,
+                target_uri,
+                relation_name,
+                partition_column,
+                publish_partition_column,
+                partition_value,
+                storage_options,
+                mode,
+                schema_mode,
+            )
         else:
-            mode = "overwrite"
-            schema_mode = None
-            predicate = partition_predicate(publish_partition_column, [partition_value])
-
-        write_partitioned_delta(
-            connection,
-            target_uri,
-            relation_name,
-            partition_column,
-            publish_partition_column,
-            partition_value,
-            storage_options,
-            mode,
-            schema_mode,
-            predicate,
-        )
+            merge_partitioned_delta(
+                connection,
+                target_uri,
+                relation_name,
+                partition_column,
+                publish_partition_column,
+                partition_value,
+                PARTITIONED_MERGE_KEYS[layer][table_name],
+                storage_options,
+            )
     print(
         f"Published {table_name}: rows={row_count} partitions={len(date_partitions)} uri={target_uri}"
     )

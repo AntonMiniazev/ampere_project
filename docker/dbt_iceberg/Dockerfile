@@ -19,6 +19,7 @@ RUN python -m pip install -r /tmp/requirements.txt \
 COPY dbt_iceberg /app/dbt_iceberg
 COPY tools/budget_generation/budget_parameters_daily.csv /app/budget_parameters_daily.csv
 COPY docker/dbt_iceberg/prepare_catalog.py /app/prepare_catalog.py
+COPY docker/dbt_iceberg/publish_catalog.py /app/publish_catalog.py
 COPY docker/dbt_iceberg/entrypoint.sh /usr/local/bin/ampere_dbt_iceberg_entrypoint.sh
 RUN chmod +x /usr/local/bin/ampere_dbt_iceberg_entrypoint.sh \
     && mkdir -p /app/artifacts /app/profiles /app/secret_store

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -56,6 +57,20 @@ class IcebergRegistryTests(unittest.TestCase):
             self.assertEqual(progress["delivery_tracking"].earliest_failed_partition_value, "2025-12-16")
         finally:
             spark.stop()
+
+    def test_mutable_merge_guards_against_older_extract(self) -> None:
+        """Build the source-date guard independently of the runtime JAR."""
+        spark = MagicMock()
+        source = MagicMock()
+        source.columns = ["id", "fullname", "_bronze_last_manifest_path"]
+        merge_to_iceberg(
+            spark, source, "iceberg_bronze.bronze.clients", ["id"],
+            source_extract_date="2026-07-09",
+        )
+        sql = spark.sql.call_args.args[0]
+        self.assertIn("WHEN MATCHED AND", sql)
+        self.assertIn("extract_date=([0-9]{4}-[0-9]{2}-[0-9]{2})", sql)
+        self.assertIn("<= '2026-07-09'", sql)
 
 
 @unittest.skipUnless(os.getenv("ICEBERG_RUNTIME_JAR"), "Iceberg runtime JAR not supplied")
@@ -137,6 +152,27 @@ class IcebergSparkTests(unittest.TestCase):
                     [(row.id, row.fullname) for row in spark.table(dimension_table).collect()],
                     [(7, "second")],
                 )
+
+                # A later retry of an older extract must not revert a client
+                # already updated by a newer Raw partition.
+                for extract_date, fullname in (
+                    ("2026-08-12", "august"),
+                    ("2026-07-09", "stale-july"),
+                ):
+                    source = spark.createDataFrame(
+                        [(7, fullname, f"s3a://raw/clients/extract_date={extract_date}/run_id=x/_manifest.json")],
+                        ["id", "fullname", "_bronze_last_manifest_path"],
+                    )
+                    aligned = align_df_to_iceberg_schema(
+                        spark, source, catalog="iceberg_bronze", schema="bronze",
+                        table="clients", logger=logger,
+                    )
+                    merge_to_iceberg(
+                        spark, aligned, dimension_table, ["id"],
+                        source_extract_date=extract_date,
+                    )
+                client = spark.table(dimension_table).where("id = 7").first()
+                self.assertEqual(client.fullname, "august")
 
                 # Raw lineage uses input_file_name(), which Spark treats as a
                 # non-deterministic source for Iceberg MERGE. The checkpointed

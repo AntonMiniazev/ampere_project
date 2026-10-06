@@ -3,7 +3,7 @@
 with source_data as (
     select *
     from {{ source('bronze', 'delivery_tracking') }}
-    where {{ ampere_silver_date_window_predicate('status_datetime') }}
+    where order_id in (select order_id from {{ ref('stg_orders') }})
 ),
 deduped as (
     select

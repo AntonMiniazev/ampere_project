@@ -621,14 +621,14 @@ def load_silver_dag_config() -> SilverDagConfig:
         dbt_threads=Variable.get("silver_dbt_threads", default="2"),
         full_rebuild_dbt_threads=Variable.get(
             "silver_full_rebuild_dbt_threads",
-            default="2",
+            default="1",
         ),
         run_mode=Variable.get("silver_run_mode", default="daily_refresh"),
         lookback_days=Variable.get("silver_lookback_days", default="7"),
         duckdb_memory_limit=Variable.get("silver_duckdb_memory_limit", default="7GB"),
         full_rebuild_duckdb_memory_limit=Variable.get(
             "silver_full_rebuild_duckdb_memory_limit",
-            default="6GB",
+            default="5GB",
         ),
         duckdb_temp_directory=Variable.get(
             "silver_duckdb_temp_directory",

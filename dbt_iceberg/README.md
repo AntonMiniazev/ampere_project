@@ -27,14 +27,33 @@ database aliases and point `BUDGET_DAILY_CSV_PATH` at the tracked CSV. A full
 `ampere__iceberg__silver_gold__dbt_duckdb__daily` runs Silver and Gold using
 separate `iceberg_silver_run_mode` and `iceberg_gold_run_mode` variables
 (default `daily_refresh`) and their corresponding `iceberg_*_lookback_days`
-variables. The modes and dbt pod sizing are independent of Delta.
+variables. The modes and dbt pod sizing are independent of Delta. In the daily
+DAG, dbt first builds and tests its Silver and Gold slice in pod-local DuckDB
+files. Only after dbt succeeds does `publish_catalog.py` attach Lakekeeper and
+publish the results. Silver facts and changing Gold facts use keyed Iceberg
+`MERGE INTO` updates/inserts, so rows outside the daily slice remain available.
+Small dimension and budget tables are rebuilt from complete source data. The
+publisher checks staged key uniqueness and expected model coverage before
+modifying any Iceberg table. A missing fact target fails closed; run the manual
+full rebuild to establish the historical baseline first.
+
+The staged Gold models consume the staged Silver slice without applying a
+second Gold date filter. Keyed updates preserve older rows even when a recent
+source event changes an older order. Silver first selects changed orders from
+Bronze, then loads all their product, payment, status, and delivery records so
+older orders are recomputed with complete order context. Iceberg facts currently have no date
+partitioning, so monitor merge runtime and metadata growth. This path updates
+and inserts rows; records that disappear entirely from a staged fact are not
+deleted from the published table and need a separate deletion strategy.
 
 `ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` runs the same dbt
 build with both modes set to `full_history`. It rebuilds the Iceberg Silver and
 Gold tables from the complete Bronze history currently present in Lakekeeper,
 then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
-These models are tables and views, not incremental models, so full-history mode
-removes the daily source filters; dbt `--full-refresh` is not needed.
+The full rebuild keeps the direct dbt table materialization and replaces the
+published tables from all Bronze history. Run it once after deploying staged
+daily publication to restore the dates removed by earlier daily runs. dbt
+`--full-refresh` is not needed for these table and view models.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults
 shown): `iceberg_full_rebuild_dbt_threads` (`1`),

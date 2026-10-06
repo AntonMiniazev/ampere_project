@@ -77,14 +77,23 @@ def prepare() -> None:
     finally:
         con.close()
 
-    attach = [
-        {
-            "path": os.getenv(f"ICEBERG_{layer.upper()}_WAREHOUSE", f"ampere-{layer}"),
-            "alias": f"iceberg_{layer}",
-            "type": "iceberg",
-        }
-        for layer in ("bronze", "silver", "gold")
-    ]
+    publish_mode = os.getenv("ICEBERG_PUBLISH_MODE", "direct").strip().lower()
+    if publish_mode not in {"direct", "staged"}:
+        raise ValueError("ICEBERG_PUBLISH_MODE must be direct or staged")
+    attach = []
+    for layer in ("bronze", "silver", "gold"):
+        if publish_mode == "staged" and layer != "bronze":
+            # dbt builds the daily slice locally; the publisher merges it into
+            # Lakekeeper only after every model and test has passed.
+            attach.append(
+                {"path": str(workspace.parent / f"staged_{layer}.duckdb"),
+                 "alias": f"iceberg_{layer}"}
+            )
+        else:
+            attach.append(
+                {"path": os.getenv(f"ICEBERG_{layer.upper()}_WAREHOUSE", f"ampere-{layer}"),
+                 "alias": f"iceberg_{layer}", "type": "iceberg"}
+            )
     duckdb_settings = {
         "secret_directory": str(secret_dir),
         "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "6GB"),

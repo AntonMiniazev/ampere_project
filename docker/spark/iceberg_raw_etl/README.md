@@ -20,6 +20,11 @@ the tested immutable image tag before running it. The driver reads
 separate `iceberg_` Airflow variables. No Iceberg DAG triggers a production
 downstream DAG.
 
+Mutable dimension merges compare the Raw extract date with the date recorded
+in each Bronze row's manifest path. Retrying an older Raw batch therefore
+cannot overwrite a newer dimension value. The guard applies to matched rows;
+new business keys are still inserted.
+
 Run the local contract check with:
 
 ```powershell

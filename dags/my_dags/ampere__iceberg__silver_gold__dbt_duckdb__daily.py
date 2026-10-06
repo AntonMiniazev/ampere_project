@@ -132,6 +132,7 @@ with DAG(
             "DUCKDB_MEMORY_LIMIT": Variable.get(
                 "iceberg_dbt_duckdb_memory_limit", default="7GB"
             ),
+            "ICEBERG_PUBLISH_MODE": "staged",
             "SILVER_RUN_MODE": Variable.get(
                 "iceberg_silver_run_mode", default="daily_refresh"
             ),

@@ -9,6 +9,7 @@ on:
       - docker/dbt_iceberg/**
       - tools/budget_generation/budget_parameters_daily.csv
       - tests/test_iceberg_dbt_catalog.py
+      - tests/test_iceberg_publish.py
       - .github/workflows/build-ampere-dbt-iceberg.yml
 
 permissions:
@@ -31,7 +32,9 @@ jobs:
       - name: Attach mock Lakekeeper warehouses
         env:
           ICEBERG_DBT_SMOKE: '1'
-        run: python -m unittest discover -s tests -p test_iceberg_dbt_catalog.py -v
+        run: |
+          python -m unittest discover -s tests -p test_iceberg_dbt_catalog.py -v
+          python -m unittest discover -s tests -p test_iceberg_publish.py -v
 
   build-and-push:
     needs: dbt-smoke

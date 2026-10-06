@@ -18,8 +18,12 @@
 
 {% macro ampere_gold_date_window_predicate(date_expression) -%}
   {%- if ampere_gold_run_mode() == 'daily_refresh' -%}
-    cast({{ date_expression }} as date) >=
-      cast('{{ ampere_gold_logical_date() }}' as date) - interval '{{ ampere_gold_lookback_days() }} day'
+    (
+      cast({{ date_expression }} as date) >=
+        cast('{{ ampere_gold_logical_date() }}' as date) - interval '{{ ampere_gold_lookback_days() }} day'
+      or cast(_silver_build_ts as date) >=
+        cast('{{ ampere_gold_logical_date() }}' as date) - interval '{{ ampere_gold_lookback_days() }} day'
+    )
   {%- else -%}
     true
   {%- endif -%}

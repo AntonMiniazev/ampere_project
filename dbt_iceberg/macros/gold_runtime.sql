@@ -17,7 +17,9 @@
 {%- endmacro %}
 
 {% macro ampere_gold_date_window_predicate(date_expression) -%}
-  {%- if ampere_gold_run_mode() == 'daily_refresh' -%}
+  {%- if env_var('ICEBERG_PUBLISH_MODE', 'direct') == 'staged' -%}
+    true
+  {%- elif ampere_gold_run_mode() == 'daily_refresh' -%}
     cast({{ date_expression }} as date) >=
       cast('{{ ampere_gold_logical_date() }}' as date) - interval '{{ ampere_gold_lookback_days() }} day'
   {%- elif ampere_gold_run_mode() == 'full_history' -%}

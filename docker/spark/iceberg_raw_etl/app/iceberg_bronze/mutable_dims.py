@@ -290,6 +290,7 @@ def apply_mutable_dim_batches(
                 df,
                 bronze_table_name,
                 merge_keys,
+                source_extract_date=partition_value,
             )
 
             # Step C: Emit registry rows for every batch in the partition.

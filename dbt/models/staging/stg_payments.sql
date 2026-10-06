@@ -3,7 +3,7 @@
 with source_data as (
     select *
     from {{ source('bronze', 'payments') }}
-    where {{ ampere_silver_date_window_predicate('payment_date') }}
+    where order_id in (select order_id from {{ ref('stg_orders') }})
 ),
 deduped as (
     select
