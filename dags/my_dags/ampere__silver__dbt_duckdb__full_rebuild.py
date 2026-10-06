@@ -52,8 +52,8 @@ with DAG(
         op_args=["##### startSilverFullRebuild #####"],
     )
 
-    # Full rebuild Silver first, publish it, then let the entrypoint rebuild
-    # Gold from the refreshed published Delta Silver tables.
+    # Process bounded windows sequentially; checkpoint after each publish so
+    # an Airflow retry resumes instead of repeating the whole history.
     run_silver_dbt = KubernetesPodOperator(
         task_id="run__silver__dbt_full_rebuild",
         name="ampere-dbt-silver-full-rebuild",
@@ -64,6 +64,7 @@ with DAG(
         service_account_name=DAG_CONFIG.service_account,
         node_selector=DAG_CONFIG.node_selector,
         secrets=[minio_access_key, minio_secret_key],
+        cmds=["/app/.venv/bin/python", "/app/scripts/rebuild_in_windows.py"],
         env_vars={
             "MINIO_S3_ENDPOINT": DAG_CONFIG.minio_endpoint,
             "MINIO_S3_USE_SSL": DAG_CONFIG.minio_use_ssl,
@@ -74,8 +75,17 @@ with DAG(
             "BRONZE_SOURCE_NAME": DAG_CONFIG.bronze_source_name,
             "BRONZE_SOURCE_SCHEMA": DAG_CONFIG.bronze_source_schema,
             "DBT_TARGET": DAG_CONFIG.dbt_target,
-            "THREADS": DAG_CONFIG.full_rebuild_dbt_threads,
-            "DUCKDB_MEMORY_LIMIT": DAG_CONFIG.full_rebuild_duckdb_memory_limit,
+            "THREADS": "1",
+            "REBUILD_DUCKDB_MEMORY_LIMIT": Variable.get(
+                "silver_full_rebuild_chunk_duckdb_memory_limit", default="5GB"
+            ),
+            "REBUILD_START_DATE": Variable.get(
+                "silver_full_rebuild_start_date", default="2025-12-01"
+            ),
+            "REBUILD_WINDOW_DAYS": Variable.get(
+                "silver_full_rebuild_window_days", default="14"
+            ),
+            "REBUILD_RUN_ID": "{{ run_id }}",
             "DUCKDB_TEMP_DIRECTORY": DAG_CONFIG.duckdb_temp_directory,
             "SILVER_EXTERNAL_ROOT": DAG_CONFIG.silver_external_root,
             "SILVER_DBT_ARTIFACT_ROOT": DAG_CONFIG.silver_artifact_root,
@@ -102,19 +112,9 @@ with DAG(
             )
             .strip()
             .lower(),
-            "GOLD_DBT_COMMAND": Variable.get(
-                "gold_full_rebuild_dbt_command",
-                default="dbt build --select tag:gold --full-refresh",
-            ),
-            "RUN_DBT_ARTIFACT_UPLOAD": DAG_CONFIG.run_dbt_artifact_upload,
+            "RUN_DBT_ARTIFACT_UPLOAD": "false",
             "LOGICAL_DATE": "{{ ds }}",
         },
-        arguments=[
-            Variable.get(
-                "silver_full_rebuild_silver_dbt_command",
-                default="dbt build --select tag:silver --full-refresh",
-            )
-        ],
         container_resources=V1ResourceRequirements(
             requests={
                 "cpu": DAG_CONFIG.full_rebuild_cpu_request,

@@ -683,6 +683,7 @@ def publish_replacement_model(
     table_name: str,
     relation_name: str,
     publish_partition_column: str,
+    run_mode: str,
 ) -> dict[str, Any]:
     row_count = connection.execute(f"select count(*) from {relation_name}").fetchone()[0]
     validate_publish_contract(
@@ -694,16 +695,55 @@ def publish_replacement_model(
         None,
         publish_partition_column,
     )
-    clean_legacy_non_delta_prefix(client, bucket, table_prefix)
+    chunked_delivery_cost = (
+        layer == "gold"
+        and table_name == "dim_delivery_cost"
+        and os.getenv("GOLD_WINDOW_START")
+        and os.getenv("GOLD_WINDOW_END")
+        and run_mode == "daily_refresh"
+    )
+    if chunked_delivery_cost:
+        if not prefix_has_delta_log(client, bucket, table_prefix):
+            raise RuntimeError("Gold dim_delivery_cost backfill requires a bootstrap publish")
+        planned_fields = planned_delta_field_names(
+            connection, relation_name, None, publish_partition_column
+        )
+        if existing_delta_field_names(target_uri, storage_options) != planned_fields:
+            raise RuntimeError("Gold dim_delivery_cost backfill schema differs from Delta")
+        if connection.execute(
+            f"select 1 from {relation_name} where order_id is null limit 1"
+        ).fetchone():
+            raise ValueError("Gold dim_delivery_cost backfill has a null order_id")
+        if connection.execute(
+            f"select 1 from {relation_name} group by order_id "
+            "having count(*) > 1 limit 1"
+        ).fetchone():
+            raise ValueError("Gold dim_delivery_cost backfill has duplicate order_id")
+    else:
+        clean_legacy_non_delta_prefix(client, bucket, table_prefix)
     arrow_table = relation_as_arrow(connection, relation_name, publish_partition_column)
     try:
-        write_deltalake(
-            target_uri,
-            arrow_table,
-            mode="overwrite",
-            schema_mode="overwrite",
-            storage_options=storage_options,
-        )
+        if chunked_delivery_cost:
+            (
+                DeltaTable(target_uri, storage_options=storage_options)
+                .merge(
+                    arrow_table,
+                    "target.order_id = source.order_id",
+                    source_alias="source",
+                    target_alias="target",
+                )
+                .when_matched_update_all()
+                .when_not_matched_insert_all()
+                .execute()
+            )
+        else:
+            write_deltalake(
+                target_uri,
+                arrow_table,
+                mode="overwrite",
+                schema_mode="overwrite",
+                storage_options=storage_options,
+            )
     finally:
         del arrow_table
         gc.collect()
@@ -714,7 +754,7 @@ def publish_replacement_model(
         "relation_name": relation_name,
         "row_count": row_count,
         "data_uri": target_uri,
-        "publish_mode": "delta_replacement",
+        "publish_mode": "delta_merge" if chunked_delivery_cost else "delta_replacement",
     }
 
 
@@ -826,6 +866,7 @@ def main() -> None:
                     table_name,
                     relation_name,
                     publish_partition_column,
+                    effective_run_mode,
                 )
             )
 

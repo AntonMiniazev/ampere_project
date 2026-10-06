@@ -190,7 +190,7 @@ if [[ "${RUN_SILVER_PUBLISH}" == "true" ]]; then
     --layer silver \
     --duckdb-path "${DUCKDB_PATH}" \
     --manifest-path "${DBT_PROJECT_DIR}/target/manifest.json" \
-    --run-mode "${SILVER_RUN_MODE}" \
+    --run-mode "${SILVER_PUBLISH_RUN_MODE:-${SILVER_RUN_MODE}}" \
     --local-manifest-output "${SILVER_PUBLISH_MANIFEST_PATH}"
 fi
 
@@ -220,7 +220,7 @@ if [[ "${RUN_GOLD_PUBLISH}" == "true" ]]; then
     --layer gold \
     --duckdb-path "${DUCKDB_PATH}" \
     --manifest-path "${DBT_PROJECT_DIR}/target/manifest.json" \
-    --run-mode "${GOLD_RUN_MODE}" \
+    --run-mode "${GOLD_PUBLISH_RUN_MODE:-${GOLD_RUN_MODE}}" \
     --local-manifest-output "${GOLD_PUBLISH_MANIFEST_PATH}"
 fi
 

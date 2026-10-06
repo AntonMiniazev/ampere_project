@@ -17,7 +17,10 @@
 {%- endmacro %}
 
 {% macro ampere_gold_date_window_predicate(date_expression) -%}
-  {%- if ampere_gold_run_mode() == 'daily_refresh' -%}
+  {%- if env_var('GOLD_WINDOW_START', '') and env_var('GOLD_WINDOW_END', '') -%}
+    cast({{ date_expression }} as date) >= cast('{{ env_var('GOLD_WINDOW_START') }}' as date)
+    and cast({{ date_expression }} as date) < cast('{{ env_var('GOLD_WINDOW_END') }}' as date)
+  {%- elif ampere_gold_run_mode() == 'daily_refresh' -%}
     (
       cast({{ date_expression }} as date) >=
         cast('{{ ampere_gold_logical_date() }}' as date) - interval '{{ ampere_gold_lookback_days() }} day'
