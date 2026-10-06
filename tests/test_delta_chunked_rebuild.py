@@ -77,10 +77,10 @@ class DeltaChunkedRebuildTests(unittest.TestCase):
                 raise RuntimeError("interrupted")
 
         environment = {
-            "LOGICAL_DATE": "2025-12-31",
+            "LOGICAL_DATE": "2026-07-15",
             "REBUILD_START_DATE": "2025-12-01",
-            "REBUILD_WINDOW_DAYS": "14",
-            "REBUILD_RUN_ID": "manual__2025-12-31T00:00:00+00:00",
+            "REBUILD_WINDOW_MONTHS": "3",
+            "REBUILD_RUN_ID": "manual__2026-07-15T00:00:00+00:00",
         }
         with patch.dict(os.environ, environment), patch.object(
             rebuild, "checkpoint_client", return_value=client
@@ -90,7 +90,7 @@ class DeltaChunkedRebuildTests(unittest.TestCase):
 
         self.assertEqual(calls[:2], [
             ("silver", "2025-12-01", True),
-            ("silver", "2025-12-15", False),
+            ("silver", "2026-03-01", False),
         ])
         with patch.dict(os.environ, environment), patch.object(
             rebuild, "checkpoint_client", return_value=client
@@ -100,13 +100,23 @@ class DeltaChunkedRebuildTests(unittest.TestCase):
         self.assertEqual(calls.count(("silver", "2025-12-01", True)), 1)
         self.assertEqual(calls[-3:], [
             ("gold", "2025-12-01", True),
-            ("gold", "2025-12-15", False),
-            ("gold", "2025-12-29", False),
+            ("gold", "2026-03-01", False),
+            ("gold", "2026-06-01", False),
         ])
         self.assertEqual(len(client.objects), 1)
         state = json.loads(next(iter(client.objects.values())))
         self.assertEqual(len(state["silver_done"]), 3)
         self.assertEqual(len(state["gold_done"]), 3)
+        self.assertEqual(state["months"], 3)
+
+    def test_calendar_windows_cover_month_end_without_drift(self):
+        """A short target month must not shift later boundaries."""
+        self.assertEqual(rebuild.windows(date(2026, 1, 31), date(2026, 11, 1), 3), [
+            ("2026-01-31", "2026-04-30"),
+            ("2026-04-30", "2026-07-31"),
+            ("2026-07-31", "2026-10-31"),
+            ("2026-10-31", "2026-11-01"),
+        ])
 
     def test_gold_delivery_cost_window_merge_retains_other_orders(self):
         """Later Gold windows keep delivery costs from prior windows."""
@@ -124,8 +134,8 @@ class DeltaChunkedRebuildTests(unittest.TestCase):
                     "(VALUES (2, 21), (3, 30)) t(order_id, tariff)"
                 )
                 with patch.dict(os.environ, {
-                    "GOLD_WINDOW_START": date(2025, 12, 15).isoformat(),
-                    "GOLD_WINDOW_END": date(2025, 12, 29).isoformat(),
+                    "GOLD_WINDOW_START": date(2026, 3, 1).isoformat(),
+                    "GOLD_WINDOW_END": date(2026, 6, 1).isoformat(),
                 }), patch.object(publisher, "validate_publish_contract"), patch.object(
                     publisher, "prefix_has_delta_log", return_value=True
                 ):

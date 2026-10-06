@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+from calendar import monthrange
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -22,14 +23,20 @@ from botocore.exceptions import ClientError
 ENTRYPOINT = "/usr/local/bin/ampere_dbt_entrypoint.sh"
 
 
-def windows(start: date, end: date, days: int) -> list[tuple[str, str]]:
-    """Cover the half-open date range with nonoverlapping bounded windows."""
-    if start >= end or days < 1 or days > 31:
-        raise ValueError("Rebuild needs start < end and window days between 1 and 31")
+def windows(start: date, end: date, months: int) -> list[tuple[str, str]]:
+    """Cover a half-open date range with calendar-month windows."""
+    if start >= end or months < 1 or months > 12:
+        raise ValueError("Rebuild needs start < end and window months between 1 and 12")
     result = []
     current = start
     while current < end:
-        next_date = min(current + timedelta(days=days), end)
+        # Anchor each boundary to the original day to avoid month-end drift.
+        offset = (len(result) + 1) * months
+        month_index = start.year * 12 + start.month - 1 + offset
+        year, month_zero = divmod(month_index, 12)
+        month = month_zero + 1
+        boundary = date(year, month, min(start.day, monthrange(year, month)[1]))
+        next_date = min(boundary, end)
         result.append((current.isoformat(), next_date.isoformat()))
         current = next_date
     return result
@@ -112,15 +119,15 @@ def main() -> None:
     """Publish all Silver windows before rebuilding Gold from complete Silver."""
     start = date.fromisoformat(os.getenv("REBUILD_START_DATE", "2025-12-01"))
     end = date.fromisoformat(os.environ["LOGICAL_DATE"]) + timedelta(days=1)
-    days = int(os.getenv("REBUILD_WINDOW_DAYS", "14"))
-    plan = windows(start, end, days)
+    months = int(os.getenv("REBUILD_WINDOW_MONTHS", "3"))
+    plan = windows(start, end, months)
     run_id = os.environ["REBUILD_RUN_ID"]
     if not re.fullmatch(r"[A-Za-z0-9_.:+-]+", run_id):
         raise ValueError("Unsafe rebuild run ID")
     bucket = os.getenv("REBUILD_CHECKPOINT_BUCKET", "ampere-silver-ops")
     key = f"dbt/rebuild_checkpoints/{quote(run_id, safe='')}.json"
     client = checkpoint_client()
-    expected = {"start": start.isoformat(), "end": end.isoformat(), "days": days}
+    expected = {"start": start.isoformat(), "end": end.isoformat(), "months": months}
     state = read_checkpoint(client, bucket, key, expected)
     for layer in ("silver", "gold"):
         done = state[f"{layer}_done"]

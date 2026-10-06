@@ -82,8 +82,8 @@ with DAG(
             "REBUILD_START_DATE": Variable.get(
                 "silver_full_rebuild_start_date", default="2025-12-01"
             ),
-            "REBUILD_WINDOW_DAYS": Variable.get(
-                "silver_full_rebuild_window_days", default="14"
+            "REBUILD_WINDOW_MONTHS": Variable.get(
+                "silver_full_rebuild_window_months", default="3"
             ),
             "REBUILD_RUN_ID": "{{ run_id }}",
             "DUCKDB_TEMP_DIRECTORY": DAG_CONFIG.duckdb_temp_directory,
