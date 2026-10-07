@@ -70,7 +70,7 @@ spec:
     memory: "{{ params.driver_memory }}"
     serviceAccount: {{ params.service_account }}
     nodeSelector:
-      kubernetes.io/hostname: ampere-k8s-node4
+      kubernetes.io/hostname: {{ params.driver_node_selector }}
     env:
       - name: MINIO_S3_ENDPOINT
         value: "{{ params.minio_endpoint }}"

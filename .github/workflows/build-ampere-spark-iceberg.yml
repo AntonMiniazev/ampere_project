@@ -10,6 +10,7 @@ on:
       - tests/test_iceberg_bronze_contract.py
       - tests/test_iceberg_bronze_spark.py
       - tests/test_iceberg_mutable_dedup.py
+      - tests/test_iceberg_housekeeping.py
       - .github/workflows/build-ampere-spark-iceberg.yml
 
 permissions:
@@ -38,6 +39,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_iceberg_bronze*.py' -v
           python -m unittest discover -s tests -p 'test_iceberg_mutable_dedup.py' -v
+          python -m unittest discover -s tests -p 'test_iceberg_housekeeping.py' -v
 
   build-and-push:
     needs: spark-smoke

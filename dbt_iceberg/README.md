@@ -75,10 +75,7 @@ their existing dbt relationship tests still reject future orphans.
 build with both modes set to `full_history`. It rebuilds the Iceberg Silver and
 Gold tables from the complete Bronze history currently present in Lakekeeper,
 then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
-The full rebuild defaults to direct dbt table materialization and replaces
-published tables from all Bronze history. It uses four DuckDB workers per
-model while dbt runs one model at a time. A staged full-history path is
-prepared behind `iceberg_full_rebuild_publish_mode=staged`: it builds and
+The full rebuild defaults to staged, disk-backed materialization. It builds and
 tests Silver, closes that dbt process, builds and tests Gold from staged
 Silver, then validates all 28 staged publish tables before updating Iceberg.
 The Gold build runs a sales-versus-margin consistency test in addition to the
@@ -87,15 +84,21 @@ The staged path requires at least 16 GiB of free pod scratch before it starts.
 With `iceberg_full_rebuild_scratch_pvc` unset, it uses a pod-local `emptyDir`
 at `/app/artifacts`, requests 16 GiB of ephemeral storage, and has a 24 GiB
 ephemeral-storage limit. Both staged databases and DuckDB spill use that
-directory. Expand node4's Kubernetes disk by 16 GB before enabling staged
-mode; the entrypoint checks available scratch space automatically.
+directory. The entrypoint checks available scratch space automatically.
+The full rebuild defaults to a 5 GB DuckDB memory limit, two DuckDB workers,
+and a 12 GB spill cap inside the 24 GiB scratch volume. These bounds leave
+memory headroom beneath the 10 GiB container limit. Existing Airflow Variable
+overrides take precedence and should be checked if a run still uses direct mode
+or the former 7 GB/four-worker settings.
 Staging does not make publication across tables atomic. dbt
 `--full-refresh` is not needed for these table and view models.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults
 shown): `iceberg_full_rebuild_dbt_threads` (`1`),
-`iceberg_full_rebuild_duckdb_threads` (`4`),
-`iceberg_full_rebuild_duckdb_memory_limit` (`7GB`),
+`iceberg_full_rebuild_duckdb_threads` (`2`),
+`iceberg_full_rebuild_duckdb_memory_limit` (`5GB`),
+`iceberg_full_rebuild_duckdb_max_temp_directory_size` (`12GB`),
+`iceberg_full_rebuild_publish_mode` (`staged`),
 `iceberg_full_rebuild_dbt_cpu_request` (`1`),
 `iceberg_full_rebuild_dbt_cpu_limit` (`4`),
 `iceberg_full_rebuild_dbt_pod_memory_request` (`5Gi`), and
@@ -106,9 +109,9 @@ shown): `iceberg_full_rebuild_dbt_threads` (`1`),
 `iceberg_dbt_pod_memory_request`, and `iceberg_dbt_pod_memory_limit`.
 Both modes disable DuckDB insertion-order preservation and apply the same
 DuckDB connection settings in dbt preparation and publication, including an
-explicit temp directory under the workspace. Optional
-`DUCKDB_MAX_TEMP_DIRECTORY_SIZE` can cap spills once a scratch-volume baseline
-is measured. The full rebuild retains its 10 GiB pod limit.
+explicit temp directory under the workspace. The full rebuild retains its
+10 GiB pod limit. Check the staged run's memory and spill use on the cluster
+before treating these defaults as proven for growing history.
 
 Before an Airflow run, the Bohr deployment must provide the three Lakekeeper
 warehouses and `lakekeeper-dbt-client` Secret. Validate the native Iceberg

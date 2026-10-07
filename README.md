@@ -14,9 +14,11 @@ flowchart LR
     O --> C[Curie cache refresh]
 ```
 
-The `ampere__pre_raw__generators__daily` DAG starts the daily chain on cron `15 4 * * *` (04:15 in the Airflow DAG timezone). It triggers Raw landing. Raw triggers `ampere__iceberg__bronze__raw_to_iceberg__daily`, Bronze triggers `ampere__iceberg__silver_gold__dbt_duckdb__daily`, and successful Gold publication triggers `ampere__curie__cache_refresh__post_iceberg_gold`. These downstream DAGs have no independent schedule, so each daily chain runs once. The `ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` DAG is a manual recovery entrypoint. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
+The `ampere__pre_raw__generators__daily` DAG starts the daily chain on cron `15 4 * * *` (04:15 in the Airflow DAG timezone). It triggers Raw landing. Raw triggers `ampere__iceberg__bronze__raw_to_iceberg__daily`, Bronze triggers `ampere__iceberg__silver_gold__dbt_duckdb__daily`, and successful Gold publication triggers `ampere__curie__cache_refresh__post_iceberg_gold`. A successful Sunday Curie refresh triggers `ampere__housekeeping__iceberg_metadata__weekly`. These downstream DAGs have no independent schedule. The `ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` DAG is a manual recovery entrypoint. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
 
 Raw writes Parquet files, a manifest, a success marker, and extraction state. Bronze applies completed batches by table behavior and records them in an Iceberg apply registry. Daily dbt builds and tests a local slice before publishing it to Lakekeeper. Facts use keyed updates and inserts; complete dimensions and budgets also remove keys absent from their staged source. The manual full rebuild recreates Silver and Gold from all available Bronze history.
+
+Weekly housekeeping uses Spark Connect to expire snapshots and remove orphan files older than 14 days. It bounds previous metadata JSON versions, preserves the current snapshot, and does not rewrite active data files. The housekeeping DAG can also be triggered manually.
 
 ## Repository layout
 

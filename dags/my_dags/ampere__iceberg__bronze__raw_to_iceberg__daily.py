@@ -46,6 +46,7 @@ def _base_params() -> dict:
         "driver_core_request": CONFIG.driver_core_request,
         "driver_memory": CONFIG.driver_memory,
         "driver_memory_overhead": CONFIG.driver_memory_overhead,
+        "driver_node_selector": CONFIG.driver_node_selector,
         "executor_cores": CONFIG.executor_cores,
         "executor_core_request": CONFIG.executor_core_request,
         "executor_memory": CONFIG.executor_memory,

@@ -15,9 +15,18 @@ The same image runs the Raw extractor for
 `ampere__raw_landing__postgres_to_landing__daily` and the Bronze apply job for
 `ampere__iceberg__bronze__raw_to_iceberg__daily`. The image bundles its PostgreSQL
 JDBC and S3A libraries, so the Raw job does not depend on a shared Ivy cache.
+The same image runs the weekly Spark Connect housekeeping client. It expires
+Iceberg snapshots and orphan files older than 14 days and limits previous
+tracked metadata JSON files to 14 for known pipeline tables. Extra catalog
+tables, including repair backups, remain untouched.
 The driver reads `lakekeeper-spark-client` (`client-id`, `client-secret`) and
 `minio-creds`. Lakekeeper URI, warehouse, OAuth URI and scope have separate
 `iceberg_` Airflow variables. The DAG triggers Silver/Gold after success.
+Bronze places its driver on node2 and its two executors on node4 by default.
+The nodes can be changed with `spark_bronze_driver_node_selector` and
+`spark_executor_node_selector` Airflow Variables. Node3 currently lacks the
+free CPU and memory reservations for the driver. Confirm both executors reach
+Running and compare group durations before changing executor count or cores.
 
 Mutable dimension merges compare the Raw extract date with the date recorded
 in each Bronze row's manifest path. Retrying an older Raw batch therefore

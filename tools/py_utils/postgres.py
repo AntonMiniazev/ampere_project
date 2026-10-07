@@ -51,19 +51,27 @@ def fetch_table(table_name: str, schema: str = "source") -> pl.DataFrame:
         with conn.cursor() as cur:
             cur.execute(f"SELECT * FROM {ident}")
             rows: list[tuple[Any, ...]] = cur.fetchall()
-            return pl.DataFrame(rows, schema=[desc[0] for desc in cur.description])
+            return pl.DataFrame(rows, schema=[desc[0] for desc in cur.description], orient="row")
 
 
 def query_df(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> pl.DataFrame:
     """Run an arbitrary PostgreSQL query and return rows as a Polars DataFrame."""
     with psycopg.connect(conninfo()) as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            if cur.description is None:
-                conn.commit()
-                return pl.DataFrame()
-            rows: list[tuple[Any, ...]] = cur.fetchall()
-            return pl.DataFrame(rows, schema=[desc[0] for desc in cur.description])
+        return query_df_connection(conn, sql, params)
+
+
+def query_df_connection(
+    conn: psycopg.Connection,
+    sql: str,
+    params: tuple[Any, ...] | dict[str, Any] | None = None,
+) -> pl.DataFrame:
+    """Query through an existing PostgreSQL session, including session temp tables."""
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        if cur.description is None:
+            return pl.DataFrame()
+        rows: list[tuple[Any, ...]] = cur.fetchall()
+        return pl.DataFrame(rows, schema=[desc[0] for desc in cur.description], orient="row")
 
 
 def execute(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> int:

@@ -17,7 +17,9 @@ Ampere produces synthetic source data in PostgreSQL and publishes analytical Ice
 
 The scheduled generator triggers Raw landing; Raw triggers Iceberg Bronze; Bronze triggers the combined Silver/Gold dbt DAG; a successful dbt publish triggers Curie. Each handoff uses the same Airflow logical date. [The DAG inventory and trigger graph](dataflow/generated/airflow_dag_orchestration.md) are generated from checked-in DAG files.
 
-The manual Iceberg Silver/Gold full rebuild reads all available Bronze history. It replaces Silver and Gold tables through direct dbt materialization and then triggers Curie refresh. It does not backfill missing Bronze batches.
+After a successful Sunday Curie cache refresh, the Iceberg housekeeping DAG uses Spark Connect to expire snapshots older than 14 days and remove aged orphan files from the 45 known Bronze, Silver, Gold, and Bronze `ops` tables. It also bounds tracked metadata JSON versions to 14 previous files. Current table rows and active data files are preserved; a Bronze repair backup and Raw landing storage are outside this job.
+
+The manual Iceberg Silver/Gold full rebuild reads all available Bronze history. It builds and validates Silver and Gold in separate dbt processes on node4's local SSD, then publishes the staged tables and triggers Curie refresh. It does not backfill missing Bronze batches.
 
 The daily publisher stages and tests models locally before changing Lakekeeper tables. Facts use keyed `MERGE` updates and inserts. Complete dimensions and budgets use a keyed merge followed by deletion of keys absent from the complete source. A failed publish can leave some tables updated while others remain at their prior snapshot; rerunning the DAG completes the publication. Daily fact publication does not delete rows that disappear entirely from the staged slice.
 

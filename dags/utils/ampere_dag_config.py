@@ -266,6 +266,7 @@ class BronzeDagConfig:
     driver_core_request: str
     driver_memory: str
     driver_memory_overhead: str
+    driver_node_selector: str
     executor_cores: int
     executor_core_request: str
     executor_memory: str
@@ -301,6 +302,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
         driver_memory=Variable.get("spark_bronze_driver_memory", default="2000m"),
         driver_memory_overhead=Variable.get("spark_bronze_driver_memory_overhead", default="512"),
+        driver_node_selector=Variable.get("spark_bronze_driver_node_selector", default="ampere-k8s-node2"),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get("spark_executor_core_request", default="300m"),
         executor_memory=Variable.get("spark_executor_memory", default="1536m"),

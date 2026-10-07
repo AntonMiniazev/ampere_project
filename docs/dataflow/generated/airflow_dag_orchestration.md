@@ -8,6 +8,7 @@ The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs
 flowchart TD
     START(["Scheduled daily start<br/>04:15"])
     D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD["curie<br/>cache_refresh<br/>post_iceberg_gold<br/>schedule: manual / triggered"]
+    D_AMPERE__HOUSEKEEPING__ICEBERG_METADATA__WEEKLY["housekeeping<br/>iceberg_metadata<br/>weekly<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY["iceberg<br/>bronze<br/>raw_to_iceberg<br/>daily<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__DAILY["iceberg<br/>silver_gold<br/>dbt_duckdb<br/>daily<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__FULL_REBUILD["iceberg<br/>silver_gold<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
@@ -16,6 +17,7 @@ flowchart TD
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY["raw_landing<br/>postgres_to_landing<br/>daily<br/>schedule: manual / triggered"]
 
     START --> D_AMPERE__PRE_RAW__GENERATORS__DAILY
+    D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD -->|"upstream success; does not wait"| D_AMPERE__HOUSEKEEPING__ICEBERG_METADATA__WEEKLY
     D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__DAILY
     D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__DAILY -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
     D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
@@ -32,6 +34,7 @@ flowchart TD
 | DAG | Schedule | Tags | Source file |
 |---|---|---|---|
 | `ampere__curie__cache_refresh__post_iceberg_gold` | manual / triggered | layer:gold, format:iceberg, system:curie, system:api, mode:post_gold | `dags/my_dags/ampere__curie__cache_refresh__post_iceberg_gold.py` |
+| `ampere__housekeeping__iceberg_metadata__weekly` | manual / triggered | layer:housekeeping, format:iceberg, system:spark-connect, mode:weekly | `dags/my_dags/ampere__housekeeping__iceberg_metadata__weekly.py` |
 | `ampere__iceberg__bronze__raw_to_iceberg__daily` | manual / triggered | layer:bronze, format:iceberg, system:spark, mode:manual | `dags/my_dags/ampere__iceberg__bronze__raw_to_iceberg__daily.py` |
 | `ampere__iceberg__silver_gold__dbt_duckdb__daily` | manual / triggered | layer:silver_gold, format:iceberg, system:dbt, mode:manual | `dags/my_dags/ampere__iceberg__silver_gold__dbt_duckdb__daily.py` |
 | `ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` | manual / triggered | layer:silver_gold, format:iceberg, system:dbt, mode:full-rebuild | `dags/my_dags/ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild.py` |
@@ -43,6 +46,7 @@ flowchart TD
 
 | Source DAG | Target DAG | Task | Condition |
 |---|---|---|---|
+| `ampere__curie__cache_refresh__post_iceberg_gold` | `ampere__housekeeping__iceberg_metadata__weekly` | `trigger__iceberg__housekeeping__weekly` | upstream success; does not wait |
 | `ampere__iceberg__bronze__raw_to_iceberg__daily` | `ampere__iceberg__silver_gold__dbt_duckdb__daily` | `trigger__iceberg__silver_gold__dbt_duckdb__daily` | upstream success; does not wait |
 | `ampere__iceberg__silver_gold__dbt_duckdb__daily` | `ampere__curie__cache_refresh__post_iceberg_gold` | `trigger__curie__cache_refresh__post_iceberg_gold` | upstream success; does not wait |
 | `ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` | `ampere__curie__cache_refresh__post_iceberg_gold` | `trigger__curie__cache_refresh__post_iceberg_gold` | upstream success; does not wait |

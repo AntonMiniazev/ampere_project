@@ -83,17 +83,17 @@ def _catalog_env() -> dict[str, str]:
         ),
         "DBT_THREADS": Variable.get("iceberg_full_rebuild_dbt_threads", default="1"),
         "DUCKDB_MEMORY_LIMIT": Variable.get(
-            "iceberg_full_rebuild_duckdb_memory_limit", default="7GB"
+            "iceberg_full_rebuild_duckdb_memory_limit", default="5GB"
         ),
         "DUCKDB_WORKER_THREADS": Variable.get(
-            "iceberg_full_rebuild_duckdb_threads", default="4"
+            "iceberg_full_rebuild_duckdb_threads", default="2"
         ),
         "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
         "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": Variable.get(
-            "iceberg_full_rebuild_duckdb_max_temp_directory_size", default=""
+            "iceberg_full_rebuild_duckdb_max_temp_directory_size", default="12GB"
         ),
         "ICEBERG_PUBLISH_MODE": Variable.get(
-            "iceberg_full_rebuild_publish_mode", default="direct"
+            "iceberg_full_rebuild_publish_mode", default="staged"
         ),
         "ICEBERG_FULL_STAGE_MIN_FREE_GB": Variable.get(
             "iceberg_full_rebuild_min_scratch_gb", default="16"
@@ -120,7 +120,7 @@ def _scratch_volume() -> V1Volume | None:
                 claim_name=claim
             ),
         )
-    if Variable.get("iceberg_full_rebuild_publish_mode", default="direct") != "staged":
+    if Variable.get("iceberg_full_rebuild_publish_mode", default="staged") != "staged":
         return None
     return V1Volume(
         name="dbt-scratch",

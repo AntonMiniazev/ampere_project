@@ -5,9 +5,13 @@ import logging
 import time
 from datetime import datetime
 from urllib import error, request
+from zoneinfo import ZoneInfo
 
 from airflow import DAG
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import BranchPythonOperator
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable
 
 from utils.ampere_dag_config import standard_default_args
@@ -196,6 +200,14 @@ def check_curie_iceberg_cache_status() -> dict:
     return payload
 
 
+def _sunday_housekeeping_task(**context) -> str:
+    """Select maintenance only after a successful Sunday pipeline."""
+    logical_date = context["dag_run"].logical_date or context["dag_run"].run_after
+    if logical_date.astimezone(ZoneInfo("Europe/Budapest")).weekday() == 6:
+        return "trigger__iceberg__housekeeping__weekly"
+    return "skip__iceberg__housekeeping__weekly"
+
+
 with DAG(
     dag_id=DAG_ID,
     default_args=standard_default_args(retries=2),
@@ -238,3 +250,20 @@ with DAG(
     )
 
     start_task >> refresh_cache >> check_status >> done_task
+
+    choose_housekeeping = BranchPythonOperator(
+        task_id="branch__iceberg__housekeeping__sunday",
+        python_callable=_sunday_housekeeping_task,
+    )
+    trigger_housekeeping = TriggerDagRunOperator(
+        task_id="trigger__iceberg__housekeeping__weekly",
+        trigger_dag_id="ampere__housekeeping__iceberg_metadata__weekly",
+        logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+        reset_dag_run=True,
+        wait_for_completion=False,
+    )
+    skip_housekeeping = EmptyOperator(
+        task_id="skip__iceberg__housekeeping__weekly"
+    )
+
+    done_task >> choose_housekeeping >> [trigger_housekeeping, skip_housekeeping]
