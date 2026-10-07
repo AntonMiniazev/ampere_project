@@ -3,6 +3,7 @@
 with source_data as (
     select *
     from {{ source('bronze', 'orders') }}
+    {% if ampere_silver_run_mode() == 'daily_refresh' %}
     where {{ ampere_silver_date_window_predicate('order_date') }}
         or id in (
             select distinct order_id
@@ -24,6 +25,9 @@ with source_data as (
             from {{ source('bronze', 'delivery_tracking') }}
             where {{ ampere_silver_date_window_predicate('status_datetime') }}
         )
+    {% elif ampere_silver_run_mode() != 'full_history' %}
+        {{ exceptions.raise_compiler_error('Unsupported Iceberg Silver run mode: ' ~ ampere_silver_run_mode()) }}
+    {% endif %}
 ),
 deduped as (
     select

@@ -3,7 +3,7 @@
 with source_data as (
     select *
     from {{ source('bronze', 'order_status_history') }}
-    where order_id in (select order_id from {{ ref('stg_orders') }})
+    where {{ ampere_silver_related_order_predicate('order_id') }}
 ),
 deduped as (
     select

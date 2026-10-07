@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import duckdb
 import yaml
 
+from duckdb_runtime import runtime_settings
+
 
 def required(name: str) -> str:
     """Read a required Kubernetes secret or deployment setting."""
@@ -25,14 +27,12 @@ def sql_string(value: str) -> str:
 
 def prepare() -> None:
     """Persist pod-local secrets so every dbt ADBC connection can attach catalogs."""
-    secret_dir = Path(os.getenv("DUCKDB_SECRET_DIRECTORY", "/app/secret_store"))
     profile_dir = Path(os.getenv("DBT_PROFILES_DIR", "/app/profiles"))
     # dbt_project.yml places transient views in the ampere_work catalog.
     workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_work.duckdb"))
-    secret_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    secret_dir.chmod(0o700)
     profile_dir.mkdir(parents=True, exist_ok=True)
     workspace.parent.mkdir(parents=True, exist_ok=True)
+    duckdb_settings = runtime_settings(workspace)
 
     endpoint_url = required("MINIO_S3_ENDPOINT")
     if "://" not in endpoint_url:
@@ -50,11 +50,7 @@ def prepare() -> None:
     client_secret = required("LAKEKEEPER_CLIENT_SECRET")
     access_key = required("MINIO_ACCESS_KEY")
     secret_key = required("MINIO_SECRET_KEY")
-    ca_cert_file = os.getenv("DUCKDB_CA_CERT_FILE", "").strip()
-    if ca_cert_file and not Path(ca_cert_file).is_file():
-        raise ValueError(f"DUCKDB_CA_CERT_FILE does not exist: {ca_cert_file}")
-
-    con = duckdb.connect(":memory:", config={"secret_directory": str(secret_dir)})
+    con = duckdb.connect(":memory:", config=duckdb_settings)
     try:
         con.execute("LOAD iceberg")
         con.execute("LOAD httpfs")
@@ -94,25 +90,6 @@ def prepare() -> None:
                 {"path": os.getenv(f"ICEBERG_{layer.upper()}_WAREHOUSE", f"ampere-{layer}"),
                  "alias": f"iceberg_{layer}", "type": "iceberg"}
             )
-    duckdb_settings = {
-        "secret_directory": str(secret_dir),
-        "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "6GB"),
-    }
-    worker_threads = os.getenv("DUCKDB_WORKER_THREADS", "").strip()
-    if worker_threads:
-        worker_count = int(worker_threads)
-        if worker_count < 1:
-            raise ValueError("DUCKDB_WORKER_THREADS must be positive")
-        duckdb_settings["threads"] = worker_count
-    preserve_order = os.getenv("DUCKDB_PRESERVE_INSERTION_ORDER", "").strip().lower()
-    if preserve_order:
-        if preserve_order not in {"true", "false"}:
-            raise ValueError("DUCKDB_PRESERVE_INSERTION_ORDER must be true or false")
-        duckdb_settings["preserve_insertion_order"] = preserve_order == "true"
-    if ca_cert_file:
-        duckdb_settings["ca_cert_file"] = ca_cert_file
-        duckdb_settings["enable_server_cert_verification"] = True
-
     profile = {
         "ampere_iceberg_project": {
             "target": "prod",

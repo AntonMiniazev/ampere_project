@@ -9,7 +9,7 @@ with typed_source as (
         cast(sales_price as decimal(10, 2)) as sales_price,
         {{ ampere_bronze_lineage_columns() }}
     from {{ source('bronze', 'order_product') }}
-    where order_id in (select order_id from {{ ref('stg_orders') }})
+    where {{ ampere_silver_related_order_predicate('order_id') }}
 ),
 deduped as (
     select

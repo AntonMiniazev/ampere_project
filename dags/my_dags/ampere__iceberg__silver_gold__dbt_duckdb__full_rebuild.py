@@ -14,6 +14,7 @@ from kubernetes.client import (
     V1Container,
     V1EmptyDirVolumeSource,
     V1LocalObjectReference,
+    V1PersistentVolumeClaimVolumeSource,
     V1ResourceRequirements,
     V1Volume,
     V1VolumeMount,
@@ -85,9 +86,18 @@ def _catalog_env() -> dict[str, str]:
             "iceberg_full_rebuild_duckdb_memory_limit", default="7GB"
         ),
         "DUCKDB_WORKER_THREADS": Variable.get(
-            "iceberg_full_rebuild_duckdb_threads", default="2"
+            "iceberg_full_rebuild_duckdb_threads", default="4"
         ),
         "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
+        "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": Variable.get(
+            "iceberg_full_rebuild_duckdb_max_temp_directory_size", default=""
+        ),
+        "ICEBERG_PUBLISH_MODE": Variable.get(
+            "iceberg_full_rebuild_publish_mode", default="direct"
+        ),
+        "ICEBERG_FULL_STAGE_MIN_FREE_GB": Variable.get(
+            "iceberg_full_rebuild_min_scratch_gb", default="16"
+        ),
         "SILVER_RUN_MODE": "full_history",
         "SILVER_LOOKBACK_DAYS": Variable.get(
             "iceberg_silver_lookback_days", default="7"
@@ -98,6 +108,30 @@ def _catalog_env() -> dict[str, str]:
         ),
         "LOGICAL_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
     }
+
+
+def _scratch_volume() -> V1Volume | None:
+    """Give staged runs pod-local scratch, with an optional dedicated PVC."""
+    claim = Variable.get("iceberg_full_rebuild_scratch_pvc", default="").strip()
+    if claim:
+        return V1Volume(
+            name="dbt-scratch",
+            persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
+                claim_name=claim
+            ),
+        )
+    if Variable.get("iceberg_full_rebuild_publish_mode", default="direct") != "staged":
+        return None
+    return V1Volume(
+        name="dbt-scratch",
+        empty_dir=V1EmptyDirVolumeSource(size_limit="24Gi"),
+    )
+
+
+SCRATCH_VOLUME = _scratch_volume()
+STAGED_LOCAL_SCRATCH = (
+    SCRATCH_VOLUME is not None and SCRATCH_VOLUME.empty_dir is not None
+)
 
 
 with DAG(
@@ -150,7 +184,7 @@ with DAG(
                 config_map=V1ConfigMapVolumeSource(name="local-ca-public"),
             ),
             V1Volume(name="combined-ca-bundle", empty_dir=V1EmptyDirVolumeSource()),
-        ],
+        ] + ([SCRATCH_VOLUME] if SCRATCH_VOLUME else []),
         volume_mounts=[
             V1VolumeMount(
                 name="combined-ca-bundle",
@@ -163,7 +197,8 @@ with DAG(
                 sub_path="ca.crt",
                 read_only=True,
             ),
-        ],
+        ] + ([V1VolumeMount(name="dbt-scratch", mount_path="/app/artifacts")]
+             if SCRATCH_VOLUME else []),
         secrets=[
             _secret("MINIO_ACCESS_KEY", "minio-creds", "MINIO_ACCESS_KEY"),
             _secret("MINIO_SECRET_KEY", "minio-creds", "MINIO_SECRET_KEY"),
@@ -185,6 +220,7 @@ with DAG(
                 "memory": Variable.get(
                     "iceberg_full_rebuild_dbt_pod_memory_request", default="5Gi"
                 ),
+                **({"ephemeral-storage": "16Gi"} if STAGED_LOCAL_SCRATCH else {}),
             },
             limits={
                 "cpu": Variable.get(
@@ -193,6 +229,7 @@ with DAG(
                 "memory": Variable.get(
                     "iceberg_full_rebuild_dbt_pod_memory_limit", default="10Gi"
                 ),
+                **({"ephemeral-storage": "24Gi"} if STAGED_LOCAL_SCRATCH else {}),
             },
         ),
         get_logs=True,

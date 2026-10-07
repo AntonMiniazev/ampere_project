@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -64,6 +65,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                     "DUCKDB_PATH": str(Path(temp_dir) / "ampere_work.duckdb"),
                     "DUCKDB_WORKER_THREADS": "2",
                     "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
+                    "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": "2GB",
                     "MINIO_S3_ENDPOINT": "http://127.0.0.1:9000",
                     "MINIO_ACCESS_KEY": "dummy-access",
                     "MINIO_SECRET_KEY": "dummy-secret",
@@ -74,6 +76,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                     "LAKEKEEPER_CLIENT_SECRET": "dummy-secret",
                 }
                 module_path = ROOT / "docker/dbt_iceberg/prepare_catalog.py"
+                sys.path.insert(0, str(module_path.parent))
                 spec = importlib.util.spec_from_file_location("prepare_catalog", module_path)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
@@ -87,6 +90,11 @@ class DuckDBCatalogTests(unittest.TestCase):
                     duckdb_settings = config["ampere_iceberg_project"]["outputs"]["prod"]["settings"]
                     self.assertEqual(duckdb_settings["threads"], 2)
                     self.assertIs(duckdb_settings["preserve_insertion_order"], False)
+                    self.assertEqual(
+                        duckdb_settings["temp_directory"],
+                        str(Path(temp_dir) / "duckdb_tmp"),
+                    )
+                    self.assertEqual(duckdb_settings["max_temp_directory_size"], "2GB")
                     completed = subprocess.run(
                         [
                             "dbt",
@@ -104,6 +112,15 @@ class DuckDBCatalogTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                 for layer in ("bronze", "silver", "gold"):
                     self.assertIn(f"iceberg_{layer}", completed.stdout)
+
+                selected = subprocess.run(
+                    ["dbt", "ls", "--project-dir", str(ROOT / "dbt_iceberg"),
+                     "--profiles-dir", settings["DBT_PROFILES_DIR"],
+                     "--select", "tag:gold", "--resource-type", "test"],
+                    capture_output=True, text=True, timeout=30, check=False,
+                )
+                self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
+                self.assertIn("gold_sales_margin_consistency", selected.stdout)
 
                 # The daily run builds Silver/Gold into pod-local DuckDB files
                 # before a separate publisher touches the Iceberg catalogs.
@@ -157,6 +174,10 @@ class DuckDBCatalogTests(unittest.TestCase):
                             str(target_path),
                             "--select",
                             "stg_orders",
+                            "stg_order_product",
+                            "stg_payments",
+                            "stg_order_status_history",
+                            "stg_delivery_tracking",
                             "fct_orders_sales_mart",
                             "--vars",
                             json.dumps(
@@ -191,11 +212,24 @@ class DuckDBCatalogTests(unittest.TestCase):
                     if mode == "full_history":
                         self.assertNotIn("interval '7 day'", silver_sql)
                         self.assertNotIn("interval '7 day'", gold_sql)
-                        self.assertIn("where true", silver_sql)
+                        self.assertNotIn("where", silver_sql)
                         self.assertIn("and true", gold_sql)
                     else:
                         self.assertIn("interval '7 day'", silver_sql)
                         self.assertIn("interval '7 day'", gold_sql)
+                    for table in (
+                        "stg_order_product", "stg_payments",
+                        "stg_order_status_history", "stg_delivery_tracking",
+                    ):
+                        event_sql = (
+                            target_path / "compiled/ampere_iceberg_project/models/staging/"
+                            f"{table}.sql"
+                        ).read_text(encoding="utf-8").lower()
+                        if mode == "full_history":
+                            self.assertIn("where true", event_sql)
+                            self.assertNotIn("in (select order_id from", event_sql)
+                        else:
+                            self.assertIn("in (select order_id from", event_sql)
 
                 with patch.dict(os.environ, settings | {"ICEBERG_PUBLISH_MODE": "staged"}):
                     target_path = Path(temp_dir) / "target-staged"

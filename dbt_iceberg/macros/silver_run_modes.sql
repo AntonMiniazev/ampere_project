@@ -20,3 +20,13 @@
     {{ exceptions.raise_compiler_error('Unsupported Iceberg Silver run mode: ' ~ ampere_silver_run_mode()) }}
   {%- endif -%}
 {%- endmacro %}
+
+{% macro ampere_silver_related_order_predicate(order_expression) -%}
+  {%- if ampere_silver_run_mode() == 'daily_refresh' -%}
+    {{ order_expression }} in (select order_id from {{ ref('stg_orders') }})
+  {%- elif ampere_silver_run_mode() == 'full_history' -%}
+    true
+  {%- else -%}
+    {{ exceptions.raise_compiler_error('Unsupported Iceberg Silver run mode: ' ~ ampere_silver_run_mode()) }}
+  {%- endif -%}
+{%- endmacro %}

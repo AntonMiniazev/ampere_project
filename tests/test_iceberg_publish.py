@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 import duckdb
 
@@ -12,6 +16,7 @@ import duckdb
 MODULE_PATH = (
     Path(__file__).resolve().parents[1] / "docker/dbt_iceberg/publish_catalog.py"
 )
+sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("publish_catalog", MODULE_PATH)
 publish_catalog = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(publish_catalog)
@@ -291,6 +296,70 @@ class PublishTests(unittest.TestCase):
             ).fetchall(),
             [(1,)],
         )
+
+    def test_separate_layer_connections_publish_in_parallel(self) -> None:
+        """Silver and Gold workers must not share a DuckDB connection."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            table_names = {
+                "silver": "fact_orders",
+                "gold": "fct_orders_sales",
+            }
+            for layer, table in table_names.items():
+                for kind in ("staged", "publish"):
+                    path = root / f"{kind}_{layer}.duckdb"
+                    con = duckdb.connect(str(path))
+                    con.execute(f"CREATE SCHEMA {layer}")
+                    con.execute(
+                        f"CREATE TABLE {layer}.{table} "
+                        "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
+                    )
+                    if kind == "staged":
+                        con.execute(
+                            f"INSERT INTO {layer}.{table} VALUES "
+                            "(1, DATE '2026-10-06', 20)"
+                        )
+                    else:
+                        con.execute(
+                            f"INSERT INTO {layer}.{table} VALUES "
+                            "(1, DATE '2026-10-06', 10)"
+                        )
+                    con.close()
+
+            def local_catalogs(con, workspace, layers):
+                for layer in layers:
+                    for kind in ("staged", "publish"):
+                        path = root / f"{kind}_{layer}.duckdb"
+                        con.execute(
+                            f"ATTACH '{path}' "
+                            f"AS {kind}_{layer} "
+                            + ("(READ_ONLY)" if kind == "staged" else "")
+                        )
+
+            settings = {"memory_limit": "256MB", "threads": 2}
+            with patch.object(publish_catalog, "attach_catalogs", local_catalogs):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [
+                        executor.submit(
+                            publish_catalog.publish_layer,
+                            root / "ampere_work.duckdb",
+                            settings,
+                            layer,
+                            [table],
+                            "daily_refresh",
+                            {(layer, table): 1},
+                        )
+                        for layer, table in table_names.items()
+                    ]
+                    for future in futures:
+                        future.result()
+            for layer, table in table_names.items():
+                con = duckdb.connect(str(root / f"publish_{layer}.duckdb"))
+                self.assertEqual(
+                    con.execute(f"SELECT total_amount FROM {layer}.{table}").fetchone(),
+                    (20,),
+                )
+                con.close()
 
 
 if __name__ == "__main__":

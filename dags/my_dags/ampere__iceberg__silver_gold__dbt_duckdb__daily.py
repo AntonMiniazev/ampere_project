@@ -130,7 +130,17 @@ with DAG(
             ),
             "DBT_THREADS": Variable.get("iceberg_dbt_threads", default="2"),
             "DUCKDB_MEMORY_LIMIT": Variable.get(
-                "iceberg_dbt_duckdb_memory_limit", default="7GB"
+                "iceberg_dbt_duckdb_memory_limit", default="4GB"
+            ),
+            "DUCKDB_WORKER_THREADS": Variable.get(
+                "iceberg_dbt_duckdb_threads", default="2"
+            ),
+            "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
+            "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": Variable.get(
+                "iceberg_dbt_duckdb_max_temp_directory_size", default=""
+            ),
+            "ICEBERG_PUBLISH_PARALLEL_LAYERS": Variable.get(
+                "iceberg_dbt_publish_parallel_layers", default="2"
             ),
             "ICEBERG_PUBLISH_MODE": "staged",
             "SILVER_RUN_MODE": Variable.get(

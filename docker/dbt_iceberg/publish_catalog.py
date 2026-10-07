@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from time import monotonic
 
 import duckdb
+
+from duckdb_runtime import runtime_settings
 
 
 # Every published model needs a stable business grain. Complete staged models
@@ -166,6 +170,7 @@ def publish_table(
     row_count: int | None = None,
 ) -> None:
     """Synchronize a complete snapshot or upsert a daily fact slice."""
+    started = monotonic()
     if row_count is None:
         row_count = validate_table(con, layer, table, run_mode)
     source = ".".join(map(identifier, (f"staged_{layer}", layer, table)))
@@ -198,39 +203,65 @@ def publish_table(
                 f"WHERE {predicate})"
             )
         action = "synchronized" if complete_source else "merged"
-    print(f"{layer}.{table}: {action} {row_count} staged rows", flush=True)
+    print(
+        f"{layer}.{table}: {action} {row_count} staged rows "
+        f"in {monotonic() - started:.1f}s",
+        flush=True,
+    )
+
+
+def attach_catalogs(
+    con: duckdb.DuckDBPyConnection, workspace: Path, layers: tuple[str, ...]
+) -> None:
+    """Attach read-only staged files and their separate published warehouses."""
+    con.execute("LOAD iceberg")
+    con.execute("LOAD httpfs")
+    for layer in layers:
+        local_path = workspace.parent / f"staged_{layer}.duckdb"
+        con.execute(
+            f"ATTACH {literal(str(local_path))} AS {identifier(f'staged_{layer}')} "
+            "(READ_ONLY)"
+        )
+        warehouse = os.getenv(f"ICEBERG_{layer.upper()}_WAREHOUSE", layer)
+        con.execute(
+            f"ATTACH {literal(warehouse)} AS {identifier(f'publish_{layer}')} "
+            "(TYPE iceberg)"
+        )
+
+
+def publish_layer(
+    workspace: Path,
+    settings: dict[str, object],
+    layer: str,
+    tables: list[str],
+    run_mode: str,
+    row_counts: dict[tuple[str, str], int],
+) -> None:
+    """Publish one warehouse on its own DuckDB connection."""
+    con = duckdb.connect(":memory:", config=settings)
+    try:
+        attach_catalogs(con, workspace, (layer,))
+        for table in tables:
+            publish_table(con, layer, table, run_mode, row_counts[layer, table])
+    finally:
+        con.close()
 
 
 def publish() -> None:
     """Attach local dbt outputs and Lakekeeper warehouses, then publish."""
     workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_work.duckdb"))
-    secret_dir = Path(os.getenv("DUCKDB_SECRET_DIRECTORY", "/app/secret_store"))
     manifest = (
         Path(os.getenv("DBT_PROJECT_DIR", "/app/dbt_iceberg")) / "target/manifest.json"
     )
     models = {layer: publish_models(manifest, layer) for layer in ("silver", "gold")}
-    settings = {
-        "secret_directory": str(secret_dir),
-        "memory_limit": os.getenv("DUCKDB_MEMORY_LIMIT", "7GB"),
-    }
-    ca_file = os.getenv("DUCKDB_CA_CERT_FILE", "").strip()
-    if ca_file:
-        settings["ca_cert_file"] = ca_file
-        settings["enable_server_cert_verification"] = True
-    con = duckdb.connect(str(workspace), config=settings)
+    settings = runtime_settings(workspace)
+    parallel_layers = int(os.getenv("ICEBERG_PUBLISH_PARALLEL_LAYERS", "1"))
+    if parallel_layers not in (1, 2):
+        raise ValueError("ICEBERG_PUBLISH_PARALLEL_LAYERS must be 1 or 2")
+    started = monotonic()
+    con = duckdb.connect(":memory:", config=settings)
     try:
-        con.execute("LOAD iceberg")
-        con.execute("LOAD httpfs")
-        for layer in ("silver", "gold"):
-            local_path = workspace.parent / f"staged_{layer}.duckdb"
-            con.execute(
-                f"ATTACH {literal(str(local_path))} AS {identifier(f'staged_{layer}')}"
-            )
-            warehouse = os.getenv(f"ICEBERG_{layer.upper()}_WAREHOUSE", layer)
-            con.execute(
-                f"ATTACH {literal(warehouse)} AS {identifier(f'publish_{layer}')} "
-                "(TYPE iceberg)"
-            )
+        attach_catalogs(con, workspace, ("silver", "gold"))
         run_modes = {}
         row_counts = {}
         for layer in ("silver", "gold"):
@@ -240,13 +271,31 @@ def publish() -> None:
             run_modes[layer] = run_mode
             for table in models[layer]:
                 row_counts[layer, table] = validate_table(con, layer, table, run_mode)
-        for layer in ("silver", "gold"):
-            for table in models[layer]:
-                publish_table(
-                    con, layer, table, run_modes[layer], row_counts[layer, table]
-                )
     finally:
         con.close()
+    print(f"Validated all staged tables in {monotonic() - started:.1f}s", flush=True)
+
+    publish_started = monotonic()
+    if parallel_layers == 1:
+        for layer in ("silver", "gold"):
+            publish_layer(
+                workspace, settings, layer, models[layer], run_modes[layer], row_counts
+            )
+    else:
+        # The warehouses are distinct; each worker writes one catalog, and
+        # the pod succeeds only after both have completed. Per-table Iceberg
+        # commits remain independent, so a retry must finish partial work.
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    publish_layer, workspace, settings, layer, models[layer],
+                    run_modes[layer], row_counts,
+                )
+                for layer in ("silver", "gold")
+            ]
+            for future in futures:
+                future.result()
+    print(f"Published both layers in {monotonic() - publish_started:.1f}s", flush=True)
 
 
 if __name__ == "__main__":
