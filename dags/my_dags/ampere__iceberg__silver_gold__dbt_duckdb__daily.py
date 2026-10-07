@@ -133,7 +133,7 @@ with DAG(
                 "iceberg_dbt_duckdb_memory_limit", default="4GB"
             ),
             "DUCKDB_WORKER_THREADS": Variable.get(
-                "iceberg_dbt_duckdb_threads", default="2"
+                "iceberg_dbt_duckdb_threads", default="3"
             ),
             "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
             "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": Variable.get(

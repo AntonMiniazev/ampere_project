@@ -125,6 +125,16 @@ with DAG(
                 if name == "facts-events"
                 else CONFIG.executor_instances_snapshots
             ),
+            "executor_cores": (
+                CONFIG.executor_cores_facts_events
+                if name == "facts-events"
+                else CONFIG.executor_cores
+            ),
+            "executor_core_request": (
+                CONFIG.executor_core_request_facts_events
+                if name == "facts-events"
+                else CONFIG.executor_core_request
+            ),
             "executor_memory": (
                 CONFIG.executor_memory_facts_events
                 if name == "facts-events"

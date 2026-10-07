@@ -27,6 +27,14 @@ The nodes can be changed with `spark_bronze_driver_node_selector` and
 `spark_executor_node_selector` Airflow Variables. Node3 currently lacks the
 free CPU and memory reservations for the driver. Confirm both executors reach
 Running and compare group durations before changing executor count or cores.
+The facts/events group keeps two executors on node4 but gives each two Spark
+task slots and a 3 GiB executor heap by default. Its one-core CPU request
+per executor should leave enough node4 reservation headroom with Spark
+Connect still present; verify the actual pod requests and both Running pods
+on the next release. The snapshot and mutable-dimension groups retain one core per
+executor; their short, sequential table work has little to gain from another
+executor pod. The first run on node2 spent about three minutes pulling the
+Spark image, so compare later warm-image runs when measuring throughput.
 
 Mutable dimension merges compare the Raw extract date with the date recorded
 in each Bronze row's manifest path. Retrying an older Raw batch therefore

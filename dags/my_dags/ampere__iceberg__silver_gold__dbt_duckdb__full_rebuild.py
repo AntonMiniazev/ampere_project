@@ -83,7 +83,7 @@ def _catalog_env() -> dict[str, str]:
         ),
         "DBT_THREADS": Variable.get("iceberg_full_rebuild_dbt_threads", default="1"),
         "DUCKDB_MEMORY_LIMIT": Variable.get(
-            "iceberg_full_rebuild_duckdb_memory_limit", default="5GB"
+            "iceberg_full_rebuild_duckdb_memory_limit", default="7GB"
         ),
         "DUCKDB_WORKER_THREADS": Variable.get(
             "iceberg_full_rebuild_duckdb_threads", default="2"
@@ -218,7 +218,7 @@ with DAG(
                     "iceberg_full_rebuild_dbt_cpu_request", default="1"
                 ),
                 "memory": Variable.get(
-                    "iceberg_full_rebuild_dbt_pod_memory_request", default="5Gi"
+                    "iceberg_full_rebuild_dbt_pod_memory_request", default="6Gi"
                 ),
                 **({"ephemeral-storage": "16Gi"} if STAGED_LOCAL_SCRATCH else {}),
             },
@@ -227,7 +227,7 @@ with DAG(
                     "iceberg_full_rebuild_dbt_cpu_limit", default="4"
                 ),
                 "memory": Variable.get(
-                    "iceberg_full_rebuild_dbt_pod_memory_limit", default="10Gi"
+                    "iceberg_full_rebuild_dbt_pod_memory_limit", default="11Gi"
                 ),
                 **({"ephemeral-storage": "24Gi"} if STAGED_LOCAL_SCRATCH else {}),
             },

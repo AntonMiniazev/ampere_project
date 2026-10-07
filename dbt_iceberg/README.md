@@ -46,7 +46,9 @@ The publisher validates both staged layers first, then publishes Silver and
 Gold on separate DuckDB connections. The two warehouses can publish at the
 same time (`iceberg_dbt_publish_parallel_layers`, default `2`); each layer's
 tables still publish in a fixed order. Daily DuckDB memory defaults to `4GB`
-per connection, with two DuckDB workers per connection and a `10Gi` pod limit.
+per connection, with three DuckDB workers per connection and a `10Gi` pod limit.
+The pod already permits four CPUs; the worker change tests whether the
+Iceberg `MERGE` phase can use more of them without increasing its RAM ceiling.
 Set the parallel-layers variable to `1` if a cluster run shows memory pressure.
 Each run logs per-table and phase timings.
 The complete-source path retains Iceberg table identity and can also
@@ -85,32 +87,33 @@ With `iceberg_full_rebuild_scratch_pvc` unset, it uses a pod-local `emptyDir`
 at `/app/artifacts`, requests 16 GiB of ephemeral storage, and has a 24 GiB
 ephemeral-storage limit. Both staged databases and DuckDB spill use that
 directory. The entrypoint checks available scratch space automatically.
-The full rebuild defaults to a 5 GB DuckDB memory limit, two DuckDB workers,
-and a 12 GB spill cap inside the 24 GiB scratch volume. These bounds leave
-memory headroom beneath the 10 GiB container limit. Existing Airflow Variable
-overrides take precedence and should be checked if a run still uses direct mode
-or the former 7 GB/four-worker settings.
+The full rebuild defaults to a 7 GB DuckDB memory limit, two DuckDB workers,
+and a 12 GB spill cap inside the 24 GiB scratch volume. Its pod requests 6 GiB
+and has an 11 GiB memory limit. The 2026-10-07 staged run failed inside
+DuckDB at its previous 5 GB limit while node4 still had memory available;
+the container exited 1 rather than being OOM-killed. The higher pod limit
+leaves room for DuckDB's other allocations and file cache. Existing Airflow
+Variable overrides take precedence.
 Staging does not make publication across tables atomic. dbt
 `--full-refresh` is not needed for these table and view models.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults
 shown): `iceberg_full_rebuild_dbt_threads` (`1`),
 `iceberg_full_rebuild_duckdb_threads` (`2`),
-`iceberg_full_rebuild_duckdb_memory_limit` (`5GB`),
+`iceberg_full_rebuild_duckdb_memory_limit` (`7GB`),
 `iceberg_full_rebuild_duckdb_max_temp_directory_size` (`12GB`),
 `iceberg_full_rebuild_publish_mode` (`staged`),
 `iceberg_full_rebuild_dbt_cpu_request` (`1`),
 `iceberg_full_rebuild_dbt_cpu_limit` (`4`),
-`iceberg_full_rebuild_dbt_pod_memory_request` (`5Gi`), and
-`iceberg_full_rebuild_dbt_pod_memory_limit` (`10Gi`). Daily pod sizing uses
+`iceberg_full_rebuild_dbt_pod_memory_request` (`6Gi`), and
+`iceberg_full_rebuild_dbt_pod_memory_limit` (`11Gi`). Daily pod sizing uses
 `iceberg_dbt_threads`, `iceberg_dbt_duckdb_memory_limit`,
 `iceberg_dbt_duckdb_threads`, `iceberg_dbt_publish_parallel_layers`,
 `iceberg_dbt_cpu_request`, `iceberg_dbt_cpu_limit`,
 `iceberg_dbt_pod_memory_request`, and `iceberg_dbt_pod_memory_limit`.
 Both modes disable DuckDB insertion-order preservation and apply the same
 DuckDB connection settings in dbt preparation and publication, including an
-explicit temp directory under the workspace. The full rebuild retains its
-10 GiB pod limit. Check the staged run's memory and spill use on the cluster
+explicit temp directory under the workspace. Check the staged run's memory and spill use on the cluster
 before treating these defaults as proven for growing history.
 
 Before an Airflow run, the Bohr deployment must provide the three Lakekeeper

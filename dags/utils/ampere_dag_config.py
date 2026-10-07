@@ -269,6 +269,8 @@ class BronzeDagConfig:
     driver_node_selector: str
     executor_cores: int
     executor_core_request: str
+    executor_cores_facts_events: int
+    executor_core_request_facts_events: str
     executor_memory: str
     executor_memory_overhead: str
     executor_instances: int
@@ -305,13 +307,15 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         driver_node_selector=Variable.get("spark_bronze_driver_node_selector", default="ampere-k8s-node2"),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get("spark_executor_core_request", default="300m"),
+        executor_cores_facts_events=int(Variable.get("spark_bronze_executor_cores_facts_events", default="2")),
+        executor_core_request_facts_events=Variable.get("spark_bronze_executor_core_request_facts_events", default="1"),
         executor_memory=Variable.get("spark_executor_memory", default="1536m"),
         executor_memory_overhead=Variable.get("spark_executor_memory_overhead", default="384m"),
         executor_instances=int(Variable.get("spark_executor_instances", default="3")),
         executor_instances_snapshots=int(Variable.get("spark_executor_instances_snapshots", default="2")),
         executor_instances_facts_events=int(Variable.get("spark_executor_instances_facts_events", default="2")),
         executor_memory_snapshots=Variable.get("spark_executor_memory_snapshots", default="2560m"),
-        executor_memory_facts_events=Variable.get("spark_executor_memory_facts_events", default="2560m"),
+        executor_memory_facts_events=Variable.get("spark_executor_memory_facts_events", default="3072m"),
         executor_memory_overhead_facts_events=Variable.get("spark_executor_memory_overhead_facts_events", default="768m"),
         executor_node_selector=Variable.get("spark_executor_node_selector", default="ampere-k8s-node4"),
         shuffle_partitions=int(Variable.get("spark_sql_shuffle_partitions", default="2")),
