@@ -5,7 +5,7 @@ Ampere produces synthetic source data in PostgreSQL and publishes analytical Ice
 ## Layers
 
 1. **Source:** Python generators create orders, clients, products, payments, delivery activity, and costs in PostgreSQL.
-2. **Raw:** Spark extracts immutable Parquet batches to MinIO. A manifest and `_SUCCESS` marker identify a complete batch; state files track extraction progress.
+2. **Raw:** Spark extracts immutable Parquet batches to MinIO. A manifest and `_SUCCESS` marker identify a complete batch; state files track extraction progress. The Raw and Bronze SparkApplication templates load bundled JARs from driver and executor classpaths, avoiding a startup copy into the application directory, which the runtime user cannot write.
 3. **Bronze:** Spark applies complete batches to Iceberg tables in Lakekeeper. Snapshot partitions are replaced, mutable dimensions and events are merged, and facts follow their configured append or merge strategy. The Bronze apply registry tracks processed batches.
 4. **Silver:** dbt and DuckDB stage, clean, join, and test reusable entities before publishing Iceberg tables.
 5. **Gold:** dbt publishes sales, delivery, cost, and margin marts as Iceberg tables.

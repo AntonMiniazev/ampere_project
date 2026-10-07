@@ -58,8 +58,10 @@ spec:
     - --jdbc-fetchsize
     - "{{ params.jdbc_fetchsize }}"
   sparkConf:
-    # Load S3A and PostgreSQL libraries bundled in the Iceberg Spark image.
-    spark.jars: "local:///opt/spark/iceberg-jars/hadoop-aws-3.4.1.jar,local:///opt/spark/iceberg-jars/bundle-2.35.4.jar,local:///opt/spark/iceberg-jars/postgresql-42.7.3.jar"
+    # Use bundled libraries in place; spark.jars would copy them into the
+    # root-owned /opt/spark/app directory before the Python application starts.
+    spark.driver.extraClassPath: "/opt/spark/iceberg-jars/*"
+    spark.executor.extraClassPath: "/opt/spark/iceberg-jars/*"
     spark.ui.enabled: "false"
     spark.hadoop.fs.s3a.endpoint: "{{ params.minio_endpoint }}"
     spark.hadoop.fs.s3a.path.style.access: "true"
