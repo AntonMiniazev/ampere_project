@@ -187,9 +187,29 @@ def publish_table(
             f"target.{identifier(key)} IS NOT DISTINCT FROM source.{identifier(key)}"
             for key in keys
         )
+        columns = [
+            description[0]
+            for description in con.execute(f"SELECT * FROM {source} LIMIT 0").description
+        ]
+        key_names = {key.casefold() for key in keys}
+        changed_columns = [
+            column for column in columns if column.casefold() not in key_names
+        ]
+        # Replaying a daily slice can match millions of unchanged rows. Iceberg
+        # updates write positional deletes, so only update changed values.
+        changed_predicate = " OR ".join(
+            f"target.{identifier(column)} IS DISTINCT FROM "
+            f"source.{identifier(column)}"
+            for column in changed_columns
+        )
+        matched_action = (
+            f"WHEN MATCHED AND ({changed_predicate}) THEN UPDATE "
+            if changed_predicate
+            else ""
+        )
         statement = (
             f"MERGE INTO {target} AS target USING {source} AS source "
-            f"ON {predicate} WHEN MATCHED THEN UPDATE "
+            f"ON {predicate} {matched_action}"
             "WHEN NOT MATCHED THEN INSERT BY NAME"
         )
         con.execute(statement)

@@ -32,6 +32,8 @@ DAG, dbt first builds and tests its Silver and Gold slice in pod-local DuckDB
 files. Only after dbt succeeds does `publish_catalog.py` attach Lakekeeper and
 publish the results. Silver facts and changing Gold facts use keyed Iceberg
 `MERGE INTO` updates/inserts, so rows outside the daily slice remain available.
+Matched rows update only when a non-key column differs; same-day retries do
+not rewrite the entire seven-day fact slice.
 Complete dimension and budget tables use keyed `MERGE` for updates/inserts,
 then a separate `DELETE` removes published keys absent from the complete
 staged source. DuckDB-Iceberg 1.5.6 rejects a single `MERGE` with all three

@@ -64,6 +64,46 @@ class PublishTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual(rows, [(1, 11), (2, 20), (3, 30)])
 
+    def test_daily_retry_skips_unchanged_matches(self) -> None:
+        """A replay must not rewrite rows whose values already match."""
+        self.con.execute(
+            "INSERT INTO publish_silver.silver.fact_orders VALUES "
+            "(1, DATE '2025-12-16', 10)"
+        )
+        self.con.execute(
+            "INSERT INTO staged_silver.silver.fact_orders VALUES "
+            "(1, DATE '2025-12-16', 10), (2, DATE '2026-10-07', 20)"
+        )
+
+        class CountMergeActions:
+            """Record the update and insert actions of local DuckDB merges."""
+
+            def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+                self.connection = connection
+                self.actions: list[list[tuple[str]]] = []
+
+            def execute(self, statement: str) -> duckdb.DuckDBPyConnection:
+                """Capture merge actions without changing production SQL."""
+                if statement.startswith("MERGE INTO"):
+                    result = self.connection.execute(
+                        statement + " RETURNING merge_action"
+                    )
+                    self.actions.append(result.fetchall())
+                    return result
+                return self.connection.execute(statement)
+
+        recording = CountMergeActions(self.con)
+        publish_catalog.publish_table(recording, "silver", "fact_orders", "daily_refresh")
+        publish_catalog.publish_table(recording, "silver", "fact_orders", "daily_refresh")
+        self.assertEqual(recording.actions, [[("INSERT",)], []])
+
+        self.con.execute(
+            "UPDATE staged_silver.silver.fact_orders SET total_amount = 11 "
+            "WHERE order_id = 1"
+        )
+        publish_catalog.publish_table(recording, "silver", "fact_orders", "daily_refresh")
+        self.assertEqual(recording.actions[-1], [("UPDATE",)])
+
     def test_duplicate_source_keys_fail_before_publish(self) -> None:
         """Ambiguous updates leave published history untouched."""
         self.con.execute(
