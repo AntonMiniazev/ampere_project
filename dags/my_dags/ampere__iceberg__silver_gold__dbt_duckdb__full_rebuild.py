@@ -99,13 +99,7 @@ def _catalog_env() -> dict[str, str]:
             "iceberg_full_rebuild_min_scratch_gb", default="16"
         ),
         "SILVER_RUN_MODE": "full_history",
-        "SILVER_LOOKBACK_DAYS": Variable.get(
-            "iceberg_silver_lookback_days", default="7"
-        ),
         "GOLD_RUN_MODE": "full_history",
-        "GOLD_LOOKBACK_DAYS": Variable.get(
-            "iceberg_gold_lookback_days", default="7"
-        ),
         "LOGICAL_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
     }
 

@@ -41,8 +41,8 @@ layers:
   gold:
     title: Gold
     status: implemented
-    responsibility: Publish serving marts for sales, delivery, product cost, and margin.
-    diagram_note: Publish BI marts from Silver with keyed updates and complete dimension synchronization.
+    responsibility: Publish eight monthly Curie report aggregates for Marketing, Financial, and Delivery.
+    diagram_note: Preserve month and store keys, additive measures, and domain-specific report fields.
     engine: [DuckDB, dbt, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -78,8 +78,8 @@ flows:
   - from: silver
     to: gold
     engine: DuckDB + dbt
-    artifact: Gold Iceberg marts
-    description: Build and publish serving marts from the Silver slice.
+    artifact: Eight domain-specific Gold aggregates
+    description: Aggregate current and previous month from Silver and synchronize full history on rebuild.
 
   - from: gold
     to: serving

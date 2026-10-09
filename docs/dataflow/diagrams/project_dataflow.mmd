@@ -3,7 +3,7 @@ flowchart LR
     L_RAW["Raw landing<br/>Logic: Immutable Parquet batches with manifest, success marker, and extract state.<br/>Spark<br/>MinIO, Parquet"]
     L_BRONZE["Bronze<br/>Logic: Replace snapshot partitions, merge mutable dimensions and events, and append or merge facts.<br/>Spark, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_SILVER["Silver<br/>Logic: Clean types, join entities, test relationships, and publish reusable Iceberg tables.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
-    L_GOLD["Gold<br/>Logic: Publish BI marts from Silver with keyed updates and complete dimension synchronization.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
+    L_GOLD["Gold<br/>Logic: Preserve month and store keys, additive measures, and domain-specific report fields.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_SERVING["Serving / BI<br/>Logic: Curie refreshes its Iceberg cache after a successful Gold publish.<br/>Curie<br/>Cache"]
 
     L_SOURCE -->|"Spark"| L_RAW

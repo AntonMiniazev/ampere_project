@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -125,31 +126,35 @@ class PublishTests(unittest.TestCase):
             (10,),
         )
 
-    def test_gold_daily_merge_retains_older_sales(self) -> None:
-        """Gold publication retains dates outside the current staged slice."""
+    def test_gold_daily_merge_retains_older_aggregate_months(self) -> None:
+        """Gold publication retains aggregate months outside the current slice."""
         for alias in ("staged_gold", "publish_gold"):
             self.con.execute(f"ATTACH ':memory:' AS {alias}")
             self.con.execute(f"CREATE SCHEMA {alias}.gold")
             self.con.execute(
-                f"CREATE TABLE {alias}.gold.fct_orders_sales "
-                "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
+                f"CREATE TABLE {alias}.gold.curie_marketing_sales_budget_monthly_store "
+                "(month DATE, store_id INTEGER, sales_amount INTEGER)"
             )
         self.con.execute(
-            "INSERT INTO publish_gold.gold.fct_orders_sales VALUES "
-            "(1, DATE '2025-12-16', 10), (2, DATE '2026-10-05', 20)"
+            "INSERT INTO publish_gold.gold.curie_marketing_sales_budget_monthly_store VALUES "
+            "(DATE '2025-12-01', 1, 10), (DATE '2026-10-01', 1, 20)"
         )
         self.con.execute(
-            "INSERT INTO staged_gold.gold.fct_orders_sales VALUES "
-            "(2, DATE '2026-10-05', 25), (3, DATE '2026-10-06', 30)"
+            "INSERT INTO staged_gold.gold.curie_marketing_sales_budget_monthly_store VALUES "
+            "(DATE '2026-10-01', 1, 25), (DATE '2026-10-01', 2, 30)"
         )
         publish_catalog.publish_table(
-            self.con, "gold", "fct_orders_sales", "daily_refresh"
+            self.con, "gold", "curie_marketing_sales_budget_monthly_store", "daily_refresh"
         )
         rows = self.con.execute(
-            "SELECT order_id, total_amount FROM publish_gold.gold.fct_orders_sales "
-            "ORDER BY order_id"
+            "SELECT month, store_id, sales_amount "
+            "FROM publish_gold.gold.curie_marketing_sales_budget_monthly_store "
+            "ORDER BY month, store_id"
         ).fetchall()
-        self.assertEqual(rows, [(1, 10), (2, 25), (3, 30)])
+        self.assertEqual(
+            rows,
+            [(date(2025, 12, 1), 1, 10), (date(2026, 10, 1), 1, 25), (date(2026, 10, 1), 2, 30)],
+        )
 
     def test_complete_dimension_synchronizes_missing_and_changed_keys(self) -> None:
         """A complete dimension removes stale members without dropping its table."""
@@ -276,31 +281,33 @@ class PublishTests(unittest.TestCase):
             [("1|1", 10), ("1|3", 3)],
         )
 
-    def test_nullable_gold_dimension_key_matches_on_retry(self) -> None:
-        """A store without a zone remains one row across repeated publishes."""
+    def test_gold_month_store_grain_matches_on_retry(self) -> None:
+        """A monthly store aggregate updates one stable grain on each retry."""
         for alias in ("staged_gold", "publish_gold"):
             self.con.execute(f"ATTACH ':memory:' AS {alias}")
             self.con.execute(f"CREATE SCHEMA {alias}.gold")
             self.con.execute(
-                f"CREATE TABLE {alias}.gold.dim_stores "
-                "(store_id INTEGER, zone_name VARCHAR, store_name VARCHAR)"
+                f"CREATE TABLE {alias}.gold.curie_marketing_sales_budget_monthly_store "
+                "(month DATE, store_id INTEGER, sales_amount INTEGER)"
             )
         self.con.execute(
-            "INSERT INTO publish_gold.gold.dim_stores VALUES "
-            "(1, NULL, 'Old'), (2, 'North', 'Other')"
+            "INSERT INTO publish_gold.gold.curie_marketing_sales_budget_monthly_store VALUES "
+            "(DATE '2026-10-01', 1, 10), (DATE '2026-10-01', 2, 20)"
         )
         self.con.execute(
-            "INSERT INTO staged_gold.gold.dim_stores VALUES (1, NULL, 'New')"
+            "INSERT INTO staged_gold.gold.curie_marketing_sales_budget_monthly_store "
+            "VALUES (DATE '2026-10-01', 1, 15)"
         )
         for _ in range(2):
             publish_catalog.publish_table(
-                self.con, "gold", "dim_stores", "daily_refresh"
+                self.con, "gold", "curie_marketing_sales_budget_monthly_store", "daily_refresh"
             )
         self.assertEqual(
             self.con.execute(
-                "SELECT store_id, zone_name, store_name FROM publish_gold.gold.dim_stores"
+                "SELECT month, store_id, sales_amount "
+                "FROM publish_gold.gold.curie_marketing_sales_budget_monthly_store"
             ).fetchall(),
-            [(1, None, "New")],
+            [(date(2026, 10, 1), 1, 15), (date(2026, 10, 1), 2, 20)],
         )
 
     def test_full_history_synchronizes_fact_and_removes_stale_rows(self) -> None:
@@ -343,7 +350,7 @@ class PublishTests(unittest.TestCase):
             root = Path(temporary)
             table_names = {
                 "silver": "fact_orders",
-                "gold": "fct_orders_sales",
+                "gold": "curie_marketing_sales_budget_monthly_store",
             }
             for layer, table in table_names.items():
                 for kind in ("staged", "publish"):
@@ -352,17 +359,17 @@ class PublishTests(unittest.TestCase):
                     con.execute(f"CREATE SCHEMA {layer}")
                     con.execute(
                         f"CREATE TABLE {layer}.{table} "
-                        "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
+                        "(month DATE, store_id INTEGER, sales_amount INTEGER)"
                     )
                     if kind == "staged":
                         con.execute(
                             f"INSERT INTO {layer}.{table} VALUES "
-                            "(1, DATE '2026-10-06', 20)"
+                            "(DATE '2026-10-01', 1, 20)"
                         )
                     else:
                         con.execute(
                             f"INSERT INTO {layer}.{table} VALUES "
-                            "(1, DATE '2026-10-06', 10)"
+                            "(DATE '2026-10-01', 1, 10)"
                         )
                     con.close()
 

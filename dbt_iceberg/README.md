@@ -7,6 +7,13 @@ intermediate relations live in the pod-local `ampere_work` DuckDB file. The
 budget CSV is loaded as `silver.budget_orders_sales` and then consumed
 by the Gold budget model.
 
+Gold publishes the eight domain-specific report aggregates defined in
+`tools/iceberg/contracts/gold_data_contract.json`. Each row retains `month` and
+`store_id` for Curie filtering and store-level access rules. Product/category
+and courier labels are included in their respective domain tables; no order
+detail or Gold lineage columns are exported. Financial product costs use the
+effective-dated Silver costing history.
+
 Iceberg does not store `SMALLINT`; the Iceberg staging models widen those IDs to
 `INTEGER` before publishing tables. Their values and join keys are unchanged.
 
@@ -26,14 +33,15 @@ database aliases and point `BUDGET_DAILY_CSV_PATH` at the tracked CSV. A full
 
 `ampere__iceberg__silver_gold__dbt_duckdb__daily` runs Silver and Gold using
 separate `iceberg_silver_run_mode` and `iceberg_gold_run_mode` variables
-(default `daily_refresh`) and their corresponding `iceberg_*_lookback_days`
-variables. In the daily
+(default `daily_refresh`). In the daily
 DAG, dbt first builds and tests its Silver and Gold slice in pod-local DuckDB
 files. Only after dbt succeeds does `publish_catalog.py` attach Lakekeeper and
 publish the results. Silver facts and changing Gold facts use keyed Iceberg
 `MERGE INTO` updates/inserts, so rows outside the daily slice remain available.
 Matched rows update only when a non-key column differs; same-day retries do
-not rewrite the entire seven-day fact slice.
+not rewrite unchanged fact rows. Gold report aggregates recompute the current
+and previous calendar month from complete staged orders; daily publication
+merges those month/store grains and retains older months.
 Complete dimension and budget tables use keyed `MERGE` for updates/inserts,
 then a separate `DELETE` removes published keys absent from the complete
 staged source. DuckDB-Iceberg 1.5.6 rejects a single `MERGE` with all three
@@ -57,14 +65,14 @@ commits: a failed cleanup can temporarily leave stale rows, but rerunning
 converges. Curie refresh follows only a fully successful publish. Full-history
 merges on large facts need a measured cluster run before routine use.
 
-The staged Gold models consume the staged Silver slice without applying a
-second Gold date filter. Keyed updates preserve older rows even when a recent
-source event changes an older order. Silver first selects changed orders from
-Bronze, then loads all their product, payment, status, and delivery records so
-older orders are recomputed with complete order context. Iceberg facts currently have no date
-partitioning, so monitor merge runtime and metadata growth. This path updates
-and inserts rows; records that disappear entirely from a staged fact are not
-deleted from the published table and need a separate deletion strategy.
+Silver daily staging reads order sources from the beginning of the previous
+calendar month, including all related product, payment, status, and delivery
+records for those orders. Gold applies the same two-month month-grain window so
+late events cannot create partial historical month totals. Full-history mode
+builds all months; its complete-source publication removes stale Gold keys.
+Daily publication does not delete older aggregate months. Iceberg tables are
+not date-partitioned, so monitor the larger daily source window and metadata
+growth.
 
 In `full_history` mode, `stg_orders` reads complete Bronze without its daily
 affected-order subqueries. The four line and event staging models also read
@@ -79,8 +87,8 @@ Gold tables from the complete Bronze history currently present in Lakekeeper,
 then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
 The full rebuild defaults to staged, disk-backed materialization. It builds and
 tests Silver, closes that dbt process, builds and tests Gold from staged
-Silver, then validates all 28 staged publish tables before updating Iceberg.
-The Gold build runs a sales-versus-margin consistency test in addition to the
+Silver, then validates all 25 staged publish tables before updating Iceberg.
+The Gold build runs a Marketing-sales-versus-Financial-revenue consistency test in addition to the
 publisher's staged key and nonempty-source checks.
 The staged path requires at least 16 GiB of free pod scratch before it starts.
 With `iceberg_full_rebuild_scratch_pvc` unset, it uses a pod-local `emptyDir`

@@ -41,7 +41,7 @@ selectors:
       value: mutable_dimension
 
   - name: silver_facts_events
-    description: Silver transactional facts and event facts with daily lookback filtering.
+    description: Silver transactional facts and event facts for the affected order window.
     definition:
       union:
         - method: tag

@@ -146,14 +146,8 @@ with DAG(
             "SILVER_RUN_MODE": Variable.get(
                 "iceberg_silver_run_mode", default="daily_refresh"
             ),
-            "SILVER_LOOKBACK_DAYS": Variable.get(
-                "iceberg_silver_lookback_days", default="7"
-            ),
             "GOLD_RUN_MODE": Variable.get(
                 "iceberg_gold_run_mode", default="daily_refresh"
-            ),
-            "GOLD_LOOKBACK_DAYS": Variable.get(
-                "iceberg_gold_lookback_days", default="7"
             ),
             "LOGICAL_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
         },

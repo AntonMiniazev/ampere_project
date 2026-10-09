@@ -22,17 +22,14 @@ REFRESH_PATH = "/api/cache/refresh_iceberg"
 STATUS_PATH = "/api/cache/status_iceberg"
 ADMIN_KEY_HEADER = "X-Curie-Admin-Key"
 EXPECTED_TABLES = {
-    "dim_clients",
-    "dim_costing",
-    "dim_delivery_cost",
-    "dim_products",
-    "dim_resource",
-    "dim_stores",
-    "fct_deliveries",
-    "fct_order_margin",
-    "fct_orders_sales",
-    "budget_orders_sales",
-    "fct_order_product",
+    "curie_marketing_sales_budget_monthly_store",
+    "curie_marketing_product_sales_monthly_store",
+    "curie_marketing_category_sales_monthly_store",
+    "curie_marketing_client_metrics_monthly_store",
+    "curie_marketing_active_client_month",
+    "curie_financial_performance_monthly_store",
+    "curie_financial_product_margin_monthly_store",
+    "curie_delivery_courier_performance_monthly_store",
 }
 
 
@@ -110,7 +107,7 @@ def _validate_iceberg_cache_status(payload: dict) -> dict:
         missing = sorted(EXPECTED_TABLES - actual_tables)
         unexpected = sorted(actual_tables - EXPECTED_TABLES)
         raise RuntimeError(
-            "Curie Iceberg cache table set does not match the 11 expected Gold "
+            "Curie Iceberg cache table set does not match the 8 expected Gold "
             f"tables; missing={missing}, unexpected={unexpected}"
         )
     return payload
@@ -236,7 +233,7 @@ with DAG(
         python_callable=trigger_and_wait_for_iceberg_cache_refresh,
     )
 
-    # Verify all 11 expected tables and log row counts/checksums for comparison.
+    # Verify all eight expected tables and log row counts/checksums for comparison.
     check_status = PythonOperator(
         task_id="run__curie_iceberg_cache_refresh__status",
         python_callable=check_curie_iceberg_cache_status,

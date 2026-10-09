@@ -42,10 +42,14 @@ EXPECTED_TABLES = {
     ),
     ("iceberg_gold", "gold"): frozenset(
         {
-            "budget_orders_sales", "dim_clients", "dim_costing",
-            "dim_delivery_cost", "dim_products", "dim_resource",
-            "dim_stores", "fct_orders_sales", "fct_deliveries",
-            "fct_order_margin", "fct_order_product",
+            "curie_marketing_sales_budget_monthly_store",
+            "curie_marketing_product_sales_monthly_store",
+            "curie_marketing_category_sales_monthly_store",
+            "curie_marketing_client_metrics_monthly_store",
+            "curie_marketing_active_client_month",
+            "curie_financial_performance_monthly_store",
+            "curie_financial_product_margin_monthly_store",
+            "curie_delivery_courier_performance_monthly_store",
         }
     ),
 }

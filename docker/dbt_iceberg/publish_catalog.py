@@ -36,35 +36,24 @@ MERGE_KEYS = {
         "fact_delivery_tracking": ("fact_delivery_tracking_key",),
     },
     "gold": {
-        "budget_orders_sales": ("budget_name", "budget_date", "store_id"),
-        "dim_clients": ("client_id",),
-        "dim_costing": ("order_id", "order_date", "product_id"),
-        "dim_delivery_cost": ("order_id",),
-        "dim_products": ("product_id",),
-        "dim_resource": ("courier_id",),
-        "dim_stores": ("store_id", "zone_name"),
-        "fct_orders_sales": ("order_id",),
-        "fct_deliveries": ("order_id", "status_datetime"),
-        "fct_order_margin": ("order_id",),
-        "fct_order_product": ("order_id", "order_date", "product_id"),
+        "curie_marketing_sales_budget_monthly_store": ("month", "store_id"),
+        "curie_marketing_product_sales_monthly_store": ("month", "store_id", "product_id"),
+        "curie_marketing_category_sales_monthly_store": ("month", "store_id", "category_name"),
+        "curie_marketing_client_metrics_monthly_store": ("month", "store_id"),
+        "curie_marketing_active_client_month": ("month", "store_id", "client_id"),
+        "curie_financial_performance_monthly_store": ("month", "store_id"),
+        "curie_financial_product_margin_monthly_store": ("month", "store_id", "product_id"),
+        "curie_delivery_courier_performance_monthly_store": ("month", "store_id", "courier_id"),
     },
 }
 COMPLETE_MODELS = {
     "silver": frozenset(
         name for name in MERGE_KEYS["silver"] if not name.startswith("fact_")
     ),
-    "gold": frozenset(
-        {
-            "budget_orders_sales",
-            "dim_clients",
-            "dim_products",
-            "dim_resource",
-            "dim_stores",
-        }
-    ),
+    "gold": frozenset(),
 }
-NULLABLE_MERGE_KEYS = {("gold", "dim_stores"): frozenset({"zone_name"})}
-EXPECTED_MODEL_COUNT = {"silver": 17, "gold": 11}
+NULLABLE_MERGE_KEYS: dict[tuple[str, str], frozenset[str]] = {}
+EXPECTED_MODEL_COUNT = {"silver": 17, "gold": 8}
 
 
 def identifier(value: str) -> str:

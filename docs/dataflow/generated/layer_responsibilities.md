@@ -6,5 +6,5 @@
 | Raw landing | implemented | Spark | MinIO, Parquet | - | Extract immutable Parquet batches with manifests, success markers, and extraction state. |
 | Bronze | implemented | Spark, Iceberg | MinIO, Iceberg | Lakekeeper / bronze warehouse / bronze and ops namespaces | Apply Raw batches to Iceberg tables and track processed batches in an Iceberg registry. |
 | Silver | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / silver warehouse / silver namespace | Build tested analytical entities from Bronze with dbt and DuckDB. |
-| Gold | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / gold warehouse / gold namespace | Publish serving marts for sales, delivery, product cost, and margin. |
+| Gold | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / gold warehouse / gold namespace | Publish eight monthly Curie report aggregates for Marketing, Financial, and Delivery. |
 | Serving / BI | implemented | Curie | Cache | - | Refresh Curie caches from Gold marts for application and dashboard reads. |
