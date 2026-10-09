@@ -357,20 +357,30 @@ class PublishTests(unittest.TestCase):
                     path = root / f"{kind}_{layer}.duckdb"
                     con = duckdb.connect(str(path))
                     con.execute(f"CREATE SCHEMA {layer}")
-                    con.execute(
-                        f"CREATE TABLE {layer}.{table} "
-                        "(month DATE, store_id INTEGER, sales_amount INTEGER)"
-                    )
-                    if kind == "staged":
+                    if layer == "silver":
                         con.execute(
-                            f"INSERT INTO {layer}.{table} VALUES "
-                            "(DATE '2026-10-01', 1, 20)"
+                            f"CREATE TABLE {layer}.{table} "
+                            "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
                         )
                     else:
                         con.execute(
-                            f"INSERT INTO {layer}.{table} VALUES "
-                            "(DATE '2026-10-01', 1, 10)"
+                            f"CREATE TABLE {layer}.{table} "
+                            "(month DATE, store_id INTEGER, sales_amount INTEGER)"
                         )
+                    if kind == "staged":
+                        values = (
+                            "(1, DATE '2026-10-06', 20)"
+                            if layer == "silver"
+                            else "(DATE '2026-10-01', 1, 20)"
+                        )
+                        con.execute(f"INSERT INTO {layer}.{table} VALUES {values}")
+                    else:
+                        values = (
+                            "(1, DATE '2026-10-06', 10)"
+                            if layer == "silver"
+                            else "(DATE '2026-10-01', 1, 10)"
+                        )
+                        con.execute(f"INSERT INTO {layer}.{table} VALUES {values}")
                     con.close()
 
             def local_catalogs(con, workspace, layers):
@@ -402,8 +412,9 @@ class PublishTests(unittest.TestCase):
                         future.result()
             for layer, table in table_names.items():
                 con = duckdb.connect(str(root / f"publish_{layer}.duckdb"))
+                measure = "total_amount" if layer == "silver" else "sales_amount"
                 self.assertEqual(
-                    con.execute(f"SELECT total_amount FROM {layer}.{table}").fetchone(),
+                    con.execute(f"SELECT {measure} FROM {layer}.{table}").fetchone(),
                     (20,),
                 )
                 con.close()

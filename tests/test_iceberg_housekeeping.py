@@ -64,11 +64,11 @@ class HousekeepingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.cutoff = datetime(2026, 9, 23, 13, 0, tzinfo=timezone.utc)
 
-    def test_live_run_expires_then_removes_orphans_for_45_tables(self) -> None:
+    def test_live_run_expires_then_removes_orphans_for_42_tables(self) -> None:
         spark = FakeSpark()
-        self.assertEqual(housekeeping.run_housekeeping(spark, cutoff=self.cutoff), 45)
+        self.assertEqual(housekeeping.run_housekeeping(spark, cutoff=self.cutoff), 42)
         calls = [sql for sql in spark.statements if sql.startswith("CALL")]
-        self.assertEqual(len(calls), 90)
+        self.assertEqual(len(calls), 84)
         for expire, orphan in zip(calls[::2], calls[1::2]):
             self.assertIn(".system.expire_snapshots", expire)
             self.assertIn("retain_last => 1", expire)
@@ -83,7 +83,7 @@ class HousekeepingTests(unittest.TestCase):
         policy_calls = [
             sql for sql in spark.statements if sql.startswith("ALTER TABLE")
         ]
-        self.assertEqual(len(policy_calls), 45)
+        self.assertEqual(len(policy_calls), 42)
         self.assertTrue(
             all("write.metadata.previous-versions-max" in sql for sql in policy_calls)
         )
@@ -92,10 +92,10 @@ class HousekeepingTests(unittest.TestCase):
         spark = FakeSpark()
         self.assertEqual(
             housekeeping.run_housekeeping(spark, cutoff=self.cutoff, dry_run=True),
-            45,
+            42,
         )
         calls = [sql for sql in spark.statements if sql.startswith("CALL")]
-        self.assertEqual(len(calls), 45)
+        self.assertEqual(len(calls), 42)
         self.assertTrue(all("dry_run => true" in sql for sql in calls))
         self.assertFalse(
             any(sql.startswith("ALTER TABLE") for sql in spark.statements)
