@@ -24,6 +24,9 @@ snapshots and orphan files older than 14 days and limits previous tracked
 metadata JSON files to 14. A dry run reports
 compaction candidates without rewriting files. Extra catalog tables, including
 repair backups, remain untouched.
+Iceberg commits completed rewrite groups as partial progress, so a cancelled
+large-table rewrite retains finished groups. The client logs a wait message
+every two minutes while Spark Connect processes a rewrite.
 The driver reads `lakekeeper-spark-client` (`client-id`, `client-secret`) and
 `minio-creds`. Lakekeeper URI, warehouse, OAuth URI and scope have separate
 `iceberg_` Airflow variables. The DAG triggers Silver/Gold after success.

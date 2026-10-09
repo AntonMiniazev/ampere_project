@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
+from threading import Event, Thread
 
 from pyspark.sql import SparkSession
 
@@ -87,6 +89,8 @@ COMPACTION_OPTIONS = {
     "max-file-size-bytes": str(MAX_COMPACTION_TABLE_BYTES),
     "max-file-group-size-bytes": str(512 * 1024**2),
     "max-concurrent-file-group-rewrites": "2",
+    "partial-progress.enabled": "true",
+    "partial-progress.max-commits": "10",
     # Small tables may have only two or three active files even when older
     # snapshots still reference hundreds of physical files.
     "min-input-files": "2",
@@ -183,7 +187,24 @@ def _compact_table(
         file_count,
         total_bytes,
     )
-    result = spark.sql(_compaction_sql(catalog, schema, table)).collect()
+    finished = Event()
+    started = time.monotonic()
+
+    def report_wait() -> None:
+        while not finished.wait(120):
+            LOGGER.info(
+                "Still waiting for Iceberg compaction of %s: elapsed_seconds=%d; "
+                "see Spark Connect task logs for file-group progress",
+                name, int(time.monotonic() - started),
+            )
+
+    reporter = Thread(target=report_wait, daemon=True)
+    reporter.start()
+    try:
+        result = spark.sql(_compaction_sql(catalog, schema, table)).collect()
+    finally:
+        finished.set()
+        reporter.join(timeout=1)
     metrics = result[0].asDict() if result else {}
     LOGGER.info("Compaction for %s: %s", name, metrics)
     return bool(metrics.get("rewritten_data_files_count", 0))

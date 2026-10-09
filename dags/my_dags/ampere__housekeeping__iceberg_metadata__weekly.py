@@ -60,7 +60,7 @@ with DAG(
             requests={"cpu": "250m", "memory": "512Mi"},
             limits={"cpu": "1", "memory": "2Gi"},
         ),
-        execution_timeout=timedelta(hours=3),
+        execution_timeout=timedelta(hours=6),
         startup_timeout_seconds=600,
         get_logs=True,
         is_delete_operator_pod=True,
