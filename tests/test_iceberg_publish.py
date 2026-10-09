@@ -344,6 +344,173 @@ class PublishTests(unittest.TestCase):
             [(1,)],
         )
 
+    def test_large_full_history_facts_use_three_complete_ranges(self) -> None:
+        """Three merges update, insert, and remove keys across both endpoints."""
+        for table in publish_catalog.FULL_REBUILD_FACT_BATCHES:
+            with self.subTest(table=table):
+                key = publish_catalog.MERGE_KEYS["silver"][table][0]
+                for alias in ("staged_silver", "publish_silver"):
+                    self.con.execute(
+                        f"CREATE TABLE {alias}.silver.{table} "
+                        f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+                    )
+                self.con.execute(
+                    f"INSERT INTO staged_silver.silver.{table} VALUES "
+                    "('1|a', 1, 11), ('4|a', 4, 40), "
+                    "('7|a', 7, 70), ('10|a', 10, 100)"
+                )
+                self.con.execute(
+                    f"INSERT INTO publish_silver.silver.{table} VALUES "
+                    "('-2|old', -2, 2), ('1|a', 1, 10), "
+                    "('7|a', 7, 70), ('15|old', 15, 150)"
+                )
+
+                class RecordStatements:
+                    def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+                        self.connection = connection
+                        self.statements: list[str] = []
+
+                    def execute(self, statement: str) -> duckdb.DuckDBPyConnection:
+                        self.statements.append(statement)
+                        return self.connection.execute(statement)
+
+                recording = RecordStatements(self.con)
+                for _ in range(2):
+                    publish_catalog.publish_table(
+                        recording, "silver", table, "full_history"
+                    )
+                    self.assertEqual(
+                        self.con.execute(
+                            f"SELECT order_id, amount FROM publish_silver.silver.{table} "
+                            "ORDER BY order_id"
+                        ).fetchall(),
+                        [(1, 11), (4, 40), (7, 70), (10, 100)],
+                    )
+                self.assertEqual(
+                    sum(sql.startswith("MERGE INTO") for sql in recording.statements),
+                    6,
+                )
+                self.con.execute(f"DROP TABLE staged_silver.silver.{table}")
+                self.con.execute(f"DROP TABLE publish_silver.silver.{table}")
+
+    def test_batched_full_history_creates_missing_fact(self) -> None:
+        """A new fact table is filled through the same three-part path."""
+        table = "fact_order_product"
+        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        self.con.execute(
+            f"CREATE TABLE staged_silver.silver.{table} "
+            f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+        )
+        self.con.execute(
+            f"INSERT INTO staged_silver.silver.{table} VALUES "
+            "('1|a', 1, 10), ('4|a', 4, 40), ('7|a', 7, 70)"
+        )
+        publish_catalog.publish_table(self.con, "silver", table, "full_history")
+        self.assertEqual(
+            self.con.execute(
+                f"SELECT order_id FROM publish_silver.silver.{table} ORDER BY order_id"
+            ).fetchall(),
+            [(1,), (4,), (7,)],
+        )
+
+    def test_batched_full_history_rejects_null_order_id(self) -> None:
+        """A null batching key must fail before any target change."""
+        table = "fact_order_product"
+        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        self.con.execute(
+            f"CREATE TABLE staged_silver.silver.{table} "
+            f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+        )
+        self.con.execute(
+            f"CREATE TABLE publish_silver.silver.{table} "
+            f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+        )
+        self.con.execute(
+            f"INSERT INTO staged_silver.silver.{table} VALUES ('bad', NULL, 20)"
+        )
+        self.con.execute(
+            f"INSERT INTO publish_silver.silver.{table} VALUES ('old', 1, 10)"
+        )
+        with self.assertRaisesRegex(ValueError, "null order_id"):
+            publish_catalog.publish_table(self.con, "silver", table, "full_history")
+        self.assertEqual(
+            self.con.execute(
+                f"SELECT {key} FROM publish_silver.silver.{table}"
+            ).fetchall(),
+            [("old",)],
+        )
+
+    def test_batched_full_history_resumes_after_interrupted_part(self) -> None:
+        """A retry completes independently committed ranges without duplicate rows."""
+        table = "fact_order_product"
+        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        for alias in ("staged_silver", "publish_silver"):
+            self.con.execute(
+                f"CREATE TABLE {alias}.silver.{table} "
+                f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+            )
+        self.con.execute(
+            f"INSERT INTO staged_silver.silver.{table} VALUES "
+            "('1|a', 1, 11), ('4|a', 4, 40), ('7|a', 7, 70)"
+        )
+        self.con.execute(
+            f"INSERT INTO publish_silver.silver.{table} VALUES "
+            "('1|a', 1, 10), ('4|old', 4, 4), ('7|old', 7, 7)"
+        )
+
+        class FailSecondMerge:
+            def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+                self.connection = connection
+                self.merge_count = 0
+
+            def execute(self, statement: str) -> duckdb.DuckDBPyConnection:
+                if statement.startswith("MERGE INTO"):
+                    self.merge_count += 1
+                    if self.merge_count == 2:
+                        raise RuntimeError("interrupted second part")
+                return self.connection.execute(statement)
+
+        with self.assertRaisesRegex(RuntimeError, "interrupted second part"):
+            publish_catalog.publish_table(
+                FailSecondMerge(self.con), "silver", table, "full_history"
+            )
+        publish_catalog.publish_table(self.con, "silver", table, "full_history")
+        self.assertEqual(
+            self.con.execute(
+                f"SELECT order_id, amount FROM publish_silver.silver.{table} "
+                "ORDER BY order_id"
+            ).fetchall(),
+            [(1, 11), (4, 40), (7, 70)],
+        )
+
+    def test_large_fact_daily_slice_keeps_single_merge(self) -> None:
+        """Batching applies only to full-history runs, never daily slices."""
+        table = "fact_order_product"
+        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        for alias in ("staged_silver", "publish_silver"):
+            self.con.execute(
+                f"CREATE TABLE {alias}.silver.{table} "
+                f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+            )
+        self.con.execute(
+            f"INSERT INTO staged_silver.silver.{table} VALUES ('2|a', 2, 20)"
+        )
+        self.con.execute(
+            f"INSERT INTO publish_silver.silver.{table} VALUES ('1|a', 1, 10)"
+        )
+        with patch.object(
+            publish_catalog, "merge_upsert", wraps=publish_catalog.merge_upsert
+        ) as merge:
+            publish_catalog.publish_table(self.con, "silver", table, "daily_refresh")
+        merge.assert_called_once()
+        self.assertEqual(
+            self.con.execute(
+                f"SELECT order_id FROM publish_silver.silver.{table} "
+                "ORDER BY order_id"
+            ).fetchall(),
+            [(1,), (2,)],
+        )
+
     def test_separate_layer_connections_publish_in_parallel(self) -> None:
         """Silver and Gold workers must not share a DuckDB connection."""
         with tempfile.TemporaryDirectory() as temporary:

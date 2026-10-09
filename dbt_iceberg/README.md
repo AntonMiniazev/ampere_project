@@ -60,10 +60,14 @@ Iceberg `MERGE` phase can use more of them without increasing its RAM ceiling.
 Set the parallel-layers variable to `1` if a cluster run shows memory pressure.
 Each run logs per-table and phase timings.
 The complete-source path retains Iceberg table identity and can also
-synchronize a staged full-history table. Upsert and cleanup are two Iceberg
-commits: a failed cleanup can temporarily leave stale rows, but rerunning
-converges. Curie refresh follows only a fully successful publish. Full-history
-merges on large facts need a measured cluster run before routine use.
+synchronize a staged full-history table. Full rebuild publication splits
+`fact_delivery_tracking`, `fact_order_product`, and `fact_order_status_history`
+into three deterministic `order_id` ranges. Each range merges changed rows
+and removes stale target rows only within that range; the bounds include IDs
+present only in the old target. New tables start empty and use the same three
+merges. The ranges commit independently, so a failed part can leave a partial
+table until a full rebuild retry converges. Curie refresh follows only a fully
+successful publish. Other tables keep their existing publication path.
 
 Silver daily staging reads order sources from the beginning of the previous
 calendar month, including all related product, payment, status, and delivery
@@ -104,6 +108,9 @@ leaves room for DuckDB's other allocations and file cache. Existing Airflow
 Variable overrides take precedence.
 Staging does not make publication across tables atomic. dbt
 `--full-refresh` is not needed for these table and view models.
+The three fact ranges also add Iceberg commits and may scan the target more
+than once. Check peak pod memory, scratch use, and per-part timings on the
+first cluster run before treating the split as a performance improvement.
 
 The rebuild sizing is controlled by these optional Airflow variables (defaults
 shown): `iceberg_full_rebuild_dbt_threads` (`1`),

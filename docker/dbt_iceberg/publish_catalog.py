@@ -54,6 +54,11 @@ COMPLETE_MODELS = {
 }
 NULLABLE_MERGE_KEYS: dict[tuple[str, str], frozenset[str]] = {}
 EXPECTED_MODEL_COUNT = {"silver": 17, "gold": 8}
+FULL_REBUILD_FACT_BATCHES = {
+    "fact_delivery_tracking": 3,
+    "fact_order_product": 3,
+    "fact_order_status_history": 3,
+}
 
 
 def identifier(value: str) -> str:
@@ -151,6 +156,119 @@ def validate_table(
     return row_count
 
 
+def merge_upsert(
+    con: duckdb.DuckDBPyConnection,
+    source: str,
+    target: str,
+    keys: tuple[str, ...],
+    source_relation: str | None = None,
+) -> str:
+    """Upsert changed rows and return the key predicate for source/target joins."""
+    predicate = " AND ".join(
+        f"target.{identifier(key)} IS NOT DISTINCT FROM source.{identifier(key)}"
+        for key in keys
+    )
+    columns = [
+        description[0]
+        for description in con.execute(f"SELECT * FROM {source} LIMIT 0").description
+    ]
+    key_names = {key.casefold() for key in keys}
+    changed_columns = [
+        column for column in columns if column.casefold() not in key_names
+    ]
+    changed_predicate = " OR ".join(
+        f"target.{identifier(column)} IS DISTINCT FROM "
+        f"source.{identifier(column)}"
+        for column in changed_columns
+    )
+    matched_action = (
+        f"WHEN MATCHED AND ({changed_predicate}) THEN UPDATE "
+        if changed_predicate
+        else ""
+    )
+    con.execute(
+        f"MERGE INTO {target} AS target "
+        f"USING {source_relation or source} AS source "
+        f"ON {predicate} {matched_action}"
+        "WHEN NOT MATCHED THEN INSERT BY NAME"
+    )
+    return predicate
+
+
+def publish_full_history_fact_in_batches(
+    con: duckdb.DuckDBPyConnection,
+    table: str,
+    source: str,
+    target: str,
+    keys: tuple[str, ...],
+    batches: int,
+    row_count: int,
+) -> None:
+    """Bound each full-history merge and stale-row cleanup by order ID."""
+    if con.execute(
+        f"SELECT 1 FROM {source} WHERE order_id IS NULL LIMIT 1"
+    ).fetchone():
+        raise ValueError(f"Staged relation {source} has null order_id")
+
+    existing_target = target_exists(con, target)
+    if existing_target:
+        bounds = con.execute(
+            f"SELECT min(order_id), max(order_id) FROM ("
+            f"SELECT order_id FROM {source} UNION ALL "
+            f"SELECT order_id FROM {target})"
+        ).fetchone()
+    else:
+        bounds = con.execute(
+            f"SELECT min(order_id), max(order_id) FROM {source}"
+        ).fetchone()
+
+    lower, maximum = bounds
+    span = maximum - lower + 1
+    ranges = [
+        (lower + span * index // batches,
+         lower + span * (index + 1) // batches)
+        for index in range(batches)
+    ]
+    counts = con.execute(
+        "SELECT " + ", ".join(
+            f"count(*) FILTER (WHERE order_id >= {start} AND order_id < {stop})"
+            for start, stop in ranges
+        ) + f" FROM {source}"
+    ).fetchone()
+    if sum(counts) != row_count:
+        raise ValueError(f"Batch ranges do not cover staged {source}: {counts}")
+    if not existing_target:
+        # A new table receives the same bounded merge path as an existing one.
+        con.execute(f"CREATE TABLE {target} AS SELECT * FROM {source} WHERE FALSE")
+
+    for index, ((start, stop), batch_count) in enumerate(zip(ranges, counts)):
+        if start == stop:
+            continue
+        started = monotonic()
+        selected = (
+            f"(SELECT * FROM {source} WHERE order_id >= {start} "
+            f"AND order_id < {stop})"
+        )
+        predicate = merge_upsert(con, source, target, keys, selected)
+        if existing_target:
+            # A full-source DELETE inside one batch would erase the other two.
+            # The union bounds also include stale target IDs outside staging.
+            con.execute(
+                f"DELETE FROM {target} AS target "
+                f"WHERE target.order_id >= {start} AND target.order_id < {stop} "
+                f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source "
+                f"WHERE {predicate})"
+            )
+        print(
+            f"silver.{table}: part {index + 1}/{batches} "
+            f"order_id=[{start},{stop}) staged_rows={batch_count} "
+            f"published in {monotonic() - started:.1f}s",
+            flush=True,
+        )
+    if existing_target:
+        con.execute(f"DELETE FROM {target} WHERE order_id IS NULL")
+
+
 def publish_table(
     con: duckdb.DuckDBPyConnection,
     layer: str,
@@ -165,43 +283,22 @@ def publish_table(
     source = ".".join(map(identifier, (f"staged_{layer}", layer, table)))
     target = ".".join(map(identifier, (f"publish_{layer}", layer, table)))
     complete_source = is_complete_source(layer, table, run_mode)
-    if complete_source and not target_exists(con, target):
+    if layer == "silver" and run_mode == "full_history" and table in FULL_REBUILD_FACT_BATCHES:
+        publish_full_history_fact_in_batches(
+            con, table, source, target, MERGE_KEYS[layer][table],
+            FULL_REBUILD_FACT_BATCHES[table], row_count,
+        )
+        action = "synchronized in batches"
+    elif complete_source and not target_exists(con, target):
         con.execute(f"CREATE TABLE {target} AS SELECT * FROM {source}")
         action = "created"
     elif row_count == 0:
         action = "unchanged (empty daily slice)"
     else:
         keys = MERGE_KEYS[layer][table]
-        predicate = " AND ".join(
-            f"target.{identifier(key)} IS NOT DISTINCT FROM source.{identifier(key)}"
-            for key in keys
-        )
-        columns = [
-            description[0]
-            for description in con.execute(f"SELECT * FROM {source} LIMIT 0").description
-        ]
-        key_names = {key.casefold() for key in keys}
-        changed_columns = [
-            column for column in columns if column.casefold() not in key_names
-        ]
-        # Replaying a daily slice can match millions of unchanged rows. Iceberg
-        # updates write positional deletes, so only update changed values.
-        changed_predicate = " OR ".join(
-            f"target.{identifier(column)} IS DISTINCT FROM "
-            f"source.{identifier(column)}"
-            for column in changed_columns
-        )
-        matched_action = (
-            f"WHEN MATCHED AND ({changed_predicate}) THEN UPDATE "
-            if changed_predicate
-            else ""
-        )
-        statement = (
-            f"MERGE INTO {target} AS target USING {source} AS source "
-            f"ON {predicate} {matched_action}"
-            "WHEN NOT MATCHED THEN INSERT BY NAME"
-        )
-        con.execute(statement)
+        # Replays leave unchanged Iceberg rows alone instead of writing
+        # positional deletes for every match.
+        predicate = merge_upsert(con, source, target, keys)
         if complete_source:
             # DuckDB-Iceberg 1.5.6 accepts the upsert MERGE and DELETE, but
             # rejects a MERGE containing update, insert, and delete actions.
