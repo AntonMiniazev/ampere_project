@@ -85,6 +85,7 @@ class HousekeepingTests(unittest.TestCase):
             self.assertIn("strategy => 'binpack'", compact)
             self.assertIn("'max-concurrent-file-group-rewrites', '1'", compact)
             self.assertIn("'max-file-group-size-bytes', '536870912'", compact)
+            self.assertIn("'min-input-files', '2'", compact)
             self.assertIn(".system.expire_snapshots", expire)
             self.assertIn("retain_last => 1", expire)
             self.assertIn(".system.remove_orphan_files", orphan)
@@ -139,6 +140,19 @@ class HousekeepingTests(unittest.TestCase):
         self.assertEqual(
             sum(".system.remove_orphan_files" in sql for sql in calls), 42
         )
+
+    def test_clients_with_three_active_files_are_eligible(self) -> None:
+        spark = FakeSpark(
+            {"`iceberg_bronze`.`bronze`.`clients`.`data_files`": (3, 4_829_800)}
+        )
+        self.assertTrue(
+            housekeeping._compact_table(
+                spark, "iceberg_bronze", "bronze", "clients", dry_run=False
+            )
+        )
+        calls = [sql for sql in spark.statements if "rewrite_data_files" in sql]
+        self.assertEqual(len(calls), 1)
+        self.assertIn("'min-input-files', '2'", calls[0])
 
     def test_allowlist_matches_bronze_contract_and_published_models(self) -> None:
         root = MODULE_PATH.parents[4]

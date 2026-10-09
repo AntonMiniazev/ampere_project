@@ -22,21 +22,43 @@ NAMESPACES = (
 EXPECTED_TABLES = {
     ("iceberg_bronze", "bronze"): frozenset(
         {
-            "assortment", "clients", "costing", "delivery_costing",
-            "delivery_resource", "delivery_tracking", "delivery_type",
-            "order_product", "order_status_history", "order_statuses",
-            "orders", "payments", "product_categories", "products",
-            "stores", "zones",
+            "assortment",
+            "clients",
+            "costing",
+            "delivery_costing",
+            "delivery_resource",
+            "delivery_tracking",
+            "delivery_type",
+            "order_product",
+            "order_status_history",
+            "order_statuses",
+            "orders",
+            "payments",
+            "product_categories",
+            "products",
+            "stores",
+            "zones",
         }
     ),
     ("iceberg_bronze", "ops"): frozenset({"bronze_apply_registry"}),
     ("iceberg_silver", "silver"): frozenset(
         {
-            "budget_orders_sales", "dim_assortment", "dim_clients",
-            "dim_costing", "dim_delivery_costing", "dim_delivery_resource",
-            "dim_delivery_type", "dim_order_statuses", "dim_product_categories",
-            "dim_products", "dim_stores", "dim_zones", "fact_orders",
-            "fact_order_product", "fact_payments", "fact_order_status_history",
+            "budget_orders_sales",
+            "dim_assortment",
+            "dim_clients",
+            "dim_costing",
+            "dim_delivery_costing",
+            "dim_delivery_resource",
+            "dim_delivery_type",
+            "dim_order_statuses",
+            "dim_product_categories",
+            "dim_products",
+            "dim_stores",
+            "dim_zones",
+            "fact_orders",
+            "fact_order_product",
+            "fact_payments",
+            "fact_order_status_history",
             "fact_delivery_tracking",
         }
     ),
@@ -65,7 +87,9 @@ COMPACTION_OPTIONS = {
     "max-file-size-bytes": str(MAX_COMPACTION_TABLE_BYTES),
     "max-file-group-size-bytes": str(512 * 1024**2),
     "max-concurrent-file-group-rewrites": "1",
-    "min-input-files": "5",
+    # Small tables may have only two or three active files even when older
+    # snapshots still reference hundreds of physical files.
+    "min-input-files": "2",
 }
 
 
@@ -140,15 +164,25 @@ def _compact_table(
     if total_bytes > MAX_COMPACTION_TABLE_BYTES:
         LOGGER.info(
             "Skipping compaction for %s: data_bytes=%s exceeds limit=%s",
-            name, total_bytes, MAX_COMPACTION_TABLE_BYTES,
+            name,
+            total_bytes,
+            MAX_COMPACTION_TABLE_BYTES,
         )
         return False
     if dry_run:
         LOGGER.info(
             "Would compact %s: data_files=%s data_bytes=%s",
-            name, file_count, total_bytes,
+            name,
+            file_count,
+            total_bytes,
         )
         return False
+    LOGGER.info(
+        "Checking compaction for %s: active_data_files=%s active_bytes=%s",
+        name,
+        file_count,
+        total_bytes,
+    )
     result = spark.sql(_compaction_sql(catalog, schema, table)).collect()
     metrics = result[0].asDict() if result else {}
     LOGGER.info("Compaction for %s: %s", name, metrics)
@@ -215,9 +249,7 @@ def run_housekeeping(
                 catalog, schema, table, cutoff, dry_run=dry_run
             )
             try:
-                _ensure_metadata_policy(
-                    spark, catalog, schema, table, dry_run=dry_run
-                )
+                _ensure_metadata_policy(spark, catalog, schema, table, dry_run=dry_run)
                 compacted += _compact_table(
                     spark, catalog, schema, table, dry_run=dry_run
                 )
