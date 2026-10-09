@@ -34,8 +34,9 @@ class FakeResult:
 
 
 class FakeSpark:
-    def __init__(self) -> None:
+    def __init__(self, file_stats: dict[str, tuple[int, int]] | None = None) -> None:
         self.statements: list[str] = []
+        self.file_stats = file_stats or {}
         self.conf = SimpleNamespace(set=lambda key, value: None)
 
     def sql(self, statement: str) -> FakeResult:
@@ -53,6 +54,16 @@ class FakeSpark:
                         ]
                     )
             raise AssertionError(statement)
+        if statement.startswith("SELECT COUNT(*)"):
+            name = statement.rsplit("FROM ", 1)[1]
+            file_count, total_bytes = self.file_stats.get(name, (12, 8 * 1024**2))
+            return FakeResult(
+                [SimpleNamespace(file_count=file_count, total_bytes=total_bytes)]
+            )
+        if ".system.rewrite_data_files" in statement:
+            return FakeResult(
+                [SimpleNamespace(asDict=lambda: {"rewritten_data_files_count": 12})]
+            )
         if ".system.expire_snapshots" in statement:
             return FakeResult(
                 [SimpleNamespace(asDict=lambda: {"deleted_data_files_count": 0})]
@@ -64,19 +75,25 @@ class HousekeepingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.cutoff = datetime(2026, 9, 23, 13, 0, tzinfo=timezone.utc)
 
-    def test_live_run_expires_then_removes_orphans_for_42_tables(self) -> None:
+    def test_live_run_compacts_then_expires_and_removes_orphans(self) -> None:
         spark = FakeSpark()
         self.assertEqual(housekeeping.run_housekeeping(spark, cutoff=self.cutoff), 42)
         calls = [sql for sql in spark.statements if sql.startswith("CALL")]
-        self.assertEqual(len(calls), 84)
-        for expire, orphan in zip(calls[::2], calls[1::2]):
+        self.assertEqual(len(calls), 126)
+        for compact, expire, orphan in zip(calls[::3], calls[1::3], calls[2::3]):
+            self.assertIn(".system.rewrite_data_files", compact)
+            self.assertIn("strategy => 'binpack'", compact)
+            self.assertIn("'max-concurrent-file-group-rewrites', '1'", compact)
+            self.assertIn("'max-file-group-size-bytes', '536870912'", compact)
             self.assertIn(".system.expire_snapshots", expire)
             self.assertIn("retain_last => 1", expire)
             self.assertIn(".system.remove_orphan_files", orphan)
             self.assertIn("dry_run => false", orphan)
             self.assertIn("2026-09-23 13:00:00", expire)
             self.assertIn("2026-09-23 13:00:00", orphan)
-        self.assertFalse(any("rewrite_data_files" in sql for sql in calls))
+        self.assertTrue(
+            any("'bronze.clients'" in sql for sql in calls if "rewrite_data_files" in sql)
+        )
         self.assertFalse(
             any("clients_repair_backup_20261005" in sql for sql in spark.statements)
         )
@@ -99,6 +116,28 @@ class HousekeepingTests(unittest.TestCase):
         self.assertTrue(all("dry_run => true" in sql for sql in calls))
         self.assertFalse(
             any(sql.startswith("ALTER TABLE") for sql in spark.statements)
+        )
+
+    def test_skips_large_or_single_file_tables_without_skipping_cleanup(self) -> None:
+        spark = FakeSpark(
+            {
+                "`iceberg_bronze`.`bronze`.`order_product`.`data_files`": (
+                    100, housekeeping.MAX_COMPACTION_TABLE_BYTES + 1
+                ),
+                "`iceberg_bronze`.`bronze`.`clients`.`data_files`": (1, 1024),
+            }
+        )
+        self.assertEqual(housekeeping.run_housekeeping(spark, cutoff=self.cutoff), 42)
+        calls = [sql for sql in spark.statements if sql.startswith("CALL")]
+        compact = [sql for sql in calls if ".system.rewrite_data_files" in sql]
+        self.assertEqual(len(compact), 40)
+        self.assertFalse(any("'bronze.order_product'" in sql for sql in compact))
+        self.assertFalse(any("'bronze.clients'" in sql for sql in compact))
+        self.assertEqual(
+            sum(".system.expire_snapshots" in sql for sql in calls), 42
+        )
+        self.assertEqual(
+            sum(".system.remove_orphan_files" in sql for sql in calls), 42
         )
 
     def test_allowlist_matches_bronze_contract_and_published_models(self) -> None:

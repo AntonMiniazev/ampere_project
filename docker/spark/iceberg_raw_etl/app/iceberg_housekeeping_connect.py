@@ -1,4 +1,4 @@
-"""Expire old Iceberg snapshots and orphan files through Spark Connect."""
+"""Compact small Iceberg files and expire old history through Spark Connect."""
 
 from __future__ import annotations
 
@@ -58,6 +58,15 @@ METADATA_PROPERTIES = {
     "write.metadata.delete-after-commit.enabled": "true",
     "write.metadata.previous-versions-max": "14",
 }
+MAX_COMPACTION_TABLE_BYTES = 4 * 1024**3
+COMPACTION_OPTIONS = {
+    "target-file-size-bytes": str(128 * 1024**2),
+    "min-file-size-bytes": str(32 * 1024**2),
+    "max-file-size-bytes": str(MAX_COMPACTION_TABLE_BYTES),
+    "max-file-group-size-bytes": str(512 * 1024**2),
+    "max-concurrent-file-group-rewrites": "1",
+    "min-input-files": "5",
+}
 
 
 def _identifier(value: str) -> str:
@@ -95,6 +104,55 @@ def _procedure_sql(
         f"dry_run => {'true' if dry_run else 'false'}, stream_results => true)"
     )
     return expire_sql, orphan_sql
+
+
+def _compaction_sql(catalog: str, schema: str, table: str) -> str:
+    options = ", ".join(
+        f"{_literal(key)}, {_literal(value)}"
+        for key, value in COMPACTION_OPTIONS.items()
+    )
+    return (
+        f"CALL {_identifier(catalog)}.system.rewrite_data_files("
+        f"table => {_literal(f'{schema}.{table}')}, "
+        f"strategy => 'binpack', options => map({options}))"
+    )
+
+
+def _data_file_stats(
+    spark: SparkSession, catalog: str, schema: str, table: str
+) -> tuple[int, int]:
+    name = ".".join(map(_identifier, (catalog, schema, table, "data_files")))
+    row = spark.sql(
+        f"SELECT COUNT(*) AS file_count, "
+        f"COALESCE(SUM(file_size_in_bytes), 0) AS total_bytes FROM {name}"
+    ).collect()[0]
+    return int(row.file_count), int(row.total_bytes)
+
+
+def _compact_table(
+    spark: SparkSession, catalog: str, schema: str, table: str, *, dry_run: bool
+) -> bool:
+    name = f"{catalog}.{schema}.{table}"
+    file_count, total_bytes = _data_file_stats(spark, catalog, schema, table)
+    if file_count < 2:
+        LOGGER.info("Skipping compaction for %s: data_files=%s", name, file_count)
+        return False
+    if total_bytes > MAX_COMPACTION_TABLE_BYTES:
+        LOGGER.info(
+            "Skipping compaction for %s: data_bytes=%s exceeds limit=%s",
+            name, total_bytes, MAX_COMPACTION_TABLE_BYTES,
+        )
+        return False
+    if dry_run:
+        LOGGER.info(
+            "Would compact %s: data_files=%s data_bytes=%s",
+            name, file_count, total_bytes,
+        )
+        return False
+    result = spark.sql(_compaction_sql(catalog, schema, table)).collect()
+    metrics = result[0].asDict() if result else {}
+    LOGGER.info("Compaction for %s: %s", name, metrics)
+    return bool(metrics.get("rewritten_data_files_count", 0))
 
 
 def _tables(spark: SparkSession, catalog: str, schema: str) -> list[str]:
@@ -144,9 +202,10 @@ def _ensure_metadata_policy(
 def run_housekeeping(
     spark: SparkSession, *, cutoff: datetime, dry_run: bool = False
 ) -> int:
-    """Expire history first; then remove aged files not referenced by any snapshot."""
+    """Compact small files, expire history, then remove aged orphan files."""
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     completed = 0
+    compacted = 0
     for catalog, schema in NAMESPACES:
         tables = _tables(spark, catalog, schema)
         LOGGER.info("Discovered %s tables in %s.%s", len(tables), catalog, schema)
@@ -157,6 +216,9 @@ def run_housekeeping(
             )
             try:
                 _ensure_metadata_policy(
+                    spark, catalog, schema, table, dry_run=dry_run
+                )
+                compacted += _compact_table(
                     spark, catalog, schema, table, dry_run=dry_run
                 )
                 if expire_sql is not None:
@@ -178,8 +240,9 @@ def run_housekeeping(
             )
             completed += 1
     LOGGER.info(
-        "Iceberg housekeeping completed: tables=%s dry_run=%s",
+        "Iceberg housekeeping completed: tables=%s compacted_tables=%s dry_run=%s",
         completed,
+        compacted,
         dry_run,
     )
     return completed

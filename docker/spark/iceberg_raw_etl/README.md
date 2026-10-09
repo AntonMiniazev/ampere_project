@@ -15,10 +15,13 @@ The same image runs the Raw extractor for
 `ampere__raw_landing__postgres_to_landing__daily` and the Bronze apply job for
 `ampere__iceberg__bronze__raw_to_iceberg__daily`. The image bundles its PostgreSQL
 JDBC and S3A libraries, so the Raw job does not depend on a shared Ivy cache.
-The same image runs the weekly Spark Connect housekeeping client. It expires
-Iceberg snapshots and orphan files older than 14 days and limits previous
-tracked metadata JSON files to 14 for known pipeline tables. Extra catalog
-tables, including repair backups, remain untouched.
+The same image runs the weekly Spark Connect housekeeping client. It compacts
+small files in known pipeline tables with at least two active data files and no
+more than 4 GiB of active data. Bin-pack writes target 128 MiB files in one
+512 MiB group at a time. It then expires snapshots and orphan files older than
+14 days and limits previous tracked metadata JSON files to 14. A dry run reports
+compaction candidates without rewriting files. Extra catalog tables, including
+repair backups, remain untouched.
 The driver reads `lakekeeper-spark-client` (`client-id`, `client-secret`) and
 `minio-creds`. Lakekeeper URI, warehouse, OAuth URI and scope have separate
 `iceberg_` Airflow variables. The DAG triggers Silver/Gold after success.

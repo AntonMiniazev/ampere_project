@@ -1,4 +1,4 @@
-"""Clean expired Iceberg history after the successful Sunday pipeline."""
+"""Compact Iceberg files and clean expired history after the Sunday pipeline."""
 
 from __future__ import annotations
 
@@ -61,6 +61,7 @@ with DAG(
             limits={"cpu": "1", "memory": "2Gi"},
         ),
         execution_timeout=timedelta(hours=3),
+        startup_timeout_seconds=600,
         get_logs=True,
         is_delete_operator_pod=True,
     )
