@@ -83,7 +83,7 @@ class HousekeepingTests(unittest.TestCase):
         for compact, expire, orphan in zip(calls[::3], calls[1::3], calls[2::3]):
             self.assertIn(".system.rewrite_data_files", compact)
             self.assertIn("strategy => 'binpack'", compact)
-            self.assertIn("'max-concurrent-file-group-rewrites', '1'", compact)
+            self.assertIn("'max-concurrent-file-group-rewrites', '2'", compact)
             self.assertIn("'max-file-group-size-bytes', '536870912'", compact)
             self.assertIn("'min-input-files', '2'", compact)
             self.assertIn(".system.expire_snapshots", expire)

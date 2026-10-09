@@ -86,7 +86,7 @@ COMPACTION_OPTIONS = {
     "min-file-size-bytes": str(32 * 1024**2),
     "max-file-size-bytes": str(MAX_COMPACTION_TABLE_BYTES),
     "max-file-group-size-bytes": str(512 * 1024**2),
-    "max-concurrent-file-group-rewrites": "1",
+    "max-concurrent-file-group-rewrites": "2",
     # Small tables may have only two or three active files even when older
     # snapshots still reference hundreds of physical files.
     "min-input-files": "2",
