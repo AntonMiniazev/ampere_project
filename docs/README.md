@@ -2,6 +2,8 @@
 
 Ampere produces synthetic source data in PostgreSQL and publishes analytical Iceberg tables in Lakekeeper. Airflow starts the daily generator and hands off between Raw, Bronze, Silver/Gold, and Curie cache refresh.
 
+After a successful Gold publish, the Curie refresh DAG requests a FlightSQL cache refresh through `/api/cache/refresh_flightsql`, then polls the Iceberg cache status until a new release is active.
+
 ## Layers
 
 1. **Source:** Python generators create orders, clients, products, payments, delivery activity, and costs in PostgreSQL.

@@ -51,7 +51,11 @@ def fetch_table(table_name: str, schema: str = "source") -> pl.DataFrame:
         with conn.cursor() as cur:
             cur.execute(f"SELECT * FROM {ident}")
             rows: list[tuple[Any, ...]] = cur.fetchall()
-            return pl.DataFrame(rows, schema=[desc[0] for desc in cur.description], orient="row")
+            return pl.DataFrame(
+                rows,
+                schema=[desc[0] for desc in cur.description],
+                orient="row",
+            )
 
 
 def query_df(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> pl.DataFrame:
@@ -71,7 +75,12 @@ def query_df_connection(
         if cur.description is None:
             return pl.DataFrame()
         rows: list[tuple[Any, ...]] = cur.fetchall()
-        return pl.DataFrame(rows, schema=[desc[0] for desc in cur.description], orient="row")
+        return pl.DataFrame(
+            rows,
+            schema=[desc[0] for desc in cur.description],
+            orient="row",
+            infer_schema_length=None,
+        )
 
 
 def execute(sql: str, params: tuple[Any, ...] | dict[str, Any] | None = None) -> int:

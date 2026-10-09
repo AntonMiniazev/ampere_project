@@ -18,8 +18,8 @@ from utils.ampere_dag_config import standard_default_args
 
 DAG_ID = "ampere__curie__cache_refresh__post_iceberg_gold"
 DEFAULT_CURIE_API_BASE_URL = "http://100.65.42.72"
-REFRESH_PATH = "/api/cache/refresh_iceberg"
-STATUS_PATH = "/api/cache/status_iceberg"
+REFRESH_PATH = "/api/cache/refresh_flightsql"
+STATUS_PATH = "/api/cache/status_flightsql"
 ADMIN_KEY_HEADER = "X-Curie-Admin-Key"
 EXPECTED_TABLES = {
     "curie_marketing_sales_budget_monthly_store",
@@ -259,8 +259,6 @@ with DAG(
         reset_dag_run=True,
         wait_for_completion=False,
     )
-    skip_housekeeping = EmptyOperator(
-        task_id="skip__iceberg__housekeeping__weekly"
-    )
+    skip_housekeeping = EmptyOperator(task_id="skip__iceberg__housekeeping__weekly")
 
     done_task >> choose_housekeeping >> [trigger_housekeeping, skip_housekeeping]
