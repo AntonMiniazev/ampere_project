@@ -8,9 +8,8 @@ import os
 from pyspark.sql import SparkSession
 
 from tools.contracts.ampere_contract import AmpereContract, ResolvedTable, load_contract
-from iceberg_bronze.catalog import configure_lakekeeper_catalog, quote_ident
+from iceberg_bronze.catalog import quote_ident
 from tools.contracts.spark_conformance import validate_spark_table
-from etl_utils import configure_s3
 
 
 def _sql_literal(value: str) -> str:
@@ -73,36 +72,19 @@ def _create_table(spark: SparkSession, contract: AmpereContract, table: Resolved
     logging.info("Initialized %s.%s.%s from contract v%s", catalog, namespace, table.name, contract.version)
 
 
-def initialize() -> None:
+def initialize(spark_remote: str | None = None) -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     logger = logging.getLogger("iceberg-catalog-init")
     contract = load_contract()
     logger.info("Initializing %s contract v%s (%s tables)", contract.catalog_namespace, contract.version, len(contract.tables))
-    spark = (
-        SparkSession.builder.appName("ampere-iceberg-catalog-init")
-        .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.redaction.regex", "(?i)secret|password|token|credential|access.key")
-        .getOrCreate()
+    spark_remote = spark_remote or os.getenv(
+        "SPARK_REMOTE", "sc://spark-connect.ampere.svc.cluster.local:15002"
     )
+    spark = SparkSession.builder.remote(spark_remote).appName(
+        "ampere-iceberg-catalog-init"
+    ).getOrCreate()
     try:
-        configure_s3(
-            spark,
-            os.environ["MINIO_S3_ENDPOINT"],
-            os.environ["MINIO_ACCESS_KEY"],
-            os.environ["MINIO_SECRET_KEY"],
-        )
-        for layer in ("bronze", "silver", "gold"):
-            configure_lakekeeper_catalog(
-                spark,
-                catalog=_catalog_name(layer),
-                warehouse=os.environ[f"ICEBERG_{layer.upper()}_WAREHOUSE"],
-                uri=os.environ["LAKEKEEPER_CATALOG_URI"],
-                oauth_uri=os.environ["LAKEKEEPER_OAUTH_URI"],
-                scope=os.environ["LAKEKEEPER_SCOPE"],
-                client_id=os.environ["LAKEKEEPER_CLIENT_ID"],
-                client_secret=os.environ["LAKEKEEPER_CLIENT_SECRET"],
-                minio_endpoint=os.environ["MINIO_S3_ENDPOINT"],
-            )
+        logger.info("Using existing Spark Connect session at %s", spark_remote)
         for layer in ("bronze", "silver", "gold"):
             for table in contract.layer_tables(layer):
                 _create_table(spark, contract, table)

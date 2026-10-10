@@ -11,7 +11,7 @@ on:
       - tests/test_iceberg_bronze_spark.py
       - tests/test_iceberg_mutable_dedup.py
       - tests/test_iceberg_housekeeping.py
-      - dags/sparkapplications/catalog_init_template_iceberg.yaml
+      - tests/test_iceberg_catalog_init.py
       - .github/workflows/build-ampere-spark-iceberg.yml
 
 permissions:

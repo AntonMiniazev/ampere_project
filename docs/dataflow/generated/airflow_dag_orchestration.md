@@ -47,7 +47,7 @@ flowchart TD
 | `ampere__housekeeping__iceberg_metadata__weekly` | manual / triggered | layer:housekeeping, format:iceberg, system:spark-connect, mode:weekly | `dags/my_dags/ampere__housekeeping__iceberg_metadata__weekly.py` |
 | `ampere__iceberg__bronze__raw_to_iceberg__daily` | manual / triggered | layer:bronze, format:iceberg, system:spark, mode:daily | `dags/my_dags/ampere__iceberg__bronze__raw_to_iceberg__daily.py` |
 | `ampere__iceberg__bronze__raw_to_iceberg__full_rebuild` | manual / triggered | layer:bronze, format:iceberg, system:spark, mode:full_rebuild | `dags/my_dags/ampere__iceberg__bronze__raw_to_iceberg__full_rebuild.py` |
-| `ampere__iceberg__catalog__init` | manual / triggered | layer:catalog, format:iceberg, system:spark, mode:manual | `dags/my_dags/ampere__iceberg__catalog__init.py` |
+| `ampere__iceberg__catalog__init` | manual / triggered | layer:catalog, format:iceberg, system:spark-connect, mode:manual | `dags/my_dags/ampere__iceberg__catalog__init.py` |
 | `ampere__iceberg__gold__dbt_duckdb__daily` | manual / triggered | layer:gold, format:iceberg, system:dbt, mode:daily | `dags/my_dags/ampere__iceberg__gold__dbt_duckdb__daily.py` |
 | `ampere__iceberg__gold__dbt_duckdb__full_rebuild` | manual / triggered | layer:gold, format:iceberg, system:dbt, mode:full_rebuild | `dags/my_dags/ampere__iceberg__gold__dbt_duckdb__full_rebuild.py` |
 | `ampere__iceberg__silver__dbt_duckdb__daily` | manual / triggered | layer:silver, format:iceberg, system:dbt, mode:daily | `dags/my_dags/ampere__iceberg__silver__dbt_duckdb__daily.py` |
