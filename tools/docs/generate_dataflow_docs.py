@@ -420,11 +420,16 @@ def parse_airflow_dag_file(path: Path) -> dict[str, Any]:
             if isinstance(item, ast.Constant) and isinstance(item.value, str)
         ]
     if not triggers and "TRIGGER_DAG_ID" in constants:
+        wait_for_completion = literal_bool(
+            metadata_nodes.get("TRIGGER_WAIT_FOR_COMPLETION")
+        )
         triggers.append(
             {
                 "task_id": constants.get("TRIGGER_TASK_ID", "trigger"),
                 "target": constants["TRIGGER_DAG_ID"],
-                "wait_for_completion": True,
+                "wait_for_completion": (
+                    True if wait_for_completion is None else wait_for_completion
+                ),
                 "reset_dag_run": True,
                 "trigger_rule": "all_success",
             }
@@ -506,7 +511,7 @@ def write_airflow_dag_orchestration() -> None:
         "",
         "This page is generated from `dags/my_dags/*.py`. It shows the normal daily chain, manual recovery entrypoints, and the trigger conditions that matter operationally.",
         "",
-        "The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs, and isolated dbt pods build and publish Silver, then Gold. Catalog initialization and the Bronze-to-Gold full rebuild are manually run entrypoints.",
+        "The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs, and isolated dbt pods build and publish Silver, then Gold. Each parent finishes after dispatching its downstream DAG; child runs report their own outcomes. Catalog initialization and the Bronze-to-Gold full rebuild are manually run entrypoints.",
         "",
         "```mermaid",
         mermaid.rstrip(),

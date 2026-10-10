@@ -7,5 +7,8 @@ SCHEDULE = None
 TAGS = ["layer:gold", "format:iceberg", "system:dbt", "mode:full_rebuild"]
 TRIGGER_TASK_ID = "trigger__curie__cache_refresh__post_iceberg_gold"
 TRIGGER_DAG_ID = "ampere__curie__cache_refresh__post_iceberg_gold"
+TRIGGER_WAIT_FOR_COMPLETION = False
 
-dag = build_layer_dag("gold", full_rebuild=True)
+dag = build_layer_dag(
+    "gold", full_rebuild=True, wait_for_completion=TRIGGER_WAIT_FOR_COMPLETION
+)

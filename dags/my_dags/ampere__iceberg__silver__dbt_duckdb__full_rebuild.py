@@ -7,5 +7,8 @@ SCHEDULE = None
 TAGS = ["layer:silver", "format:iceberg", "system:dbt", "mode:full_rebuild"]
 TRIGGER_TASK_ID = "trigger__iceberg__gold__dbt_duckdb__full_rebuild"
 TRIGGER_DAG_ID = "ampere__iceberg__gold__dbt_duckdb__full_rebuild"
+TRIGGER_WAIT_FOR_COMPLETION = False
 
-dag = build_layer_dag("silver", full_rebuild=True)
+dag = build_layer_dag(
+    "silver", full_rebuild=True, wait_for_completion=TRIGGER_WAIT_FOR_COMPLETION
+)

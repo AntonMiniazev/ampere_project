@@ -20,7 +20,7 @@ from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
 from utils.stream_group_config import build_bronze_stream_groups
 
 
-def build_bronze_dag(*, full_rebuild: bool) -> DAG:
+def build_bronze_dag(*, full_rebuild: bool, wait_for_completion: bool = False) -> DAG:
     """Create a Bronze daily or all-history run and hand it to Silver."""
     run_name = "full_rebuild" if full_rebuild else "daily"
     dag_id = f"ampere__iceberg__bronze__raw_to_iceberg__{run_name}"
@@ -121,7 +121,7 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
             trigger_dag_id=f"ampere__iceberg__silver__dbt_duckdb__{run_name}",
             logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
             reset_dag_run=True,
-            wait_for_completion=True,
+            wait_for_completion=wait_for_completion,
         )
         previous = start
         for task in tasks:

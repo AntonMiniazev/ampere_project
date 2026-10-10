@@ -111,7 +111,7 @@ with DAG(
         trigger_dag_id="ampere__iceberg__bronze__raw_to_iceberg__daily",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
-        wait_for_completion=True,
+        wait_for_completion=False,
     )
 
     submit_tasks = []

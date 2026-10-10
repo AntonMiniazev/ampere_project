@@ -32,7 +32,9 @@ def _secret(key: str, deployment: str, env_name: str) -> Secret:
     return Secret(deploy_type="env", deploy_target=env_name, secret=deployment, key=key)
 
 
-def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
+def build_layer_dag(
+    layer: str, *, full_rebuild: bool, wait_for_completion: bool = False
+) -> DAG:
     """Create one serialized dbt layer DAG and its successful downstream handoff."""
     if layer not in {"silver", "gold"}:
         raise ValueError("Layer must be silver or gold")
@@ -195,7 +197,7 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
             trigger_dag_id=next_dag,
             logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
             reset_dag_run=True,
-            wait_for_completion=True,
+            wait_for_completion=wait_for_completion,
         )
         build >> handoff
     return dag

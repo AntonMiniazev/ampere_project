@@ -7,5 +7,8 @@ SCHEDULE = None
 TAGS = ["layer:bronze", "format:iceberg", "system:spark", "mode:daily"]
 TRIGGER_TASK_ID = "trigger__iceberg__silver__dbt_duckdb__daily"
 TRIGGER_DAG_ID = "ampere__iceberg__silver__dbt_duckdb__daily"
+TRIGGER_WAIT_FOR_COMPLETION = False
 
-dag = build_bronze_dag(full_rebuild=False)
+dag = build_bronze_dag(
+    full_rebuild=False, wait_for_completion=TRIGGER_WAIT_FOR_COMPLETION
+)
