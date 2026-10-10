@@ -8,20 +8,15 @@ ENV PYTHONUNBUFFERED=1 \
     PYSPARK_DRIVER_PYTHON=/opt/ampere-venv/bin/python
 
 USER root
-ENV HOME=/root
+ENV HOME=/tmp
 RUN uv python install 3.14 \
     && uv venv --python "$(uv python find 3.14)" /opt/ampere-venv \
     && uv pip install --python /opt/ampere-venv/bin/python --no-cache \
-    numpy==2.3.4 \
     boto3==1.40.18 \
-    pandas==2.3.3 \
-    pyarrow==26.0.0 \
-    "pyspark[connect]==4.1.0" \
-    zstandard==0.25.0
+    pyspark==4.1.0
 
-# NumPy 2.4 wheels require x86-64-v2; keep the image runnable on the homelab's
-# older virtual CPU baseline while retaining Python 3.14 support.
-RUN /opt/ampere-venv/bin/python -c "import numpy, pyspark; assert numpy.__version__ == '2.3.4'; print('Spark Connect imports with NumPy', numpy.__version__)"
+RUN /opt/ampere-venv/bin/python -c \
+    "import pyspark; from pyspark.sql import SparkSession, functions; assert pyspark.__version__ == '4.1.0'; print('Classic PySpark imports successfully', pyspark.__version__)"
 
 ENV PATH="/opt/ampere-venv/bin:${PATH}"
 
@@ -35,7 +30,14 @@ ADD https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.3/postgr
 RUN chmod 644 /opt/spark/iceberg-jars/*.jar
 
 WORKDIR /opt/spark/app
-COPY docker/spark/iceberg_raw_etl/app/ /opt/spark/app/
+COPY docker/spark/iceberg_raw_etl/app/etl_parser.py \
+    docker/spark/iceberg_raw_etl/app/etl_utils.py /opt/spark/app/
+COPY docker/spark/iceberg_raw_etl/app/source_to_raw_etl.py \
+    docker/spark/iceberg_raw_etl/app/raw_to_bronze_etl_iceberg.py /opt/spark/app/
+COPY docker/spark/iceberg_raw_etl/app/raw/ /opt/spark/app/raw/
+COPY docker/spark/iceberg_raw_etl/app/iceberg_bronze/ /opt/spark/app/iceberg_bronze/
 COPY tools/__init__.py /opt/spark/app/tools/__init__.py
 COPY tools/contracts/ /opt/spark/app/tools/contracts/
+RUN /opt/ampere-venv/bin/python -B -c \
+    "import raw.main, iceberg_bronze.main, source_to_raw_etl, raw_to_bronze_etl_iceberg; print('Raw and Bronze applications import successfully')"
 USER 185

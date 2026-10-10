@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_DIR = ROOT / "docker/spark/iceberg_raw_etl/app"
+APP_DIR = ROOT / "docker/spark/connect_client/app"
 sys.path.insert(0, str(APP_DIR))
 
 SPEC = importlib.util.spec_from_file_location(

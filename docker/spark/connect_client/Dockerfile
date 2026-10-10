@@ -13,8 +13,8 @@ RUN python -m pip install --no-cache-dir "numpy==2.3.4" "pyspark-client==4.1.0" 
 
 COPY tools/__init__.py /opt/ampere/app/tools/__init__.py
 COPY tools/contracts/ /opt/ampere/app/tools/contracts/
-COPY docker/spark/iceberg_raw_etl/app/initialize_iceberg_catalog.py /opt/ampere/app/
-COPY docker/spark/iceberg_raw_etl/app/iceberg_housekeeping_connect.py /opt/ampere/app/
+COPY docker/spark/connect_client/app/initialize_iceberg_catalog.py /opt/ampere/app/
+COPY docker/spark/connect_client/app/iceberg_housekeeping_connect.py /opt/ampere/app/
 
 RUN python -m py_compile \
     /opt/ampere/app/initialize_iceberg_catalog.py \

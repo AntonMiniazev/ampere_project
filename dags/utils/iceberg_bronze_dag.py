@@ -41,6 +41,7 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
         "driver_memory": config.driver_memory,
         "driver_memory_overhead": config.driver_memory_overhead,
         "driver_node_selector": config.driver_node_selector,
+        "executor_node_selector": config.executor_node_selector,
         "executor_cores": config.executor_cores,
         "executor_core_request": config.executor_core_request,
         "executor_memory": config.executor_memory,

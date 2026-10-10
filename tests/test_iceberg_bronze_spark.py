@@ -16,6 +16,7 @@ from pyspark.sql import functions as F
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "docker/spark/iceberg_raw_etl/app"))
+sys.path.insert(0, str(ROOT / "docker/spark/connect_client/app"))
 sys.path.insert(0, str(ROOT))
 os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/contracts/ampere_tables.json")
 

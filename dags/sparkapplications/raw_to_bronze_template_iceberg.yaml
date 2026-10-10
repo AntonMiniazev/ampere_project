@@ -102,7 +102,7 @@ spec:
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
-{% if params.executor_node_selector %}
+{% if params.get('executor_node_selector') %}
     nodeSelector:
       kubernetes.io/hostname: {{ params.executor_node_selector }}
 {% endif %}

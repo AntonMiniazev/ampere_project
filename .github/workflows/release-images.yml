@@ -83,8 +83,6 @@ jobs:
                   "file": "docker/spark/connect_client/Dockerfile",
                   "paths": [
                       "docker/spark/connect_client/",
-                      "docker/spark/iceberg_raw_etl/app/initialize_iceberg_catalog.py",
-                      "docker/spark/iceberg_raw_etl/app/iceberg_housekeeping_connect.py",
                       "tools/__init__.py",
                       "tools/contracts/",
                   ],

@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-MODULE_PATH = ROOT / "docker/spark/iceberg_raw_etl/app/iceberg_housekeeping_connect.py"
+MODULE_PATH = ROOT / "docker/spark/connect_client/app/iceberg_housekeeping_connect.py"
 SPEC = importlib.util.spec_from_file_location("iceberg_housekeeping_connect", MODULE_PATH)
 housekeeping = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = housekeeping

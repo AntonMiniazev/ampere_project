@@ -1,9 +1,9 @@
 # Spark Connect client image
 
 This small Python image runs the contract-driven catalog initializer and weekly
-Iceberg housekeeping client. Both submit SQL through the persistent Spark
-Connect service; they do not start a local Spark driver or need a JVM, Spark
-distribution, or Iceberg JARs.
+Iceberg housekeeping client from `app/`. Both submit SQL through the persistent
+Spark Connect service; they do not start a local Spark driver or need a JVM,
+Spark distribution, or Iceberg JARs.
 
 The image pins `pyspark-client` to Spark 4.1.0 and NumPy 2.3.4 for the homelab
 CPU baseline. It includes only the two client scripts and contract helpers.

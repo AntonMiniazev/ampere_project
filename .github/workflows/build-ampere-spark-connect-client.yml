@@ -6,8 +6,6 @@ on:
     branches: [migration/iceberg, main]
     paths:
       - docker/spark/connect_client/**
-      - docker/spark/iceberg_raw_etl/app/initialize_iceberg_catalog.py
-      - docker/spark/iceberg_raw_etl/app/iceberg_housekeeping_connect.py
       - tools/__init__.py
       - tools/contracts/**
       - .github/workflows/build-ampere-spark-connect-client.yml
