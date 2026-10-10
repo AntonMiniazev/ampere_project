@@ -52,7 +52,9 @@ def resolve_release_image(
 def resolve_spark_image() -> str:
     """Resolve the Iceberg Spark image for Raw and Bronze."""
     repository = "ghcr.io/antonminiazev/ampere-spark-iceberg"
-    image = get_optional_variable("iceberg_spark_image") or resolve_release_image(repository)
+    image = get_optional_variable("iceberg_spark_image") or resolve_release_image(
+        repository
+    )
     if not image.startswith(f"{repository}:"):
         raise ValueError("iceberg_spark_image must name the Iceberg repository")
     return image
@@ -61,9 +63,9 @@ def resolve_spark_image() -> str:
 def resolve_spark_connect_client_image() -> str:
     """Resolve the lightweight image used by Spark Connect client pods."""
     repository = "ghcr.io/antonminiazev/ampere-spark-connect-client"
-    image = get_optional_variable("iceberg_spark_connect_client_image") or resolve_release_image(
-        repository
-    )
+    image = get_optional_variable(
+        "iceberg_spark_connect_client_image"
+    ) or resolve_release_image(repository)
     if not image.startswith(f"{repository}:"):
         raise ValueError(
             "iceberg_spark_connect_client_image must name the Spark Connect client repository"
@@ -308,7 +310,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
     minio_conn_id = Variable.get("minio_conn_id", default="minio_conn")
     return BronzeDagConfig(
         spark_namespace=Variable.get("spark_namespace", default=DEFAULT_NAMESPACE),
-        service_account=Variable.get("spark_service_account", default=DEFAULT_SPARK_SERVICE_ACCOUNT),
+        service_account=Variable.get(
+            "spark_service_account", default=DEFAULT_SPARK_SERVICE_ACCOUNT
+        ),
         minio_endpoint=resolve_minio_endpoint(minio_conn_id),
         schema=Variable.get("pg_schema", default="source"),
         raw_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
@@ -317,27 +321,63 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
         driver_memory=Variable.get("spark_bronze_driver_memory", default="2000m"),
-        driver_memory_overhead=Variable.get("spark_bronze_driver_memory_overhead", default="512"),
-        driver_node_selector=Variable.get("spark_bronze_driver_node_selector", default="ampere-k8s-node2"),
+        driver_memory_overhead=Variable.get(
+            "spark_bronze_driver_memory_overhead", default="512"
+        ),
+        driver_node_selector=Variable.get(
+            "spark_bronze_driver_node_selector", default="ampere-k8s-node2"
+        ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
-        executor_core_request=Variable.get("spark_executor_core_request", default="300m"),
-        executor_cores_facts_events=int(Variable.get("spark_bronze_executor_cores_facts_events", default="2")),
-        executor_core_request_facts_events=Variable.get("spark_bronze_executor_core_request_facts_events", default="1"),
+        executor_core_request=Variable.get(
+            "spark_executor_core_request", default="250m"
+        ),
+        executor_cores_facts_events=int(
+            Variable.get("spark_bronze_executor_cores_facts_events", default="2")
+        ),
+        executor_core_request_facts_events=Variable.get(
+            "spark_bronze_executor_core_request_facts_events", default="400m"
+        ),
         executor_memory=Variable.get("spark_executor_memory", default="1536m"),
-        executor_memory_overhead=Variable.get("spark_executor_memory_overhead", default="384m"),
+        executor_memory_overhead=Variable.get(
+            "spark_executor_memory_overhead", default="384m"
+        ),
         executor_instances=int(Variable.get("spark_executor_instances", default="3")),
-        executor_instances_snapshots=int(Variable.get("spark_executor_instances_snapshots", default="2")),
-        executor_instances_facts_events=int(Variable.get("spark_executor_instances_facts_events", default="2")),
-        executor_memory_snapshots=Variable.get("spark_executor_memory_snapshots", default="2560m"),
-        executor_memory_facts_events=Variable.get("spark_executor_memory_facts_events", default="3072m"),
-        executor_memory_overhead_facts_events=Variable.get("spark_executor_memory_overhead_facts_events", default="768m"),
-        executor_node_selector=Variable.get("spark_executor_node_selector", default="ampere-k8s-node4"),
-        shuffle_partitions=int(Variable.get("spark_sql_shuffle_partitions", default="2")),
-        shuffle_partitions_facts_events=int(Variable.get("spark_sql_shuffle_partitions_facts_events", default="8")),
-        shuffle_partitions_mutable_dims=int(Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="2")),
-        files_max_partition_bytes_facts_events=Variable.get("spark_sql_files_max_partition_bytes_facts_events", default="8m"),
-        files_open_cost_bytes_facts_events=Variable.get("spark_sql_files_open_cost_bytes_facts_events", default="4m"),
-        adaptive_coalesce_facts_events=Variable.get("spark_sql_adaptive_coalesce_facts_events", default="false"),
+        executor_instances_snapshots=int(
+            Variable.get("spark_executor_instances_snapshots", default="2")
+        ),
+        executor_instances_facts_events=int(
+            Variable.get("spark_executor_instances_facts_events", default="2")
+        ),
+        executor_memory_snapshots=Variable.get(
+            "spark_executor_memory_snapshots", default="2560m"
+        ),
+        executor_memory_facts_events=Variable.get(
+            "spark_executor_memory_facts_events", default="3072m"
+        ),
+        executor_memory_overhead_facts_events=Variable.get(
+            "spark_executor_memory_overhead_facts_events", default="768m"
+        ),
+        executor_node_selector=Variable.get(
+            "spark_executor_node_selector", default="ampere-k8s-node4"
+        ),
+        shuffle_partitions=int(
+            Variable.get("spark_sql_shuffle_partitions", default="2")
+        ),
+        shuffle_partitions_facts_events=int(
+            Variable.get("spark_sql_shuffle_partitions_facts_events", default="8")
+        ),
+        shuffle_partitions_mutable_dims=int(
+            Variable.get("spark_sql_shuffle_partitions_mutable_dims", default="2")
+        ),
+        files_max_partition_bytes_facts_events=Variable.get(
+            "spark_sql_files_max_partition_bytes_facts_events", default="8m"
+        ),
+        files_open_cost_bytes_facts_events=Variable.get(
+            "spark_sql_files_open_cost_bytes_facts_events", default="4m"
+        ),
+        adaptive_coalesce_facts_events=Variable.get(
+            "spark_sql_adaptive_coalesce_facts_events", default="false"
+        ),
         template_paths=spark_template_paths(anchor_file),
     )
 
@@ -354,7 +394,9 @@ def load_silver_dag_config() -> SilverDagConfig:
     """Load shared pod placement and MinIO settings for Iceberg dbt DAGs."""
     return SilverDagConfig(
         namespace=Variable.get("cluster_namespace", default=DEFAULT_NAMESPACE),
-        service_account=Variable.get("spark_service_account", default=DEFAULT_SPARK_SERVICE_ACCOUNT),
+        service_account=Variable.get(
+            "spark_service_account", default=DEFAULT_SPARK_SERVICE_ACCOUNT
+        ),
         node_selector={"kubernetes.io/hostname": DEFAULT_ETL_NODE},
         minio_endpoint=strip_url_scheme(resolve_minio_endpoint()),
     )

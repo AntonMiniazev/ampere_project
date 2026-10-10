@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml /app/pyproject.toml
 COPY model /app/model
 
-RUN uv pip install --system --no-cache-dir .
+RUN uv pip install --system --no-cache-dir . \
+    && python -c "import numpy; assert numpy.__version__ == '2.3.4'; import order_data_generator.main; print('Generator and NumPy imports succeeded:', numpy.__version__)"
 
 CMD ["python", "-m", "order_data_generator"]
 

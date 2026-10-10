@@ -26,6 +26,10 @@ List values are comma-separated, e.g. `CHURN_RATES=0.004,0.007`.
 
 The generator can run as a Python module in a local environment or as the container image used by Airflow. Runtime arguments control the generation date, deterministic seed, and optional volume overrides; environment variables define PostgreSQL connectivity and default generation settings.
 
+The container pins NumPy to 2.3.4, which is compatible with the CPUs used by the
+cluster. Its image build checks the expected NumPy version and imports the
+generator module before the image is published.
+
 ## Image tagging (GitHub Actions)
 
 Image version comes from the shared repo release tag `v*`.
