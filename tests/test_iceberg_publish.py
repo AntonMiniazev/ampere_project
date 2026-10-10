@@ -354,6 +354,57 @@ class PublishTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "catalog__init"):
             publish_catalog.publish_table(self.con, "silver", "fact_orders", "full_history")
 
+    def test_daily_large_facts_merge_in_three_ranges_without_deleting_history(self) -> None:
+        """Daily fact batches are idempotent and retain target-only history."""
+        for table in publish_catalog.DAILY_FACT_BATCHES:
+            with self.subTest(table=table):
+                key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
+                for alias in ("staged_silver", "publish_silver"):
+                    self.con.execute(
+                        f"CREATE TABLE {alias}.silver.{table} "
+                        f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+                    )
+                self.con.execute(
+                    f"INSERT INTO staged_silver.silver.{table} VALUES "
+                    "('1|row', 1, 11), ('5|row', 5, 50), "
+                    "('9|row', 9, 90), ('12|row', 12, 120)"
+                )
+                self.con.execute(
+                    f"INSERT INTO publish_silver.silver.{table} VALUES "
+                    "('1|row', 1, 10), ('20|old', 20, 200)"
+                )
+
+                class RecordStatements:
+                    def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+                        self.connection = connection
+                        self.statements: list[str] = []
+
+                    def execute(self, statement: str) -> duckdb.DuckDBPyConnection:
+                        self.statements.append(statement)
+                        return self.connection.execute(statement)
+
+                recording = RecordStatements(self.con)
+                for _ in range(2):
+                    publish_catalog.publish_table(
+                        recording, "silver", table, "daily_refresh"
+                    )
+                self.assertEqual(
+                    sum(sql.startswith("MERGE INTO") for sql in recording.statements),
+                    publish_catalog.DAILY_FACT_BATCHES[table] * 2,
+                )
+                self.assertFalse(
+                    any(sql.startswith("DELETE FROM") for sql in recording.statements)
+                )
+                self.assertEqual(
+                    self.con.execute(
+                        f"SELECT order_id, amount FROM publish_silver.silver.{table} "
+                        "ORDER BY order_id"
+                    ).fetchall(),
+                    [(1, 11), (5, 50), (9, 90), (12, 120), (20, 200)],
+                )
+                self.con.execute(f"DROP TABLE staged_silver.silver.{table}")
+                self.con.execute(f"DROP TABLE publish_silver.silver.{table}")
+
     def test_large_full_history_facts_use_configured_complete_ranges(self) -> None:
         """Configured merges update, insert, and remove keys across both endpoints."""
         for table in publish_catalog.FULL_REBUILD_FACT_BATCHES:

@@ -19,6 +19,10 @@ FULL_REBUILD_FACT_BATCHES = {
     "fact_order_product": 6,
     "fact_order_status_history": 3,
 }
+DAILY_FACT_BATCHES = {
+    "fact_delivery_tracking": 3,
+    "fact_order_product": 3,
+}
 CONTRACT = load_contract()
 
 
@@ -188,7 +192,7 @@ def merge_upsert(
     return predicate
 
 
-def publish_full_history_fact_in_batches(
+def publish_fact_in_batches(
     con: duckdb.DuckDBPyConnection,
     table: str,
     source: str,
@@ -196,8 +200,12 @@ def publish_full_history_fact_in_batches(
     keys: tuple[str, ...],
     batches: int,
     row_count: int,
+    *,
+    remove_missing: bool,
 ) -> None:
-    """Bound each full-history merge and stale-row cleanup by order ID."""
+    """Bound large fact merges by order ID, cleaning only complete sources."""
+    if batches < 1:
+        raise ValueError("Fact publication requires at least one batch")
     if con.execute(
         f"SELECT 1 FROM {source} WHERE order_id IS NULL LIMIT 1"
     ).fetchone():
@@ -206,11 +214,18 @@ def publish_full_history_fact_in_batches(
     existing_target = target_exists(con, target)
     if not existing_target:
         raise ValueError(f"Published table {target} is missing; run catalog initialization first")
-    bounds = con.execute(
-        f"SELECT min(order_id), max(order_id) FROM ("
-        f"SELECT order_id FROM {source} UNION ALL "
-        f"SELECT order_id FROM {target})"
-    ).fetchone()
+    if remove_missing:
+        bounds = con.execute(
+            f"SELECT min(order_id), max(order_id) FROM ("
+            f"SELECT order_id FROM {source} UNION ALL "
+            f"SELECT order_id FROM {target})"
+        ).fetchone()
+    else:
+        # Daily fact sources are partial. Their ranges bound the merge work;
+        # target-only history must remain untouched.
+        bounds = con.execute(
+            f"SELECT min(order_id), max(order_id) FROM {source}"
+        ).fetchone()
 
     lower, maximum = bounds
     span = maximum - lower + 1
@@ -236,7 +251,7 @@ def publish_full_history_fact_in_batches(
             f"AND order_id < {stop})"
         )
         predicate = merge_upsert(con, source, target, keys, selected)
-        if existing_target:
+        if existing_target and remove_missing:
             # A full-source DELETE inside one batch would erase the other two.
             # The union bounds also include stale target IDs outside staging.
             con.execute(
@@ -251,8 +266,23 @@ def publish_full_history_fact_in_batches(
             f"published in {monotonic() - started:.1f}s",
             flush=True,
         )
-    if existing_target:
+    if existing_target and remove_missing:
         con.execute(f"DELETE FROM {target} WHERE order_id IS NULL")
+
+
+def publish_full_history_fact_in_batches(
+    con: duckdb.DuckDBPyConnection,
+    table: str,
+    source: str,
+    target: str,
+    keys: tuple[str, ...],
+    batches: int,
+    row_count: int,
+) -> None:
+    """Keep the full-history helper API for complete fact synchronization."""
+    publish_fact_in_batches(
+        con, table, source, target, keys, batches, row_count, remove_missing=True
+    )
 
 
 def publish_table(
@@ -270,12 +300,26 @@ def publish_table(
     target = ".".join(map(identifier, (f"publish_{layer}", layer, table)))
     complete_source = is_complete_source(layer, table, run_mode)
     if layer == "silver" and run_mode == "full_history" and table in FULL_REBUILD_FACT_BATCHES:
-        publish_full_history_fact_in_batches(
+        publish_fact_in_batches(
             con, table, source, target,
             CONTRACT.table(layer, table).publication["merge_keys"],
             FULL_REBUILD_FACT_BATCHES[table], row_count,
+            remove_missing=True,
         )
         action = "synchronized in batches"
+    elif (
+        layer == "silver"
+        and run_mode == "daily_refresh"
+        and table in DAILY_FACT_BATCHES
+        and row_count > 0
+    ):
+        publish_fact_in_batches(
+            con, table, source, target,
+            CONTRACT.table(layer, table).publication["merge_keys"],
+            DAILY_FACT_BATCHES[table], row_count,
+            remove_missing=False,
+        )
+        action = "merged in batches"
     elif row_count == 0:
         action = "unchanged (empty daily slice)"
     else:

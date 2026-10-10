@@ -105,10 +105,13 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
             },
         )
     else:
+        daily_memory_default = "7GB" if layer == "silver" else "4GB"
         env.update(
             {
                 "DBT_THREADS": Variable.get("iceberg_dbt_threads", default="2"),
-                "DUCKDB_MEMORY_LIMIT": Variable.get("iceberg_dbt_duckdb_memory_limit", default="4GB"),
+                "DUCKDB_MEMORY_LIMIT": Variable.get(
+                    "iceberg_dbt_duckdb_memory_limit", default=daily_memory_default
+                ),
                 "DUCKDB_WORKER_THREADS": Variable.get("iceberg_dbt_duckdb_threads", default="3"),
                 "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": Variable.get("iceberg_dbt_duckdb_max_temp_directory_size", default=""),
             }

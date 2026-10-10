@@ -16,9 +16,11 @@ Lakekeeper. A Gold run reads published Silver through Lakekeeper and stages
 only Gold output locally. Gold never reads a local Silver workspace.
 
 Silver daily runs use the current and previous month window for their fact
-inputs. Fact publication merges the staged keys without deleting history
-outside that slice. Complete Silver dimensions and budgets also remove keys
-absent from their staged source. Every Gold run reads all published Silver
+inputs. Daily `fact_delivery_tracking` and `fact_order_product` publication
+splits the staged rows into three deterministic `order_id` ranges per table.
+Each range is an independent keyed merge; it preserves target-only history
+outside the partial daily input, and retries converge by replaying the ranges.
+Complete Silver dimensions and budgets also remove keys absent from their staged source. Every Gold run reads all published Silver
 history and stages complete snapshots of all eight aggregates. Daily and
 full-history Gold publication both delete keys missing from the validated
 snapshot; an empty complete Gold model fails before any table is changed.
@@ -33,10 +35,10 @@ The Gold Iceberg tables are `marketing_sales_budget_monthly_store`,
 
 Three large Silver fact tables use deterministic `order_id` ranges during a
 full-history publish: `fact_delivery_tracking`, `fact_order_product`, and
-`fact_order_status_history`. `fact_order_product` uses six ranges to keep each
-large merge smaller; the other two use three. Each range is its own Iceberg
-commit. A retry converges by merging each range again. Catalog initialization
-must run first; the publisher does not create or replace target tables.
+`fact_order_status_history`. `fact_order_product` uses six ranges; the other
+two use three. Each range is its own Iceberg commit; a retry converges by
+merging each range again. Catalog initialization must run first; the publisher
+does not create or replace target tables.
 
 The Silver/Gold write layout follows DuckDB Iceberg 1.5 capabilities. These
 tables have no sort order because DuckDB mutations reject sorted tables. Silver
@@ -72,6 +74,9 @@ Daily pod settings use `iceberg_dbt_threads`,
 `iceberg_dbt_duckdb_max_temp_directory_size`, `iceberg_dbt_cpu_request`,
 `iceberg_dbt_cpu_limit`, `iceberg_dbt_pod_memory_request`, and
 `iceberg_dbt_pod_memory_limit`.
+The Silver daily DuckDB memory limit defaults to 7 GB under its 10 GiB pod
+limit, leaving room for dbt, Python, and native process overhead. Gold keeps its
+4 GB daily default.
 
 Full-history pod settings use `iceberg_full_rebuild_dbt_threads`,
 `iceberg_full_rebuild_duckdb_threads`,
