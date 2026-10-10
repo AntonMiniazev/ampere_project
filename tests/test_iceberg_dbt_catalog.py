@@ -66,6 +66,8 @@ class DuckDBCatalogTests(unittest.TestCase):
                     "DUCKDB_WORKER_THREADS": "2",
                     "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
                     "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": "2GB",
+                    "ICEBERG_LAYER": "silver",
+                    "ICEBERG_PUBLISH_MODE": "staged",
                     "MINIO_S3_ENDPOINT": "http://127.0.0.1:9000",
                     "MINIO_ACCESS_KEY": "dummy-access",
                     "MINIO_SECRET_KEY": "dummy-secret",
@@ -110,8 +112,8 @@ class DuckDBCatalogTests(unittest.TestCase):
                         check=False,
                     )
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-                for layer in ("bronze", "silver", "gold"):
-                    self.assertIn(f"iceberg_{layer}", completed.stdout)
+                self.assertIn("iceberg_bronze", completed.stdout)
+                self.assertIn("iceberg_silver", completed.stdout)
 
                 selected = subprocess.run(
                     ["dbt", "ls", "--project-dir", str(ROOT / "dbt_iceberg"),
@@ -122,25 +124,29 @@ class DuckDBCatalogTests(unittest.TestCase):
                 self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
                 self.assertIn("gold_sales_financial_revenue_consistency", selected.stdout)
 
-                # The daily run builds Silver/Gold into pod-local DuckDB files
-                # before a separate publisher touches the Iceberg catalogs.
-                with patch.dict(os.environ, settings | {"ICEBERG_PUBLISH_MODE": "staged"}):
+                # Each layer has one staged output and reads its upstream layer
+                # through Lakekeeper.
+                with patch.dict(os.environ, settings | {"ICEBERG_LAYER": "silver"}):
                     module.prepare()
                     staged = yaml.safe_load(profile.read_text())["ampere_iceberg_project"]["outputs"]["prod"]
                     attaches = {item["alias"]: item for item in staged["attach"]}
                     self.assertEqual(attaches["iceberg_bronze"]["type"], "iceberg")
-                    for layer in ("silver", "gold"):
-                        attachment = attaches[f"iceberg_{layer}"]
-                        self.assertNotIn("type", attachment)
-                        self.assertEqual(
-                            Path(attachment["path"]).name, f"staged_{layer}.duckdb"
-                        )
+                    self.assertNotIn("type", attaches["iceberg_silver"])
+                    self.assertEqual(Path(attaches["iceberg_silver"]["path"]).name, "staged_silver.duckdb")
                     completed = subprocess.run(
                         ["dbt", "debug", "--project-dir", str(ROOT / "dbt_iceberg"),
                          "--profiles-dir", settings["DBT_PROFILES_DIR"]],
                         capture_output=True, text=True, timeout=30, check=False,
                     )
                     self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+                with patch.dict(os.environ, settings | {"ICEBERG_LAYER": "gold"}):
+                    module.prepare()
+                    staged = yaml.safe_load(profile.read_text())["ampere_iceberg_project"]["outputs"]["prod"]
+                    attaches = {item["alias"]: item for item in staged["attach"]}
+                    self.assertEqual(attaches["iceberg_silver"]["type"], "iceberg")
+                    self.assertNotIn("type", attaches["iceberg_gold"])
+                    self.assertEqual(Path(attaches["iceberg_gold"]["path"]).name, "staged_gold.duckdb")
 
                     completed = subprocess.run(
                         [
@@ -229,7 +235,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                         else:
                             self.assertIn("in (select order_id from", event_sql)
 
-                with patch.dict(os.environ, settings | {"ICEBERG_PUBLISH_MODE": "staged"}):
+                with patch.dict(os.environ, settings | {"ICEBERG_LAYER": "silver"}):
                     target_path = Path(temp_dir) / "target-staged"
                     completed = subprocess.run(
                         [

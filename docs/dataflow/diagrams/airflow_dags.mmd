@@ -3,20 +3,30 @@ flowchart TD
     D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD["curie<br/>cache_refresh<br/>post_iceberg_gold<br/>schedule: manual / triggered"]
     D_AMPERE__HOUSEKEEPING__ICEBERG_METADATA__WEEKLY["housekeeping<br/>iceberg_metadata<br/>weekly<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY["iceberg<br/>bronze<br/>raw_to_iceberg<br/>daily<br/>schedule: manual / triggered"]
-    D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__DAILY["iceberg<br/>silver_gold<br/>dbt_duckdb<br/>daily<br/>schedule: manual / triggered"]
-    D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__FULL_REBUILD["iceberg<br/>silver_gold<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__FULL_REBUILD["iceberg<br/>bronze<br/>raw_to_iceberg<br/>full_rebuild<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__CATALOG__INIT["iceberg<br/>catalog<br/>init<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__DAILY["iceberg<br/>gold<br/>dbt_duckdb<br/>daily<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD["iceberg<br/>gold<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY["iceberg<br/>silver<br/>dbt_duckdb<br/>daily<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD["iceberg<br/>silver<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
     D_AMPERE__PRE_RAW__GENERATORS__DAILY["pre_raw<br/>generators<br/>daily<br/>schedule: 15 4 * * *"]
     D_AMPERE__PRE_RAW__GENERATORS__INIT["pre_raw<br/>generators<br/>init<br/>schedule: manual / triggered"]
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY["raw_landing<br/>postgres_to_landing<br/>daily<br/>schedule: manual / triggered"]
 
     START --> D_AMPERE__PRE_RAW__GENERATORS__DAILY
     D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD -->|"upstream success; does not wait"| D_AMPERE__HOUSEKEEPING__ICEBERG_METADATA__WEEKLY
-    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__DAILY
-    D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__DAILY -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
-    D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
+    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY
+    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__FULL_REBUILD -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD
+    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__DAILY -->|"upstream success; waits for completion"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
+    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; waits for completion"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
+    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__DAILY
+    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD
     D_AMPERE__PRE_RAW__GENERATORS__DAILY -->|"upstream success; does not wait"| D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY
 
     D_AMPERE__PRE_RAW__GENERATORS__INIT:::manual
-    D_AMPERE__ICEBERG__SILVER_GOLD__DBT_DUCKDB__FULL_REBUILD:::manual
+    D_AMPERE__ICEBERG__CATALOG__INIT:::manual
+    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__FULL_REBUILD:::manual
+    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD:::manual
+    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD:::manual
     classDef manual fill:#dbeafe,stroke:#2563eb,color:#111827,stroke-dasharray: 4 3

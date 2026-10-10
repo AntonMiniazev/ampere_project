@@ -2,25 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import re
-from functools import lru_cache
-from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
+from tools.contracts.ampere_contract import ResolvedTable, load_contract
+from tools.contracts.spark_conformance import quote_identifier, validate_spark_table
 
-DEFAULT_CONTRACT = Path("/opt/spark/app/bronze_contract.json")
-VALID_SQL_TYPE = re.compile(
-    r"(?:boolean|date|timestamp|smallint|int|string|decimal\(\d+,\d+\))",
-    re.IGNORECASE,
-)
+CONTRACT = load_contract()
 
 
-def quote_ident(value: str) -> str:
-    """Quote a contract identifier for Spark SQL."""
-    return "`" + value.replace("`", "``") + "`"
+quote_ident = quote_identifier
 
 
 def parse_bool_flag(value: object, default: bool = False) -> bool:
@@ -30,19 +21,10 @@ def parse_bool_flag(value: object, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-@lru_cache(maxsize=1)
-def _bronze_tables() -> dict[str, dict]:
-    """Index the canonical Bronze contract by table name."""
-    path = Path(os.getenv("ICEBERG_CONTRACT_PATH", str(DEFAULT_CONTRACT)))
-    contract = json.loads(path.read_text(encoding="utf-8"))
-    tables = contract["catalog"]["layers"]["bronze"]["tables"]
-    return {entry["table_name"]: entry for entry in tables}
-
-
-def _table_spec(schema: str, table: str) -> dict:
-    """Reject targets absent from the canonical Bronze contract."""
-    spec = _bronze_tables().get(table)
-    if spec is None or spec["schema_name"] != schema:
+def _table_spec(schema: str, table: str) -> ResolvedTable:
+    """Resolve a Bronze table from the shared v3 contract."""
+    spec = CONTRACT.table("bronze", table)
+    if spec.namespace != schema:
         raise ValueError(f"Missing Iceberg contract for {schema}.{table}")
     return spec
 
@@ -92,50 +74,18 @@ def ensure_iceberg_table(
     table: str,
     logger: logging.Logger,
 ) -> str:
-    """Create an isolated Iceberg target with the current Bronze column model."""
+    """Require a pre-initialized Bronze table to match contract v3."""
     spec = _table_spec(schema, table)
     fq_schema = f"{quote_ident(catalog)}.{quote_ident(schema)}"
     fqtn = f"{fq_schema}.{quote_ident(table)}"
-    column_specs = sorted(spec["columns"], key=lambda item: item["position"])
-    if schema == "ops" and table == "bronze_apply_registry":
-        # The UC external-table contract has no columns for this operational
-        # table; its writer schema is the authoritative registry definition.
-        registry_path = Path(__file__).with_name("bronze_apply_registry_schema.json")
-        column_specs = [
-            {"name": field["name"], "type_text": field["type"]}
-            for field in json.loads(registry_path.read_text(encoding="utf-8"))["fields"]
-        ]
-    columns = []
-    for column in column_specs:
-        data_type = str(column["type_text"]).strip().lower()
-        if not VALID_SQL_TYPE.fullmatch(data_type):
-            raise ValueError(f"Unsupported contract type for {table}: {data_type}")
-        columns.append(f"{quote_ident(column['name'])} {data_type}")
-    if not columns:
-        raise ValueError(f"No contract columns for {schema}.{table}")
-    partition_key = (
-        spec.get("stream_group", {}).get("group_config", {}).get("partition_key")
-    )
-    if schema == "ops":
-        partition_key = "source_table"
-    column_names = {column["name"] for column in column_specs}
-    # Mutable dimensions use extract_date only to locate Raw batches. Their
-    # Bronze contract has no extract_date column, so keep them unpartitioned.
-    if partition_key and partition_key not in column_names:
-        if partition_key == "extract_date":
-            partition_key = None
-        else:
-            raise ValueError(f"Partition column {partition_key} absent from {schema}.{table}")
-    partition_sql = (
-        f" PARTITIONED BY ({quote_ident(partition_key)})" if partition_key else ""
-    )
-    spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {fq_schema}")
-    spark.sql(
-        f"CREATE TABLE IF NOT EXISTS {fqtn} ({', '.join(columns)}) "
-        f"USING iceberg{partition_sql} "
-        "TBLPROPERTIES ('format-version' = '2')"
-    )
-    logger.info("Ensured Iceberg target %s", fqtn)
+    try:
+        validate_spark_table(spark, catalog, spec)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Contract v{CONTRACT.version} expects initialized table {fqtn}; "
+            "run ampere__iceberg__catalog__init first"
+        ) from exc
+    logger.info("Validated contract v%s table %s", CONTRACT.version, fqtn)
     return fqtn
 
 
@@ -153,7 +103,7 @@ def align_df_to_iceberg_schema(
     spec = _table_spec(schema, table)
     expressions = []
     input_columns = set(df.columns)
-    for column in sorted(spec["columns"], key=lambda item: item["position"]):
+    for column in spec.columns:
         name = column["name"]
         dtype = column["type_text"]
         expression = F.col(quote_ident(name)) if name in input_columns else F.lit(None)

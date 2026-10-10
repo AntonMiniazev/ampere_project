@@ -1,16 +1,17 @@
-"""Publish a validated daily dbt slice without replacing Iceberg history."""
+"""Validate and publish one contract-v3 dbt layer to Lakekeeper."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from time import monotonic
 
 import duckdb
 
 from duckdb_runtime import runtime_settings
+from tools.contracts.ampere_contract import load_contract
 
 
 # Every published model needs a stable business grain. Complete staged models
@@ -53,12 +54,12 @@ COMPLETE_MODELS = {
     "gold": frozenset(),
 }
 NULLABLE_MERGE_KEYS: dict[tuple[str, str], frozenset[str]] = {}
-EXPECTED_MODEL_COUNT = {"silver": 17, "gold": 8}
 FULL_REBUILD_FACT_BATCHES = {
     "fact_delivery_tracking": 3,
     "fact_order_product": 3,
     "fact_order_status_history": 3,
 }
+CONTRACT = load_contract()
 
 
 def identifier(value: str) -> str:
@@ -80,18 +81,41 @@ def publish_models(manifest_path: Path, layer: str) -> list[str]:
         if node.get("resource_type") == "model"
         and {layer, "publish"}.issubset(set(node.get("tags", [])))
     ]
-    if len(tables) != EXPECTED_MODEL_COUNT[layer] or len(set(tables)) != len(tables):
+    expected_tables = {table.name for table in CONTRACT.layer_tables(layer)}
+    if len(set(tables)) != len(tables):
         raise RuntimeError(
-            f"Expected {EXPECTED_MODEL_COUNT[layer]} unique {layer} publish models; "
-            f"found {len(tables)}. Refusing a partial publication."
+            f"Duplicate {layer} publish models found; refusing publication"
         )
-    if set(tables) != set(MERGE_KEYS[layer]):
+    if set(tables) != expected_tables:
         raise RuntimeError(
-            f"{layer} publish models do not match configured merge keys. "
-            f"Missing keys: {sorted(set(tables) - set(MERGE_KEYS[layer]))}; "
-            f"unexpected keys: {sorted(set(MERGE_KEYS[layer]) - set(tables))}"
+            f"{layer} models do not match contract v{CONTRACT.version}. "
+            f"Missing: {sorted(expected_tables - set(tables))}; "
+            f"unexpected: {sorted(set(tables) - expected_tables)}"
         )
+    missing_keys = expected_tables - set(MERGE_KEYS[layer])
+    if missing_keys:
+        raise RuntimeError(f"Missing publisher business keys for {layer}: {sorted(missing_keys)}")
     return sorted(tables)
+
+
+def _normalized_type(value: str) -> str:
+    normalized = value.strip().lower().replace(" ", "")
+    return {"varchar": "string", "text": "string", "integer": "int", "timestamp": "timestamp_ntz"}.get(normalized, normalized)
+
+
+def _assert_contract_schema(con: duckdb.DuckDBPyConnection, relation: str, layer: str, table: str) -> None:
+    spec = CONTRACT.table(layer, table)
+    actual = [(row[0], _normalized_type(row[1])) for row in con.execute(f"DESCRIBE {relation}").fetchall()]
+    expected = [(column["name"], _normalized_type(column["type_text"])) for column in spec.columns]
+    if actual != expected:
+        raise ValueError(f"Contract v{CONTRACT.version} schema mismatch for {relation}: expected {expected}, observed {actual}")
+
+
+def _assert_contract_iceberg_table(con: duckdb.DuckDBPyConnection, relation: str, layer: str, table: str) -> None:
+    spec = CONTRACT.table(layer, table)
+    from tools.contracts.duckdb_conformance import validate_duckdb_table
+
+    validate_duckdb_table(con, relation, spec)
 
 
 def assert_unique_keys(
@@ -138,15 +162,15 @@ def validate_table(
     """Check a complete staged table before any Iceberg table is changed."""
     source = ".".join(map(identifier, (f"staged_{layer}", layer, table)))
     target = ".".join(map(identifier, (f"publish_{layer}", layer, table)))
+    if not target_exists(con, target):
+        raise ValueError(
+            f"Published table {target} is missing; run ampere__iceberg__catalog__init first"
+        )
     row_count = con.execute(f"SELECT count(*) FROM {source}").fetchone()[0]
     complete_source = is_complete_source(layer, table, run_mode)
     if complete_source:
         if row_count == 0:
             raise ValueError(f"Refusing to synchronize {target} from an empty table")
-    if run_mode == "daily_refresh" and not target_exists(con, target):
-        raise ValueError(
-            f"Published table {target} is missing; run a full rebuild first"
-        )
     keys = MERGE_KEYS[layer][table]
     nullable_keys = NULLABLE_MERGE_KEYS.get((layer, table), frozenset())
     if row_count:
@@ -211,16 +235,13 @@ def publish_full_history_fact_in_batches(
         raise ValueError(f"Staged relation {source} has null order_id")
 
     existing_target = target_exists(con, target)
-    if existing_target:
-        bounds = con.execute(
-            f"SELECT min(order_id), max(order_id) FROM ("
-            f"SELECT order_id FROM {source} UNION ALL "
-            f"SELECT order_id FROM {target})"
-        ).fetchone()
-    else:
-        bounds = con.execute(
-            f"SELECT min(order_id), max(order_id) FROM {source}"
-        ).fetchone()
+    if not existing_target:
+        raise ValueError(f"Published table {target} is missing; run catalog initialization first")
+    bounds = con.execute(
+        f"SELECT min(order_id), max(order_id) FROM ("
+        f"SELECT order_id FROM {source} UNION ALL "
+        f"SELECT order_id FROM {target})"
+    ).fetchone()
 
     lower, maximum = bounds
     span = maximum - lower + 1
@@ -237,10 +258,6 @@ def publish_full_history_fact_in_batches(
     ).fetchone()
     if sum(counts) != row_count:
         raise ValueError(f"Batch ranges do not cover staged {source}: {counts}")
-    if not existing_target:
-        # A new table receives the same bounded merge path as an existing one.
-        con.execute(f"CREATE TABLE {target} AS SELECT * FROM {source} WHERE FALSE")
-
     for index, ((start, stop), batch_count) in enumerate(zip(ranges, counts)):
         if start == stop:
             continue
@@ -289,9 +306,6 @@ def publish_table(
             FULL_REBUILD_FACT_BATCHES[table], row_count,
         )
         action = "synchronized in batches"
-    elif complete_source and not target_exists(con, target):
-        con.execute(f"CREATE TABLE {target} AS SELECT * FROM {source}")
-        action = "created"
     elif row_count == 0:
         action = "unchanged (empty daily slice)"
     else:
@@ -322,6 +336,19 @@ def attach_catalogs(
     """Attach read-only staged files and their separate published warehouses."""
     con.execute("LOAD iceberg")
     con.execute("LOAD httpfs")
+    con.execute("SET ignore_target_file_size_for_partitioned_tables = true")
+    for layer in layers:
+        partitioned_target_tables = [
+            table.name
+            for table in CONTRACT.layer_tables(layer)
+            if table.partition_spec and table.write.get("target_file_size_bytes") is not None
+        ]
+        if partitioned_target_tables:
+            print(
+                f"DuckDB Iceberg defers target-file sizing for {layer} partitioned tables "
+                f"{partitioned_target_tables} to contract-driven Spark compaction",
+                flush=True,
+            )
     for layer in layers:
         local_path = workspace.parent / f"staged_{layer}.duckdb"
         con.execute(
@@ -335,74 +362,48 @@ def attach_catalogs(
         )
 
 
-def publish_layer(
-    workspace: Path,
-    settings: dict[str, object],
-    layer: str,
-    tables: list[str],
-    run_mode: str,
-    row_counts: dict[tuple[str, str], int],
-) -> None:
-    """Publish one warehouse on its own DuckDB connection."""
-    con = duckdb.connect(":memory:", config=settings)
-    try:
-        attach_catalogs(con, workspace, (layer,))
-        for table in tables:
-            publish_table(con, layer, table, run_mode, row_counts[layer, table])
-    finally:
-        con.close()
-
-
-def publish() -> None:
-    """Attach local dbt outputs and Lakekeeper warehouses, then publish."""
+def publish(layer: str) -> None:
+    """Validate and publish only the selected layer's staged outputs."""
+    if layer not in {"silver", "gold"}:
+        raise ValueError("Publisher layer must be silver or gold")
     workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_work.duckdb"))
     manifest = (
         Path(os.getenv("DBT_PROJECT_DIR", "/app/dbt_iceberg")) / "target/manifest.json"
     )
-    models = {layer: publish_models(manifest, layer) for layer in ("silver", "gold")}
+    models = publish_models(manifest, layer)
     settings = runtime_settings(workspace)
-    parallel_layers = int(os.getenv("ICEBERG_PUBLISH_PARALLEL_LAYERS", "1"))
-    if parallel_layers not in (1, 2):
-        raise ValueError("ICEBERG_PUBLISH_PARALLEL_LAYERS must be 1 or 2")
     started = monotonic()
     con = duckdb.connect(":memory:", config=settings)
     try:
-        attach_catalogs(con, workspace, ("silver", "gold"))
-        run_modes = {}
+        attach_catalogs(con, workspace, (layer,))
+        run_mode = os.getenv("ICEBERG_RUN_MODE", "daily_refresh")
+        if run_mode not in {"daily_refresh", "full_history"}:
+            raise ValueError(f"Unsupported run mode: {run_mode}")
         row_counts = {}
-        for layer in ("silver", "gold"):
-            run_mode = os.getenv(f"{layer.upper()}_RUN_MODE", "daily_refresh")
-            if run_mode not in {"daily_refresh", "full_history"}:
-                raise ValueError(f"Unsupported {layer} run mode: {run_mode}")
-            run_modes[layer] = run_mode
-            for table in models[layer]:
-                row_counts[layer, table] = validate_table(con, layer, table, run_mode)
+        for table in models:
+            source = ".".join(map(identifier, (f"staged_{layer}", layer, table)))
+            target = ".".join(map(identifier, (f"publish_{layer}", layer, table)))
+            if not target_exists(con, target):
+                raise ValueError(f"Published table {target} is missing; run catalog initialization first")
+            _assert_contract_schema(con, source, layer, table)
+            _assert_contract_iceberg_table(con, target, layer, table)
+            row_counts[table] = validate_table(con, layer, table, run_mode)
     finally:
         con.close()
-    print(f"Validated all staged tables in {monotonic() - started:.1f}s", flush=True)
+    print(f"Validated {len(models)} staged {layer} tables in {monotonic() - started:.1f}s", flush=True)
 
     publish_started = monotonic()
-    if parallel_layers == 1:
-        for layer in ("silver", "gold"):
-            publish_layer(
-                workspace, settings, layer, models[layer], run_modes[layer], row_counts
-            )
-    else:
-        # The warehouses are distinct; each worker writes one catalog, and
-        # the pod succeeds only after both have completed. Per-table Iceberg
-        # commits remain independent, so a retry must finish partial work.
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [
-                executor.submit(
-                    publish_layer, workspace, settings, layer, models[layer],
-                    run_modes[layer], row_counts,
-                )
-                for layer in ("silver", "gold")
-            ]
-            for future in futures:
-                future.result()
-    print(f"Published both layers in {monotonic() - publish_started:.1f}s", flush=True)
+    con = duckdb.connect(":memory:", config=settings)
+    try:
+        attach_catalogs(con, workspace, (layer,))
+        for table in models:
+            publish_table(con, layer, table, run_mode, row_counts[table])
+    finally:
+        con.close()
+    print(f"Published {layer} in {monotonic() - publish_started:.1f}s", flush=True)
 
 
 if __name__ == "__main__":
-    publish()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--layer", required=True, choices=("silver", "gold"))
+    publish(parser.parse_args().layer)

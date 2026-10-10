@@ -74,7 +74,7 @@ jobs:
                   "file": "docker/spark/iceberg_raw_etl/Dockerfile",
                   "paths": [
                       "docker/spark/iceberg_raw_etl/",
-                      "tools/iceberg/contracts/ampere_tables.json",
+                      "tools/contracts/",
                   ],
               },
               {
@@ -84,6 +84,7 @@ jobs:
                   "paths": [
                       "dbt_iceberg/",
                       "docker/dbt_iceberg/",
+                      "tools/contracts/",
                       "tools/budget_generation/budget_parameters_daily.csv",
                   ],
               },

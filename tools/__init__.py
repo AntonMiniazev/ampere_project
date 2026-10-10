@@ -1,1 +1,1 @@
-"""Local project tooling package."""
+"""Shared Ampere tools packaged into pipeline images."""

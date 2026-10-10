@@ -6,11 +6,12 @@ on:
     branches: [migration/iceberg, main]
     paths:
       - docker/spark/iceberg_raw_etl/**
-      - tools/iceberg/contracts/ampere_tables.json
+      - tools/contracts/**
       - tests/test_iceberg_bronze_contract.py
       - tests/test_iceberg_bronze_spark.py
       - tests/test_iceberg_mutable_dedup.py
       - tests/test_iceberg_housekeeping.py
+      - dags/sparkapplications/catalog_init_template_iceberg.yaml
       - .github/workflows/build-ampere-spark-iceberg.yml
 
 permissions:
@@ -22,9 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,6 +39,7 @@ jobs:
         env:
           ICEBERG_RUNTIME_JAR: ${{ github.workspace }}/iceberg-runtime.jar
         run: |
+          python tools/contracts/ampere_contract.py
           python -m unittest discover -s tests -p 'test_iceberg_bronze*.py' -v
           python -m unittest discover -s tests -p 'test_iceberg_mutable_dedup.py' -v
           python -m unittest discover -s tests -p 'test_iceberg_housekeeping.py' -v

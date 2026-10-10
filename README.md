@@ -14,11 +14,11 @@ flowchart LR
     O --> C[Curie cache refresh]
 ```
 
-The `ampere__pre_raw__generators__daily` DAG starts the daily chain on cron `15 4 * * *` (04:15 in the Airflow DAG timezone). It triggers Raw landing. Raw triggers `ampere__iceberg__bronze__raw_to_iceberg__daily`, Bronze triggers `ampere__iceberg__silver_gold__dbt_duckdb__daily`, and successful Gold publication triggers `ampere__curie__cache_refresh__post_iceberg_gold`. A successful Sunday Curie refresh triggers `ampere__housekeeping__iceberg_metadata__weekly`. These downstream DAGs have no independent schedule. The `ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` DAG is a manual recovery entrypoint. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
+The `ampere__pre_raw__generators__daily` DAG starts the daily chain on cron `15 4 * * *` (04:15 in the Airflow DAG timezone). It triggers Raw, Bronze daily, Silver daily, Gold daily, and Curie's cache refresh in sequence. Each downstream DAG is trigger-only and preserves the logical date. A successful Sunday Curie refresh triggers `ampere__housekeeping__iceberg_metadata__weekly`. The full rebuild uses separate Bronze, Silver, and Gold DAGs; catalog initialization is its own manual DAG. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
 
-Raw writes Parquet files, a manifest, a success marker, and extraction state. Bronze applies completed batches by table behavior and records them in an Iceberg apply registry. Daily dbt builds and tests a local slice before publishing it to Lakekeeper. Facts use keyed updates and inserts; complete dimensions and budgets also remove keys absent from their staged source. The manual full rebuild recreates Silver and Gold from all available Bronze history.
+The canonical [contract v3](tools/contracts/ampere_tables.json) defines schemas, physical layouts, write profiles, and maintenance policies for all 42 Iceberg tables. Run `ampere__iceberg__catalog__init` after the owner's catalog cleanup; it creates empty namespaces and tables, and refuses schema/layout conflicts. Raw writes Parquet files, manifests, success markers, and extraction state. Bronze applies validated batches and records them in its contract-defined apply registry. Silver and Gold run in separate short-lived dbt/DuckDB pods, each staging and testing one layer before publishing. Facts use keyed updates and inserts; complete dimensions and budgets also remove keys absent from their staged source. The Bronze full rebuild replays all validated Raw history; Silver and Gold full rebuilds follow it.
 
-Weekly housekeeping uses Spark Connect to expire snapshots and remove orphan files older than 14 days. It bounds previous metadata JSON versions, preserves the current snapshot, and does not rewrite active data files. The housekeeping DAG can also be triggered manually.
+Weekly housekeeping uses Spark Connect for contract-driven data-file compaction, manifest rewrite thresholds, snapshot expiration, and orphan cleanup. Policies are resolved per table from contract v3. The job checks table schema, partitioning, and properties before maintenance and keeps a 14-day snapshot/orphan retention window.
 
 ## Repository layout
 
@@ -26,7 +26,7 @@ Weekly housekeeping uses Spark Connect to expire snapshots and remove orphan fil
 - `docker/spark/iceberg_raw_etl/`: the Spark image for both Raw extraction and Iceberg Bronze application.
 - `docker/dbt_iceberg/` and `dbt_iceberg/`: the dbt v2 runtime, SQL models, tests, and Iceberg publisher.
 - `docker/init_source_preparation/` and `docker/order_data_generator/`: source generators.
-- `tools/iceberg/contracts/`: Bronze schema contract used by the Spark image.
+- `tools/contracts/`: canonical Iceberg contract and shared resolver packaged in Spark and dbt images.
 - `tools/budget_generation/`: tracked budget input and daily budget generation.
 - `docs/`: generated dataflow diagrams and operational documentation.
 - `tests/`: checks for the active Spark and dbt paths.

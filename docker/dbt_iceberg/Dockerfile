@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -17,6 +17,8 @@ RUN python -m pip install -r /tmp/requirements.txt \
     && python -c "import duckdb; c=duckdb.connect(); c.execute('INSTALL iceberg'); c.execute('INSTALL httpfs')"
 
 COPY dbt_iceberg /app/dbt_iceberg
+COPY tools/__init__.py /app/tools/__init__.py
+COPY tools/contracts/ /app/tools/contracts/
 COPY tools/budget_generation/budget_parameters_daily.csv /app/budget_parameters_daily.csv
 COPY docker/dbt_iceberg/prepare_catalog.py /app/prepare_catalog.py
 COPY docker/dbt_iceberg/duckdb_runtime.py /app/duckdb_runtime.py

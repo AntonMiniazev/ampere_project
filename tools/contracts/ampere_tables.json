@@ -1,0 +1,3144 @@
+{
+  "contract_version": 3,
+  "contract_status": "proposal_not_deployed",
+  "catalog": {
+    "ampere": {
+      "layers": {
+        "bronze": {
+          "assortment": {
+            "columns": [
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 5
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 12
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "clients": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "fullname",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "preferred_store_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "registration_date",
+                "type_text": "date",
+                "position": 4
+              },
+              {
+                "name": "updated_at",
+                "type_text": "date",
+                "position": 5
+              },
+              {
+                "name": "churned",
+                "type_text": "boolean",
+                "position": 6
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 9
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 15
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "extract_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_mutable_small",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "costing": {
+            "columns": [
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "avg_cost",
+                "type_text": "decimal(10,2)",
+                "position": 3
+              },
+              {
+                "name": "valid_from",
+                "type_text": "date",
+                "position": 4
+              },
+              {
+                "name": "valid_to",
+                "type_text": "date",
+                "position": 5
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 8
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 14
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "extract_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_mutable_small",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "delivery_costing": {
+            "columns": [
+              {
+                "name": "zone_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "delivery_type_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "tariff",
+                "type_text": "decimal(4,2)",
+                "position": 3
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 6
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 13
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "delivery_resource": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "fullname",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "delivery_type_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "created_at",
+                "type_text": "date",
+                "position": 5
+              },
+              {
+                "name": "updated_at",
+                "type_text": "date",
+                "position": 6
+              },
+              {
+                "name": "active_flag",
+                "type_text": "boolean",
+                "position": 7
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 10
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 15
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 16
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "extract_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_mutable_small",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "delivery_tracking": {
+            "columns": [
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "courier_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "delivery_status_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "status",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "status_datetime",
+                "type_text": "timestamp",
+                "position": 5
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 8
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "event_date",
+                "type_text": "string",
+                "position": 15
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "event_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_fact_monthly",
+                "partition_spec": [
+                  {
+                    "source": "status_datetime",
+                    "transform": "months"
+                  }
+                ],
+                "sort_order": [
+                  {
+                    "source": "status_datetime",
+                    "direction": "asc"
+                  }
+                ]
+              }
+            }
+          },
+          "delivery_type": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "courier_type",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 5
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 12
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "order_product": {
+            "columns": [
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 2
+              },
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "quantity",
+                "type_text": "decimal(6,2)",
+                "position": 4
+              },
+              {
+                "name": "sales_price",
+                "type_text": "decimal(10,2)",
+                "position": 5
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 8
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "event_date",
+                "type_text": "string",
+                "position": 15
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "event_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_fact_monthly",
+                "partition_spec": [
+                  {
+                    "source": "order_date",
+                    "transform": "months"
+                  }
+                ],
+                "sort_order": [
+                  {
+                    "source": "order_date",
+                    "direction": "asc"
+                  }
+                ]
+              }
+            }
+          },
+          "order_status_history": {
+            "columns": [
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "order_status_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "status_datetime",
+                "type_text": "timestamp",
+                "position": 3
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 6
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "event_date",
+                "type_text": "string",
+                "position": 13
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "event_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_fact_monthly",
+                "partition_spec": [
+                  {
+                    "source": "status_datetime",
+                    "transform": "months"
+                  }
+                ],
+                "sort_order": [
+                  {
+                    "source": "status_datetime",
+                    "direction": "asc"
+                  }
+                ]
+              }
+            }
+          },
+          "order_statuses": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "order_status",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 5
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 12
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "orders": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 3
+              },
+              {
+                "name": "order_source_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "total_amount",
+                "type_text": "decimal(12,4)",
+                "position": 6
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 9
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 15
+              },
+              {
+                "name": "event_date",
+                "type_text": "string",
+                "position": 16
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "event_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_fact_monthly",
+                "partition_spec": [
+                  {
+                    "source": "order_date",
+                    "transform": "months"
+                  }
+                ],
+                "sort_order": [
+                  {
+                    "source": "order_date",
+                    "direction": "asc"
+                  }
+                ]
+              }
+            }
+          },
+          "payments": {
+            "columns": [
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "amount",
+                "type_text": "decimal(12,4)",
+                "position": 2
+              },
+              {
+                "name": "method",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "payment_status",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "payment_date",
+                "type_text": "date",
+                "position": 5
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 8
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "event_date",
+                "type_text": "string",
+                "position": 15
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "event_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_fact_monthly",
+                "partition_spec": [
+                  {
+                    "source": "payment_date",
+                    "transform": "months"
+                  }
+                ],
+                "sort_order": [
+                  {
+                    "source": "payment_date",
+                    "direction": "asc"
+                  }
+                ]
+              }
+            }
+          },
+          "product_categories": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 5
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 12
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "products": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "price",
+                "type_text": "decimal(10,2)",
+                "position": 3
+              },
+              {
+                "name": "unit_type",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "category_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "chance",
+                "type_text": "decimal(4,2)",
+                "position": 6
+              },
+              {
+                "name": "valid_from",
+                "type_text": "date",
+                "position": 7
+              },
+              {
+                "name": "valid_to",
+                "type_text": "date",
+                "position": 8
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 11
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 15
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 16
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 17
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "extract_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_mutable_small",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "stores": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 6
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 13
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "zones": {
+            "columns": [
+              {
+                "name": "id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "zone_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_row_hash",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_ingest_run_id",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "_ingest_ts",
+                "type_text": "timestamp",
+                "position": 6
+              },
+              {
+                "name": "_source_system",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_source_table",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_op",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_bronze_last_run_id",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_bronze_last_apply_ts",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_bronze_last_manifest_path",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "snapshot_date",
+                "type_text": "string",
+                "position": 13
+              }
+            ],
+            "profile": {
+              "stream_group": {
+                "group_config": {
+                  "partition_key": "snapshot_date"
+                }
+              },
+              "physical_layout": {
+                "profile": "bronze_snapshot_daily",
+                "partition_spec": [
+                  {
+                    "source": "snapshot_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "bronze_apply_registry": {
+            "columns": [
+              {
+                "name": "source_system",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "source_schema",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "source_table",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "run_id",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "manifest_path",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "batch_type",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "partition_kind",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "partition_value",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "ingest_ts_utc",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "schema_hash",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "contract_version",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "apply_ts_utc",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "status",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "details",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "watermark_from",
+                "type_text": "string",
+                "position": 15
+              },
+              {
+                "name": "watermark_to",
+                "type_text": "string",
+                "position": 16
+              },
+              {
+                "name": "lookback_days",
+                "type_text": "int",
+                "position": 17
+              },
+              {
+                "name": "window_from",
+                "type_text": "string",
+                "position": 18
+              },
+              {
+                "name": "window_to",
+                "type_text": "string",
+                "position": 19
+              },
+              {
+                "name": "row_count",
+                "type_text": "int",
+                "position": 20
+              },
+              {
+                "name": "file_count",
+                "type_text": "int",
+                "position": 21
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "bronze_ops_registry",
+                "partition_spec": [
+                  {
+                    "source": "source_table",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          }
+        },
+        "silver": {
+          "budget_orders_sales": {
+            "columns": [
+              {
+                "name": "budget_name",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "budget_date",
+                "type_text": "date",
+                "position": 2
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "orders_budget_daily",
+                "type_text": "decimal(12,4)",
+                "position": 4
+              },
+              {
+                "name": "sales_amount_daily",
+                "type_text": "decimal(12,4)",
+                "position": 5
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_assortment": {
+            "columns": [
+              {
+                "name": "assortment_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "category_id",
+                "type_text": "int",
+                "position": 6
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 8
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 10
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_clients": {
+            "columns": [
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "client_full_name",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "preferred_store_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "preferred_store_name",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "registration_date",
+                "type_text": "date",
+                "position": 5
+              },
+              {
+                "name": "updated_at",
+                "type_text": "date",
+                "position": 6
+              },
+              {
+                "name": "is_churned",
+                "type_text": "boolean",
+                "position": 7
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 8
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 10
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_costing": {
+            "columns": [
+              {
+                "name": "costing_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "avg_cost",
+                "type_text": "decimal(10,2)",
+                "position": 6
+              },
+              {
+                "name": "valid_from",
+                "type_text": "date",
+                "position": 7
+              },
+              {
+                "name": "valid_to",
+                "type_text": "date",
+                "position": 8
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 9
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 11
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_delivery_costing": {
+            "columns": [
+              {
+                "name": "delivery_costing_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "zone_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "zone_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "delivery_type_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "courier_type",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "tariff",
+                "type_text": "decimal(10,2)",
+                "position": 6
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 7
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 9
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_delivery_resource": {
+            "columns": [
+              {
+                "name": "delivery_resource_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "delivery_resource_name",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "delivery_type_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "courier_type",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "created_at",
+                "type_text": "date",
+                "position": 7
+              },
+              {
+                "name": "updated_at",
+                "type_text": "date",
+                "position": 8
+              },
+              {
+                "name": "is_active",
+                "type_text": "boolean",
+                "position": 9
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 10
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 12
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_delivery_type": {
+            "columns": [
+              {
+                "name": "delivery_type_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "courier_type",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 3
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 5
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_order_statuses": {
+            "columns": [
+              {
+                "name": "order_status_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "order_status",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 3
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 5
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_product_categories": {
+            "columns": [
+              {
+                "name": "category_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 3
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 5
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_products": {
+            "columns": [
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "unit_price",
+                "type_text": "decimal(10,2)",
+                "position": 3
+              },
+              {
+                "name": "unit_type",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "category_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "selection_weight",
+                "type_text": "decimal(8,2)",
+                "position": 7
+              },
+              {
+                "name": "valid_from",
+                "type_text": "date",
+                "position": 8
+              },
+              {
+                "name": "valid_to",
+                "type_text": "date",
+                "position": 9
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 10
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 11
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 12
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_stores": {
+            "columns": [
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 4
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 6
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "dim_zones": {
+            "columns": [
+              {
+                "name": "zone_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "store_city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "zone_name",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 6
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 8
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_dimension",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "fact_orders": {
+            "columns": [
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 1
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 2
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 3
+              },
+              {
+                "name": "client_full_name",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "client_is_churned",
+                "type_text": "boolean",
+                "position": 5
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 6
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "order_source_id",
+                "type_text": "int",
+                "position": 8
+              },
+              {
+                "name": "total_amount",
+                "type_text": "decimal(12,4)",
+                "position": 9
+              },
+              {
+                "name": "ordered_quantity",
+                "type_text": "decimal(38,2)",
+                "position": 10
+              },
+              {
+                "name": "line_sales_amount",
+                "type_text": "decimal(14,4)",
+                "position": 11
+              },
+              {
+                "name": "line_count",
+                "type_text": "bigint",
+                "position": 12
+              },
+              {
+                "name": "latest_order_status_id",
+                "type_text": "int",
+                "position": 13
+              },
+              {
+                "name": "latest_order_status",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "latest_status_datetime",
+                "type_text": "timestamp_ntz",
+                "position": 15
+              },
+              {
+                "name": "amount_matches_lines",
+                "type_text": "boolean",
+                "position": 16
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 17
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 18
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 19
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_fact",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "fact_order_product": {
+            "columns": [
+              {
+                "name": "fact_order_product_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 3
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 6
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "category_id",
+                "type_text": "int",
+                "position": 8
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "quantity",
+                "type_text": "decimal(10,2)",
+                "position": 10
+              },
+              {
+                "name": "sales_price",
+                "type_text": "decimal(10,2)",
+                "position": 11
+              },
+              {
+                "name": "line_sales_amount",
+                "type_text": "decimal(14,4)",
+                "position": 12
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 13
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 14
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 15
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_fact",
+                "partition_spec": [
+                  {
+                    "source": "order_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "fact_payments": {
+            "columns": [
+              {
+                "name": "fact_payments_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 3
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "payment_date",
+                "type_text": "date",
+                "position": 6
+              },
+              {
+                "name": "payment_amount",
+                "type_text": "decimal(12,4)",
+                "position": 7
+              },
+              {
+                "name": "payment_method",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "payment_status",
+                "type_text": "string",
+                "position": 9
+              },
+              {
+                "name": "latest_order_status",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 11
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 12
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 13
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_fact",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "fact_order_status_history": {
+            "columns": [
+              {
+                "name": "fact_order_status_history_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 3
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "order_status_id",
+                "type_text": "int",
+                "position": 6
+              },
+              {
+                "name": "order_status",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "status_datetime",
+                "type_text": "timestamp_ntz",
+                "position": 8
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 9
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 11
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_fact",
+                "partition_spec": [
+                  {
+                    "source": "order_date",
+                    "transform": "identity"
+                  }
+                ],
+                "sort_order": []
+              }
+            }
+          },
+          "fact_delivery_tracking": {
+            "columns": [
+              {
+                "name": "fact_delivery_tracking_key",
+                "type_text": "string",
+                "position": 1
+              },
+              {
+                "name": "order_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "order_date",
+                "type_text": "date",
+                "position": 3
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 4
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "courier_id",
+                "type_text": "int",
+                "position": 6
+              },
+              {
+                "name": "delivery_resource_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "courier_type",
+                "type_text": "string",
+                "position": 8
+              },
+              {
+                "name": "delivery_status_id",
+                "type_text": "int",
+                "position": 9
+              },
+              {
+                "name": "delivery_status",
+                "type_text": "string",
+                "position": 10
+              },
+              {
+                "name": "status_datetime",
+                "type_text": "timestamp_ntz",
+                "position": 11
+              },
+              {
+                "name": "_silver_build_ts",
+                "type_text": "timestamp_ntz",
+                "position": 12
+              },
+              {
+                "name": "_silver_model_name",
+                "type_text": "string",
+                "position": 13
+              },
+              {
+                "name": "_silver_run_id",
+                "type_text": "string",
+                "position": 14
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "silver_fact",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          }
+        },
+        "gold": {
+          "curie_marketing_sales_budget_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "sales_amount",
+                "type_text": "decimal(14,4)",
+                "position": 5
+              },
+              {
+                "name": "order_count",
+                "type_text": "bigint",
+                "position": 6
+              },
+              {
+                "name": "budget_sales_amount",
+                "type_text": "decimal(14,4)",
+                "position": 7
+              },
+              {
+                "name": "budget_order_count",
+                "type_text": "decimal(14,4)",
+                "position": 8
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_marketing_product_sales_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "sales_amount",
+                "type_text": "decimal(14,4)",
+                "position": 8
+              },
+              {
+                "name": "order_count",
+                "type_text": "bigint",
+                "position": 9
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_marketing_category_sales_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 5
+              },
+              {
+                "name": "sales_amount",
+                "type_text": "decimal(14,4)",
+                "position": 6
+              },
+              {
+                "name": "order_count",
+                "type_text": "bigint",
+                "position": 7
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_marketing_client_metrics_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "active_client_count",
+                "type_text": "bigint",
+                "position": 5
+              },
+              {
+                "name": "new_client_count",
+                "type_text": "bigint",
+                "position": 6
+              },
+              {
+                "name": "client_base_start",
+                "type_text": "bigint",
+                "position": 7
+              },
+              {
+                "name": "churned_clients",
+                "type_text": "bigint",
+                "position": 8
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_marketing_active_client_month": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "client_id",
+                "type_text": "int",
+                "position": 3
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_financial_performance_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "revenue_amount",
+                "type_text": "decimal(14,4)",
+                "position": 5
+              },
+              {
+                "name": "product_cost_amount",
+                "type_text": "decimal(14,4)",
+                "position": 6
+              },
+              {
+                "name": "delivery_cost_amount",
+                "type_text": "decimal(14,4)",
+                "position": 7
+              },
+              {
+                "name": "gross_profit_amount",
+                "type_text": "decimal(14,4)",
+                "position": 8
+              },
+              {
+                "name": "budget_revenue_amount",
+                "type_text": "decimal(14,4)",
+                "position": 9
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_financial_product_margin_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "product_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "product_name",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "category_name",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "revenue_amount",
+                "type_text": "decimal(14,4)",
+                "position": 8
+              },
+              {
+                "name": "product_cost_amount",
+                "type_text": "decimal(14,4)",
+                "position": 9
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          },
+          "curie_delivery_courier_performance_monthly_store": {
+            "columns": [
+              {
+                "name": "month",
+                "type_text": "date",
+                "position": 1
+              },
+              {
+                "name": "store_id",
+                "type_text": "int",
+                "position": 2
+              },
+              {
+                "name": "store_name",
+                "type_text": "string",
+                "position": 3
+              },
+              {
+                "name": "city",
+                "type_text": "string",
+                "position": 4
+              },
+              {
+                "name": "courier_id",
+                "type_text": "int",
+                "position": 5
+              },
+              {
+                "name": "fullname",
+                "type_text": "string",
+                "position": 6
+              },
+              {
+                "name": "courier_type",
+                "type_text": "string",
+                "position": 7
+              },
+              {
+                "name": "delivered_order_count",
+                "type_text": "bigint",
+                "position": 8
+              },
+              {
+                "name": "delivery_cost_amount",
+                "type_text": "decimal(14,4)",
+                "position": 9
+              }
+            ],
+            "profile": {
+              "physical_layout": {
+                "profile": "gold_aggregate",
+                "partition_spec": [],
+                "sort_order": []
+              }
+            }
+          }
+        }
+      },
+      "physical_profiles": {
+        "bronze_snapshot_daily": {
+          "format_version": 2,
+          "write": {
+            "distribution": "hash",
+            "target_file_size_bytes": 33554432,
+            "mode": "overwrite_partitions"
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        },
+        "bronze_mutable_small": {
+          "format_version": 2,
+          "write": {
+            "distribution": "none",
+            "target_file_size_bytes": 67108864,
+            "mode": "merge"
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        },
+        "bronze_fact_monthly": {
+          "format_version": 2,
+          "write": {
+            "distribution": "hash",
+            "target_file_size_bytes": 134217728,
+            "mode": "merge"
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        },
+        "bronze_ops_registry": {
+          "format_version": 2,
+          "write": {
+            "distribution": "hash",
+            "target_file_size_bytes": 33554432
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        },
+        "silver_dimension": {
+          "format_version": 2,
+          "write": {
+            "distribution": "none",
+            "target_file_size_bytes": 67108864
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "delete_files": "rewrite_on_threshold",
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        },
+        "silver_fact": {
+          "format_version": 2,
+          "write": {
+            "distribution": "none",
+            "target_file_size_bytes": 134217728
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "delete_files": "rewrite_on_threshold",
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        },
+        "gold_aggregate": {
+          "format_version": 2,
+          "write": {
+            "distribution": "none",
+            "target_file_size_bytes": 67108864
+          },
+          "maintenance": {
+            "data_compaction": "conditional_binpack",
+            "min_input_files": 5,
+            "delete_files": "rewrite_on_threshold",
+            "rewrite_manifests": "on_threshold",
+            "snapshot_retention_days": 14,
+            "orphan_retention_days": 14
+          }
+        }
+      }
+    }
+  }
+}

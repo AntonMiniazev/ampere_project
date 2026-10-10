@@ -1,136 +1,83 @@
-# Iceberg Silver and Gold dbt project
+# Iceberg dbt runtime
 
-This dbt v2 project defines the Silver and Gold SQL models and tests.
-Bronze sources resolve to `iceberg_bronze.bronze`, published Silver models to
-`iceberg_silver.silver`, and Gold models to `iceberg_gold.gold`. Staging and
-intermediate relations live in the pod-local `ampere_work` DuckDB file. The
-budget CSV is loaded as `silver.budget_orders_sales` and then consumed
-by the Gold budget model.
+The project builds Silver and Gold with dbt v2 and DuckDB. Contract v3 in
+`tools/contracts/ampere_tables.json` defines the schema, Iceberg partition
+specification, writer profile, and maintenance policy for every layer table.
+The shared resolver is packaged into the Spark and dbt images from the same
+repository revision.
 
-Gold publishes the eight domain-specific report aggregates defined in
-`tools/iceberg/contracts/gold_data_contract.json`. Each row retains `month` and
-`store_id` for Curie filtering and store-level access rules. Product/category
-and courier labels are included in their respective domain tables; no order
-detail or Gold lineage columns are exported. Financial product costs use the
-effective-dated Silver costing history.
+## Layer execution
 
-Iceberg does not store `SMALLINT`; the Iceberg staging models widen those IDs to
-`INTEGER` before publishing tables. Their values and join keys are unchanged.
+Silver and Gold each run in a separate Kubernetes pod with a private DuckDB
+workspace. The pod prepares its catalogs and credentials, runs dbt build and
+tests for one layer, validates every staged model against the contract and
+published table, then publishes that layer. A Silver run reads Bronze through
+Lakekeeper. A Gold run reads published Silver through Lakekeeper and stages
+only Gold output locally. Gold never reads a local Silver workspace.
 
-`docker/dbt_iceberg` installs dbt v2 and the DuckDB ADBC driver. The entrypoint
-prepares pod-local persistent DuckDB secrets because dbt v2 opens its own driver
-connections and needs `iceberg` plus `httpfs` extensions on each one. The
-Kubernetes pod receives Lakekeeper and MinIO credentials from Secrets, writes
-them only into its ephemeral `secret_store` directory, and is deleted after the
-run. Neither credentials nor a generated profile are committed.
+Daily runs use the current and previous month window. Fact publication merges
+the staged keys without deleting history outside that slice. Complete Silver
+dimensions and budgets also remove keys absent from their staged source. Gold
+daily runs merge recomputed monthly aggregates. Full-history runs use complete
+sources and synchronize all keys.
 
-To test locally without Lakekeeper, attach local DuckDB files under the four
-database aliases and point `BUDGET_DAILY_CSV_PATH` at the tracked CSV. A full
-`dbt build` against empty contract-shaped Bronze sources passed 46 models and
-150 tests on dbt 2.0.6; this checks SQL compatibility and model order only.
+Three large Silver fact tables use deterministic `order_id` ranges during a
+full-history publish: `fact_delivery_tracking`, `fact_order_product`, and
+`fact_order_status_history`. Each range is its own Iceberg commit. A retry
+converges by merging each range again. Catalog initialization must run first;
+the publisher does not create or replace target tables.
 
-## Airflow run modes
+The Silver/Gold write layout follows DuckDB Iceberg 1.5 capabilities. These
+tables have no sort order because DuckDB mutations reject sorted tables. Silver
+facts use only supported partition transforms; the monthly fact tables use
+identity `order_date` partitions. DuckDB cannot enforce the target-file-size
+property while writing partitioned tables, so those writes explicitly ignore
+that setting and weekly Spark housekeeping applies the contract target during
+compaction. The contract loader rejects unsupported DuckDB layouts.
 
-`ampere__iceberg__silver_gold__dbt_duckdb__daily` runs Silver and Gold using
-separate `iceberg_silver_run_mode` and `iceberg_gold_run_mode` variables
-(default `daily_refresh`). In the daily
-DAG, dbt first builds and tests its Silver and Gold slice in pod-local DuckDB
-files. Only after dbt succeeds does `publish_catalog.py` attach Lakekeeper and
-publish the results. Silver facts and changing Gold facts use keyed Iceberg
-`MERGE INTO` updates/inserts, so rows outside the daily slice remain available.
-Matched rows update only when a non-key column differs; same-day retries do
-not rewrite unchanged fact rows. Gold report aggregates recompute the current
-and previous calendar month from complete staged orders; daily publication
-merges those month/store grains and retains older months.
-Complete dimension and budget tables use keyed `MERGE` for updates/inserts,
-then a separate `DELETE` removes published keys absent from the complete
-staged source. DuckDB-Iceberg 1.5.6 rejects a single `MERGE` with all three
-actions. Daily fact slices use update/insert `MERGE` without deleting absent
-keys. The publisher checks
-staged key uniqueness, nonempty complete snapshots, target presence, and
-expected model coverage before modifying any Iceberg table. A missing daily
-target fails closed; run the manual full rebuild to establish its baseline.
-The publisher validates both staged layers first, then publishes Silver and
-Gold on separate DuckDB connections. The two warehouses can publish at the
-same time (`iceberg_dbt_publish_parallel_layers`, default `2`); each layer's
-tables still publish in a fixed order. Daily DuckDB memory defaults to `4GB`
-per connection, with three DuckDB workers per connection and a `10Gi` pod limit.
-The pod already permits four CPUs; the worker change tests whether the
-Iceberg `MERGE` phase can use more of them without increasing its RAM ceiling.
-Set the parallel-layers variable to `1` if a cluster run shows memory pressure.
-Each run logs per-table and phase timings.
-The complete-source path retains Iceberg table identity and can also
-synchronize a staged full-history table. Full rebuild publication splits
-`fact_delivery_tracking`, `fact_order_product`, and `fact_order_status_history`
-into three deterministic `order_id` ranges. Each range merges changed rows
-and removes stale target rows only within that range; the bounds include IDs
-present only in the old target. New tables start empty and use the same three
-merges. The ranges commit independently, so a failed part can leave a partial
-table until a full rebuild retry converges. Curie refresh follows only a fully
-successful publish. Other tables keep their existing publication path.
+Airflow DAGs:
 
-Silver daily staging reads order sources from the beginning of the previous
-calendar month, including all related product, payment, status, and delivery
-records for those orders. Gold applies the same two-month month-grain window so
-late events cannot create partial historical month totals. Full-history mode
-builds all months; its complete-source publication removes stale Gold keys.
-Daily publication does not delete older aggregate months. Iceberg tables are
-not date-partitioned, so monitor the larger daily source window and metadata
-growth.
+- `ampere__iceberg__silver__dbt_duckdb__daily`
+- `ampere__iceberg__gold__dbt_duckdb__daily`
+- `ampere__iceberg__silver__dbt_duckdb__full_rebuild`
+- `ampere__iceberg__gold__dbt_duckdb__full_rebuild`
 
-In `full_history` mode, `stg_orders` reads complete Bronze without its daily
-affected-order subqueries. The four line and event staging models also read
-their complete Bronze source without a redundant `order_id IN stg_orders`
-semi-join. Daily mode keeps those filters to select all records for changed orders. A live
-Bronze scan on 2026-10-07 found zero orphan order IDs in those four tables;
-their existing dbt relationship tests still reject future orphans.
+The daily Silver DAG triggers daily Gold. The full-history Silver DAG triggers
+full-history Gold. Gold triggers Curie cache refresh only after successful
+publication. Airflow pools `iceberg_silver_publish` and
+`iceberg_gold_publish` serialize daily and full-history work for their layer.
 
-`ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild` runs the same dbt
-build with both modes set to `full_history`. It rebuilds the Iceberg Silver and
-Gold tables from the complete Bronze history currently present in Lakekeeper,
-then triggers the Iceberg Curie cache refresh. It does not backfill Bronze.
-The full rebuild defaults to staged, disk-backed materialization. It builds and
-tests Silver, closes that dbt process, builds and tests Gold from staged
-Silver, then validates all 25 staged publish tables before updating Iceberg.
-The Gold build runs a Marketing-sales-versus-Financial-revenue consistency test in addition to the
-publisher's staged key and nonempty-source checks.
-The staged path requires at least 16 GiB of free pod scratch before it starts.
-With `iceberg_full_rebuild_scratch_pvc` unset, it uses a pod-local `emptyDir`
-at `/app/artifacts`, requests 16 GiB of ephemeral storage, and has a 24 GiB
-ephemeral-storage limit. Both staged databases and DuckDB spill use that
-directory. The entrypoint checks available scratch space automatically.
-The full rebuild defaults to a 7 GB DuckDB memory limit, two DuckDB workers,
-and a 12 GB spill cap inside the 24 GiB scratch volume. Its pod requests 6 GiB
-and has an 11 GiB memory limit. The 2026-10-07 staged run failed inside
-DuckDB at its previous 5 GB limit while node4 still had memory available;
-the container exited 1 rather than being OOM-killed. The higher pod limit
-leaves room for DuckDB's other allocations and file cache. Existing Airflow
-Variable overrides take precedence.
-Staging does not make publication across tables atomic. dbt
-`--full-refresh` is not needed for these table and view models.
-The three fact ranges also add Iceberg commits and may scan the target more
-than once. Check peak pod memory, scratch use, and per-part timings on the
-first cluster run before treating the split as a performance improvement.
+## Runtime settings
 
-The rebuild sizing is controlled by these optional Airflow variables (defaults
-shown): `iceberg_full_rebuild_dbt_threads` (`1`),
-`iceberg_full_rebuild_duckdb_threads` (`2`),
-`iceberg_full_rebuild_duckdb_memory_limit` (`7GB`),
-`iceberg_full_rebuild_duckdb_max_temp_directory_size` (`12GB`),
-`iceberg_full_rebuild_publish_mode` (`staged`),
-`iceberg_full_rebuild_dbt_cpu_request` (`1`),
-`iceberg_full_rebuild_dbt_cpu_limit` (`4`),
-`iceberg_full_rebuild_dbt_pod_memory_request` (`6Gi`), and
-`iceberg_full_rebuild_dbt_pod_memory_limit` (`11Gi`). Daily pod sizing uses
-`iceberg_dbt_threads`, `iceberg_dbt_duckdb_memory_limit`,
-`iceberg_dbt_duckdb_threads`, `iceberg_dbt_publish_parallel_layers`,
-`iceberg_dbt_cpu_request`, `iceberg_dbt_cpu_limit`,
-`iceberg_dbt_pod_memory_request`, and `iceberg_dbt_pod_memory_limit`.
-Both modes disable DuckDB insertion-order preservation and apply the same
-DuckDB connection settings in dbt preparation and publication, including an
-explicit temp directory under the workspace. Check the staged run's memory and spill use on the cluster
-before treating these defaults as proven for growing history.
+Daily pod settings use `iceberg_dbt_threads`,
+`iceberg_dbt_duckdb_memory_limit`, `iceberg_dbt_duckdb_threads`,
+`iceberg_dbt_duckdb_max_temp_directory_size`, `iceberg_dbt_cpu_request`,
+`iceberg_dbt_cpu_limit`, `iceberg_dbt_pod_memory_request`, and
+`iceberg_dbt_pod_memory_limit`.
 
-Before an Airflow run, the Bohr deployment must provide the three Lakekeeper
-warehouses and `lakekeeper-dbt-client` Secret. Validate the native Iceberg
-`ATTACH`, Bronze read and Silver/Gold writes in that environment.
+Full-history pod settings use `iceberg_full_rebuild_dbt_threads`,
+`iceberg_full_rebuild_duckdb_threads`,
+`iceberg_full_rebuild_duckdb_memory_limit`,
+`iceberg_full_rebuild_duckdb_max_temp_directory_size`,
+`iceberg_full_rebuild_min_scratch_gb`,
+`iceberg_full_rebuild_scratch_pvc`, and the corresponding
+`iceberg_full_rebuild_dbt_*` CPU and memory variables. When no PVC is set, the
+pod uses a private 24 GiB `emptyDir`, requests 16 GiB ephemeral storage, and
+checks the configured free-space threshold before dbt starts. Temporary
+workspace and spill files are removed when the pod exits.
+
+Both pod types use the Airflow image variables, three Lakekeeper warehouse
+variables, MinIO credentials, the `lakekeeper-dbt-client` Kubernetes Secret,
+and the local CA bundle. The dbt release image is shared by both layers.
+
+## Checks
+
+Run the contract validation and focused unit checks from the repository root:
+
+```bash
+uv run python tools/contracts/ampere_contract.py
+uv run python -m unittest tests.test_iceberg_bronze_contract tests.test_iceberg_housekeeping -v
+```
+
+For image builds, `.github/workflows/build-ampere-dbt-iceberg.yml` checks dbt
+catalog setup and publisher behavior before building the shared image.

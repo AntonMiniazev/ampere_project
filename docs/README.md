@@ -1,6 +1,6 @@
 # Ampere dataflow
 
-Ampere produces synthetic source data in PostgreSQL and publishes analytical Iceberg tables in Lakekeeper. Airflow starts the daily generator and hands off between Raw, Bronze, Silver/Gold, and Curie cache refresh.
+Ampere produces synthetic source data in PostgreSQL and publishes analytical Iceberg tables in Lakekeeper. Airflow starts the daily generator and hands off between Raw, Bronze, Silver, Gold, and Curie cache refresh. Contract v3 is the canonical definition for all 42 published and operational Iceberg tables.
 
 After a successful Gold publish, the Curie refresh DAG requests a FlightSQL cache refresh through `/api/cache/refresh_flightsql`, then polls the Iceberg cache status until a new release is active.
 
@@ -9,24 +9,26 @@ After a successful Gold publish, the Curie refresh DAG requests a FlightSQL cach
 1. **Source:** Python generators create orders, clients, products, payments, delivery activity, and costs in PostgreSQL.
 2. **Raw:** Spark extracts immutable Parquet batches to MinIO. A manifest and `_SUCCESS` marker identify a complete batch; state files track extraction progress. The Raw and Bronze SparkApplication templates load bundled JARs from driver and executor classpaths, avoiding a startup copy into the application directory, which the runtime user cannot write.
 3. **Bronze:** Spark applies complete batches to Iceberg tables in Lakekeeper. Snapshot partitions are replaced, mutable dimensions and events are merged, and facts follow their configured append or merge strategy. The Bronze apply registry tracks processed batches.
-4. **Silver:** dbt and DuckDB stage, clean, join, and test reusable entities before publishing Iceberg tables.
-5. **Gold:** dbt publishes sales, delivery, cost, and margin marts as Iceberg tables.
+4. **Silver:** An isolated dbt/DuckDB pod stages, cleans, joins, tests, and publishes reusable entities.
+5. **Gold:** A separate dbt/DuckDB pod reads published Silver tables and publishes sales, delivery, cost, and margin marts.
 6. **Serving:** Curie refreshes its cache after successful Gold publication.
 
 [Project diagram](dataflow/generated/project_dataflow.md) · [Table movement](dataflow/generated/table_groups.md) · [Layer responsibilities](dataflow/generated/layer_responsibilities.md)
 
 ## Orchestration and recovery
 
-The scheduled generator triggers Raw landing; Raw triggers Iceberg Bronze; Bronze triggers the combined Silver/Gold dbt DAG; a successful dbt publish triggers Curie. Each handoff uses the same Airflow logical date. [The DAG inventory and trigger graph](dataflow/generated/airflow_dag_orchestration.md) are generated from checked-in DAG files.
+The scheduled generator triggers Raw landing, then Bronze daily, Silver daily, Gold daily, and Curie. Each handoff preserves the same Airflow logical date; downstream stages are trigger-only. Full rebuild uses Bronze, Silver, and Gold full-history DAGs in the same order after catalog initialization. Named Airflow pools `iceberg_silver_publish` and `iceberg_gold_publish` serialize daily and full rebuilds for each layer. [The DAG inventory and trigger graph](dataflow/generated/airflow_dag_orchestration.md) are generated from checked-in DAG metadata.
 
-After a successful Sunday Curie cache refresh, the Iceberg housekeeping DAG uses Spark Connect to bin-pack small data files in the 42 known Bronze, Silver, Gold, and Bronze `ops` tables. It compacts tables with at least two active data files and no more than 4 GiB of active data, using a two-file rewrite threshold and targeting 128 MiB files with up to two concurrent 512 MiB rewrite groups. Completed groups are committed as partial progress, so an interrupted large-table rewrite can resume without redoing every group. The client logs every two minutes while a rewrite is in progress, and the task has a six-hour limit. It then expires snapshots older than 14 days, removes aged orphan files, and bounds tracked metadata JSON versions to 14 previous files. Table rows are unchanged; old files referenced by retained snapshots can remain for up to 14 days after compaction. A Bronze repair backup and Raw landing storage are outside this job.
+After a successful Sunday Curie cache refresh, housekeeping uses contract v3 to discover its table scope and resolve retention, compaction thresholds, target file size, delete-file handling, and manifest rewrite policy. It checks table conformance before maintenance and keeps extra tables and Raw landing outside its scope. Table rows are unchanged.
 
-The manual Iceberg Silver/Gold full rebuild reads all available Bronze history. It builds and validates Silver and Gold in separate dbt processes on node4's local SSD, then publishes the staged tables and triggers Curie refresh. It does not backfill missing Bronze batches.
+For a clean rebuild, initialize the catalog, replay all validated Raw landing batches through the Bronze full-rebuild DAG, then run the Silver and Gold full-rebuild DAGs. Gold reads published Silver from Lakekeeper. The final Gold DAG triggers Curie refresh.
 
 The daily publisher stages and tests models locally before changing Lakekeeper tables. Facts use keyed `MERGE` updates and inserts. Complete dimensions and budgets use a keyed merge followed by deletion of keys absent from the complete source. A failed publish can leave some tables updated while others remain at their prior snapshot; rerunning the DAG completes the publication. Daily fact publication does not delete rows that disappear entirely from the staged slice.
 
+Silver and Gold layouts follow DuckDB Iceberg 1.5 write limits: they are unsorted, and Silver fact partitioning uses DuckDB-supported identity transforms. For partitioned writes DuckDB ignores the target-file-size property; weekly Spark housekeeping uses the contract size target when compacting those tables. Contract validation rejects Spark-only distribution modes and unsupported DuckDB transforms before initialization.
+
 ## Contract and catalog
 
-[The Bronze schema contract](../tools/iceberg/contracts/ampere_tables.json) defines the table names, column types, and partition keys used when Spark creates Iceberg Bronze tables. Lakekeeper provides separate Bronze, Silver, and Gold warehouses. The operational Bronze registry lives in the Bronze warehouse's `ops` namespace. The dbt model files under `dbt_iceberg/` define Silver and Gold transformations and tests.
+[The canonical Iceberg contract](../tools/contracts/ampere_tables.json) defines schemas, physical layouts, write profiles, and maintenance policies across Bronze, Silver, and Gold. `tools/contracts/ampere_contract.py` validates and resolves profile defaults plus per-table layout overrides. Lakekeeper provides separate Bronze, Silver, and Gold warehouses; the apply registry is in Bronze's `ops` namespace. dbt models define Silver and Gold transformations and tests.
 
 To regenerate the diagrams and DAG inventory, run `uv run python tools/docs/generate_dataflow_docs.py` from the repository root.

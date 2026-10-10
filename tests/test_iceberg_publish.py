@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -329,20 +329,15 @@ class PublishTests(unittest.TestCase):
             [(1, 11), (3, 30)],
         )
 
-    def test_full_history_creates_missing_table(self) -> None:
-        """A first full rebuild may establish a missing published table."""
+    def test_full_history_requires_catalog_initialized_table(self) -> None:
+        """Publisher rejects a missing contract table instead of creating it."""
         self.con.execute("DROP TABLE publish_silver.silver.fact_orders")
         self.con.execute(
             "INSERT INTO staged_silver.silver.fact_orders VALUES "
             "(1, DATE '2025-12-16', 10)"
         )
-        publish_catalog.publish_table(self.con, "silver", "fact_orders", "full_history")
-        self.assertEqual(
-            self.con.execute(
-                "SELECT order_id FROM publish_silver.silver.fact_orders"
-            ).fetchall(),
-            [(1,)],
-        )
+        with self.assertRaisesRegex(ValueError, "catalog__init"):
+            publish_catalog.publish_table(self.con, "silver", "fact_orders", "full_history")
 
     def test_large_full_history_facts_use_three_complete_ranges(self) -> None:
         """Three merges update, insert, and remove keys across both endpoints."""
@@ -393,8 +388,8 @@ class PublishTests(unittest.TestCase):
                 self.con.execute(f"DROP TABLE staged_silver.silver.{table}")
                 self.con.execute(f"DROP TABLE publish_silver.silver.{table}")
 
-    def test_batched_full_history_creates_missing_fact(self) -> None:
-        """A new fact table is filled through the same three-part path."""
+    def test_batched_full_history_requires_initialized_fact(self) -> None:
+        """The three-range writer requires the contract-created target table."""
         table = "fact_order_product"
         key = publish_catalog.MERGE_KEYS["silver"][table][0]
         self.con.execute(
@@ -405,13 +400,8 @@ class PublishTests(unittest.TestCase):
             f"INSERT INTO staged_silver.silver.{table} VALUES "
             "('1|a', 1, 10), ('4|a', 4, 40), ('7|a', 7, 70)"
         )
-        publish_catalog.publish_table(self.con, "silver", table, "full_history")
-        self.assertEqual(
-            self.con.execute(
-                f"SELECT order_id FROM publish_silver.silver.{table} ORDER BY order_id"
-            ).fetchall(),
-            [(1,), (4,), (7,)],
-        )
+        with self.assertRaisesRegex(ValueError, "catalog__init"):
+            publish_catalog.publish_table(self.con, "silver", table, "full_history")
 
     def test_batched_full_history_rejects_null_order_id(self) -> None:
         """A null batching key must fail before any target change."""
@@ -511,80 +501,25 @@ class PublishTests(unittest.TestCase):
             [(1,), (2,)],
         )
 
-    def test_separate_layer_connections_publish_in_parallel(self) -> None:
-        """Silver and Gold workers must not share a DuckDB connection."""
+    def test_publish_model_inventory_matches_each_contract_layer(self) -> None:
+        """One publisher invocation selects only the contract's requested layer."""
+        nodes = {}
+        for layer in ("silver", "gold"):
+            for table in publish_catalog.CONTRACT.layer_tables(layer):
+                nodes[f"model.{table.name}"] = {
+                    "resource_type": "model",
+                    "name": table.name,
+                    "alias": table.name,
+                    "tags": [layer, "publish"],
+                }
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            table_names = {
-                "silver": "fact_orders",
-                "gold": "curie_marketing_sales_budget_monthly_store",
-            }
-            for layer, table in table_names.items():
-                for kind in ("staged", "publish"):
-                    path = root / f"{kind}_{layer}.duckdb"
-                    con = duckdb.connect(str(path))
-                    con.execute(f"CREATE SCHEMA {layer}")
-                    if layer == "silver":
-                        con.execute(
-                            f"CREATE TABLE {layer}.{table} "
-                            "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
-                        )
-                    else:
-                        con.execute(
-                            f"CREATE TABLE {layer}.{table} "
-                            "(month DATE, store_id INTEGER, sales_amount INTEGER)"
-                        )
-                    if kind == "staged":
-                        values = (
-                            "(1, DATE '2026-10-06', 20)"
-                            if layer == "silver"
-                            else "(DATE '2026-10-01', 1, 20)"
-                        )
-                        con.execute(f"INSERT INTO {layer}.{table} VALUES {values}")
-                    else:
-                        values = (
-                            "(1, DATE '2026-10-06', 10)"
-                            if layer == "silver"
-                            else "(DATE '2026-10-01', 1, 10)"
-                        )
-                        con.execute(f"INSERT INTO {layer}.{table} VALUES {values}")
-                    con.close()
-
-            def local_catalogs(con, workspace, layers):
-                for layer in layers:
-                    for kind in ("staged", "publish"):
-                        path = root / f"{kind}_{layer}.duckdb"
-                        con.execute(
-                            f"ATTACH '{path}' "
-                            f"AS {kind}_{layer} "
-                            + ("(READ_ONLY)" if kind == "staged" else "")
-                        )
-
-            settings = {"memory_limit": "256MB", "threads": 2}
-            with patch.object(publish_catalog, "attach_catalogs", local_catalogs):
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    futures = [
-                        executor.submit(
-                            publish_catalog.publish_layer,
-                            root / "ampere_work.duckdb",
-                            settings,
-                            layer,
-                            [table],
-                            "daily_refresh",
-                            {(layer, table): 1},
-                        )
-                        for layer, table in table_names.items()
-                    ]
-                    for future in futures:
-                        future.result()
-            for layer, table in table_names.items():
-                con = duckdb.connect(str(root / f"publish_{layer}.duckdb"))
-                measure = "total_amount" if layer == "silver" else "sales_amount"
+            manifest = Path(temporary) / "manifest.json"
+            manifest.write_text(json.dumps({"nodes": nodes}), encoding="utf-8")
+            for layer in ("silver", "gold"):
                 self.assertEqual(
-                    con.execute(f"SELECT {measure} FROM {layer}.{table}").fetchone(),
-                    (20,),
+                    set(publish_catalog.publish_models(manifest, layer)),
+                    {table.name for table in publish_catalog.CONTRACT.layer_tables(layer)},
                 )
-                con.close()
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ name = "ampere-project"
 version = "0.2.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "boto3>=1.40.18",
     "dotenv>=0.9.9",
@@ -15,7 +15,7 @@ dependencies = [
     "ipykernel>=7.2.0",
     "itables>=2.9,<3",
     "numpy>=2.2.6",
-    "pandas>=2.3.0",
+    "pandas>=2.3.0,<3",
     "polars>=1.37.1",
     "protobuf>=6.33,<7",
     "psycopg[binary]>=3.3.2",

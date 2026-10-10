@@ -1,14 +1,20 @@
 FROM apache/spark:4.1.0
 
+COPY --from=ghcr.io/astral-sh/uv:0.13.0 /uv /uvx /bin/
+
 ENV PYTHONUNBUFFERED=1 \
-    PYSPARK_PYTHON=python3
+    UV_PYTHON_INSTALL_DIR=/opt/ampere-python \
+    PYSPARK_PYTHON=/usr/local/bin/python3.14 \
+    PYSPARK_DRIVER_PYTHON=/usr/local/bin/python3.14
 
 USER root
 ENV HOME=/root
-RUN python3 -m pip install --no-cache-dir \
+RUN uv python install 3.14 \
+    && ln -s "$(uv python find 3.14)" /usr/local/bin/python3.14 \
+    && uv pip install --system --python /usr/local/bin/python3.14 --no-cache \
     boto3==1.40.18 \
     pandas==2.3.3 \
-    pyarrow==21.0.0 \
+    pyarrow==26.0.0 \
     "pyspark[connect]==4.1.0" \
     zstandard==0.25.0
 
@@ -23,5 +29,6 @@ RUN chmod 644 /opt/spark/iceberg-jars/*.jar
 
 WORKDIR /opt/spark/app
 COPY docker/spark/iceberg_raw_etl/app/ /opt/spark/app/
-COPY tools/iceberg/contracts/ampere_tables.json /opt/spark/app/bronze_contract.json
+COPY tools/__init__.py /opt/spark/app/tools/__init__.py
+COPY tools/contracts/ /opt/spark/app/tools/contracts/
 USER 185

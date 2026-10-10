@@ -26,7 +26,7 @@ def sql_string(value: str) -> str:
 
 
 def prepare() -> None:
-    """Persist pod-local secrets so every dbt ADBC connection can attach catalogs."""
+    """Persist pod-local credentials and attach only the selected layer inputs."""
     profile_dir = Path(os.getenv("DBT_PROFILES_DIR", "/app/profiles"))
     # dbt_project.yml places transient views in the ampere_work catalog.
     workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_work.duckdb"))
@@ -73,23 +73,24 @@ def prepare() -> None:
     finally:
         con.close()
 
-    publish_mode = os.getenv("ICEBERG_PUBLISH_MODE", "direct").strip().lower()
-    if publish_mode not in {"direct", "staged"}:
-        raise ValueError("ICEBERG_PUBLISH_MODE must be direct or staged")
-    attach = []
-    for layer in ("bronze", "silver", "gold"):
-        if publish_mode == "staged" and layer != "bronze":
-            # dbt builds the daily slice locally; the publisher merges it into
-            # Lakekeeper only after every model and test has passed.
-            attach.append(
-                {"path": str(workspace.parent / f"staged_{layer}.duckdb"),
-                 "alias": f"iceberg_{layer}"}
-            )
-        else:
-            attach.append(
-                {"path": os.getenv(f"ICEBERG_{layer.upper()}_WAREHOUSE", f"ampere-{layer}"),
-                 "alias": f"iceberg_{layer}", "type": "iceberg"}
-            )
+    layer = os.getenv("ICEBERG_LAYER", "").strip().lower()
+    if layer not in {"silver", "gold"}:
+        raise ValueError("ICEBERG_LAYER must be silver or gold")
+    publish_mode = os.getenv("ICEBERG_PUBLISH_MODE", "staged").strip().lower()
+    if publish_mode != "staged":
+        raise ValueError("Layer-isolated Iceberg runs require ICEBERG_PUBLISH_MODE=staged")
+    source_layer = "bronze" if layer == "silver" else "silver"
+    attach = [
+        {
+            "path": os.getenv(f"ICEBERG_{source_layer.upper()}_WAREHOUSE", source_layer),
+            "alias": f"iceberg_{source_layer}",
+            "type": "iceberg",
+        },
+        {
+            "path": str(workspace.parent / f"staged_{layer}.duckdb"),
+            "alias": f"iceberg_{layer}",
+        },
+    ]
     profile = {
         "ampere_iceberg_project": {
             "target": "prod",
@@ -109,7 +110,10 @@ def prepare() -> None:
     profile_path = profile_dir / "profiles.yml"
     profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
     profile_path.chmod(0o600)
-    print("Prepared DuckDB Iceberg catalogs: bronze, silver, gold")
+    print(
+        f"Prepared isolated {layer} DuckDB workspace with "
+        f"published {source_layer} input and staged {layer} output"
+    )
 
 
 if __name__ == "__main__":

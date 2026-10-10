@@ -2,7 +2,7 @@
 set -euo pipefail
 
 started="$SECONDS"
-if [[ "${ICEBERG_PUBLISH_MODE:-direct}" == "staged" ]]; then
+if [[ "${ICEBERG_PUBLISH_MODE:-staged}" == "staged" ]]; then
   scratch_root="${DUCKDB_SCRATCH_ROOT:-/app/artifacts}"
   mkdir -p "$scratch_root"
   run_scratch="$(mktemp -d "$scratch_root/run.XXXXXXXX")"
@@ -34,34 +34,33 @@ run_dbt() {
   report_resources "$phase"
 }
 
-if [[ "${ICEBERG_PUBLISH_MODE:-direct}" == "staged" \
-      && "${SILVER_RUN_MODE:-}" == "full_history" \
-      && "${GOLD_RUN_MODE:-}" == "full_history" \
-      && "$#" -eq 1 && "$1" == "build" ]]; then
-  # A staged full rebuild needs room for both complete databases and DuckDB spill.
+layer="${ICEBERG_LAYER:?ICEBERG_LAYER must be silver or gold}"
+if [[ "$layer" != "silver" && "$layer" != "gold" ]]; then
+  echo "ICEBERG_LAYER must be silver or gold" >&2
+  exit 2
+fi
+run_mode="${ICEBERG_RUN_MODE:-daily_refresh}"
+if [[ "$run_mode" != "daily_refresh" && "$run_mode" != "full_history" ]]; then
+  echo "ICEBERG_RUN_MODE must be daily_refresh or full_history" >&2
+  exit 2
+fi
+if [[ "$run_mode" == "full_history" ]]; then
   python - <<'PY'
 import os
 from pathlib import Path
 
-workspace = Path(os.getenv("DUCKDB_PATH", "/app/artifacts/ampere_work.duckdb"))
-free_bytes = os.statvfs(workspace.parent).f_bavail * os.statvfs(workspace.parent).f_frsize
+workspace = Path(os.environ["DUCKDB_PATH"])
+stat = os.statvfs(workspace.parent)
+free_bytes = stat.f_bavail * stat.f_frsize
 minimum_bytes = int(os.getenv("ICEBERG_FULL_STAGE_MIN_FREE_GB", "16")) * 1024**3
-print(f"Full rebuild scratch: {free_bytes / 1024**3:.1f} GiB free", flush=True)
+print(f"Full {os.environ['ICEBERG_LAYER']} rebuild scratch: {free_bytes / 1024**3:.1f} GiB free", flush=True)
 if free_bytes < minimum_bytes:
-    raise RuntimeError(
-        f"Staged full rebuild needs at least {minimum_bytes / 1024**3:.0f} GiB "
-        "of free scratch before dbt starts"
-    )
+    raise RuntimeError(f"Full rebuild requires at least {minimum_bytes / 1024**3:.0f} GiB free scratch before dbt starts")
 PY
-  run_dbt silver_build build --select tag:silver
-  run_dbt gold_build build --select tag:gold
-else
-  run_dbt dbt_build "$@"
 fi
+run_dbt "${layer}_build" build --select "tag:${layer}"
 
-if [[ "${ICEBERG_PUBLISH_MODE:-direct}" == "staged" ]]; then
-  started="$SECONDS"
-  python /app/publish_catalog.py
-  echo "phase=iceberg_publish elapsed_seconds=$((SECONDS - started))"
-  report_resources iceberg_publish
-fi
+started="$SECONDS"
+python /app/publish_catalog.py --layer "$layer"
+echo "phase=iceberg_publish elapsed_seconds=$((SECONDS - started))"
+report_resources iceberg_publish

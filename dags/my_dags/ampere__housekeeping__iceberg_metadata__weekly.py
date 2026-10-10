@@ -46,8 +46,6 @@ with DAG(
                 "iceberg_housekeeping_spark_remote",
                 default="sc://spark-connect.ampere.svc.cluster.local:15002",
             ),
-            "--retention-days",
-            "14",
         ] + (
             ["--dry-run"]
             if Variable.get("iceberg_housekeeping_dry_run", default="false")

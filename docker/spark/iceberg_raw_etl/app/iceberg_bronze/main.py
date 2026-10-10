@@ -2,7 +2,6 @@
 
 import logging
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from typing import Optional
 
 from pyspark.sql import SparkSession, functions as F
@@ -333,11 +332,7 @@ def main() -> None:
     # Step 4: Load the registry table to track applied batches.
     # This drives idempotency and prevents duplicate loads per partition.
     # The Iceberg registry is the source of truth for applied landing batches.
-    schema_path = get_env(
-        "BRONZE_REGISTRY_SCHEMA_PATH",
-        str(Path(__file__).with_name("bronze_apply_registry_schema.json")),
-    )
-    registry_schema = load_registry_schema(schema_path)
+    registry_schema = load_registry_schema()
     registry_table_name = ensure_iceberg_table(
         spark=spark,
         catalog=iceberg_catalog,
@@ -453,14 +448,20 @@ def main() -> None:
                         state["last_successful_ingest_ts_utc"]
                     )
 
-            search_start = _search_start_date(
-                partition_key,
-                registry_date,
-                state_last_ingest,
-                run_date,
-                table_lookback_days,
-                has_registry_rows,
+            search_start = (
+                None
+                if args.rebuild_all
+                else _search_start_date(
+                    partition_key,
+                    registry_date,
+                    state_last_ingest,
+                    run_date,
+                    table_lookback_days,
+                    has_registry_rows,
+                )
             )
+            if args.rebuild_all:
+                logger.info("BRONZE_TABLE_PROGRESS status=full_rebuild group=%s table=%s", group_name, table)
 
             # Step 7: Discover candidate runs and load manifests.
             # This filters to batches with _SUCCESS and builds the apply queue.

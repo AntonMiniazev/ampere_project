@@ -23,6 +23,10 @@ def parse_iceberg_bronze_args() -> argparse.Namespace:
     parser.add_argument("--raw-prefix", default="postgres-pre-raw")
     parser.add_argument("--source-system", default="postgres-pre-raw")
     parser.add_argument("--shuffle-partitions", type=int, default=0)
+    parser.add_argument(
+        "--rebuild-all", action="store_true",
+        help="replay every validated Raw manifest, ignoring the daily lookback",
+    )
     parser.add_argument("--iceberg-catalog", default="iceberg_bronze")
     parser.add_argument("--iceberg-bronze-schema", default="bronze")
     parser.add_argument("--iceberg-ops-schema", default="ops")

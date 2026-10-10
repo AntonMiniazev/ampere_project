@@ -1,0 +1,1 @@
+"""Versioned Ampere pipeline contracts."""

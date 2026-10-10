@@ -6,40 +6,59 @@ processors can stay focused on their data flow.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from datetime import date
-from pathlib import Path
 
 from pyspark.sql import SparkSession
-from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+from pyspark.sql.types import (
+    BooleanType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FloatType,
+    IntegerType,
+    LongType,
+    ShortType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+    TimestampNTZType,
+)
+from tools.contracts.ampere_contract import load_contract
 
 
-def load_registry_schema(schema_path: str) -> StructType:
-    """Load the registry schema JSON template into a Spark StructType.
-
-    Args:
-        schema_path: JSON schema path, e.g. "/opt/spark/app/bronze_apply_registry_schema.json".
-
-    Examples:
-        load_registry_schema("/opt/spark/app/bronze_apply_registry_schema.json")
-    """
-    data = json.loads(Path(schema_path).read_text())
+def load_registry_schema() -> StructType:
+    """Build the Bronze apply-registry schema from canonical contract v3."""
     type_map = {
         "string": StringType(),
+        "boolean": BooleanType(),
+        "date": DateType(),
         "int": IntegerType(),
+        "smallint": ShortType(),
+        "bigint": LongType(),
+        "float": FloatType(),
+        "double": DoubleType(),
+        "timestamp": TimestampType(),
+        "timestamp_ntz": TimestampNTZType(),
     }
     fields = []
-    for field in data.get("fields", []):
-        field_type = type_map.get(field.get("type"))
+    table = load_contract().table("bronze", "bronze_apply_registry")
+    for field in table.columns:
+        data_type = field["type_text"]
+        if data_type.startswith("decimal("):
+            precision, scale = map(int, data_type[8:-1].split(","))
+            field_type = DecimalType(precision, scale)
+        else:
+            field_type = type_map.get(data_type)
         if field_type is None:
-            raise ValueError(f"Unsupported registry field type: {field.get('type')}")
+            raise ValueError(f"Unsupported registry field type: {data_type}")
         fields.append(
             StructField(
-                field.get("name"),
+                field["name"],
                 field_type,
-                bool(field.get("nullable", True)),
+                True,
             )
         )
     if not fields:

@@ -366,8 +366,12 @@ def parse_airflow_dag_file(path: Path) -> dict[str, Any]:
     """Extract DAG metadata and cross-DAG triggers from one DAG Python file."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     constants: dict[str, str] = {}
+    metadata_nodes: dict[str, ast.AST] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    metadata_nodes[target.id] = node.value
             value = literal_string(node.value)
             if value is None:
                 continue
@@ -407,6 +411,24 @@ def parse_airflow_dag_file(path: Path) -> dict[str, Any]:
                     "trigger_rule": trigger_rule_label(keyword(node, "trigger_rule")),
                 }
             )
+    if schedule == "unknown" and "SCHEDULE" in metadata_nodes:
+        schedule = schedule_label(metadata_nodes["SCHEDULE"])
+    if not tags and isinstance(metadata_nodes.get("TAGS"), ast.List):
+        tags = [
+            item.value
+            for item in metadata_nodes["TAGS"].elts
+            if isinstance(item, ast.Constant) and isinstance(item.value, str)
+        ]
+    if not triggers and "TRIGGER_DAG_ID" in constants:
+        triggers.append(
+            {
+                "task_id": constants.get("TRIGGER_TASK_ID", "trigger"),
+                "target": constants["TRIGGER_DAG_ID"],
+                "wait_for_completion": True,
+                "reset_dag_run": True,
+                "trigger_rule": "all_success",
+            }
+        )
     return {
         "dag_id": dag_id,
         "file": str(path.relative_to(ROOT)).replace("\\", "/"),
@@ -469,7 +491,10 @@ def write_airflow_dag_orchestration() -> None:
         [
             "",
             f'    {node_id("ampere__pre_raw__generators__init", "D")}:::manual',
-            f'    {node_id("ampere__iceberg__silver_gold__dbt_duckdb__full_rebuild", "D")}:::manual',
+            f'    {node_id("ampere__iceberg__catalog__init", "D")}:::manual',
+            f'    {node_id("ampere__iceberg__bronze__raw_to_iceberg__full_rebuild", "D")}:::manual',
+            f'    {node_id("ampere__iceberg__silver__dbt_duckdb__full_rebuild", "D")}:::manual',
+            f'    {node_id("ampere__iceberg__gold__dbt_duckdb__full_rebuild", "D")}:::manual',
             "    classDef manual fill:#dbeafe,stroke:#2563eb,color:#111827,stroke-dasharray: 4 3",
         ]
     )
@@ -481,7 +506,7 @@ def write_airflow_dag_orchestration() -> None:
         "",
         "This page is generated from `dags/my_dags/*.py`. It shows the normal daily chain, manual recovery entrypoints, and the trigger conditions that matter operationally.",
         "",
-        "The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs, and dbt with DuckDB builds and publishes Silver and Gold Iceberg tables. The full rebuild is a manual recovery entrypoint.",
+        "The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs, and isolated dbt pods build and publish Silver, then Gold. Catalog initialization and the Bronze-to-Gold full rebuild are manually run entrypoints.",
         "",
         "```mermaid",
         mermaid.rstrip(),

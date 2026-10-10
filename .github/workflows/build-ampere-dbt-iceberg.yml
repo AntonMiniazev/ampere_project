@@ -7,6 +7,9 @@ on:
     paths:
       - dbt_iceberg/**
       - docker/dbt_iceberg/**
+      - tools/contracts/**
+      - dags/utils/iceberg_dbt_layer.py
+      - dags/my_dags/ampere__iceberg__*__dbt_duckdb__*.py
       - tools/budget_generation/budget_parameters_daily.csv
       - tests/test_iceberg_dbt_catalog.py
       - tests/test_iceberg_publish.py
@@ -21,9 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
       - name: Install dbt v2 and DuckDB driver
         run: |
           python -m pip install -r docker/dbt_iceberg/requirements.txt
@@ -35,6 +38,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_iceberg_dbt_catalog.py -v
           python -m unittest discover -s tests -p test_iceberg_publish.py -v
+          python tools/contracts/ampere_contract.py
 
   build-and-push:
     needs: dbt-smoke
