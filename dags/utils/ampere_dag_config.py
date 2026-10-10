@@ -320,12 +320,12 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
-        driver_memory=Variable.get("spark_bronze_driver_memory", default="2000m"),
+        driver_memory=Variable.get("spark_bronze_driver_memory", default="1500m"),
         driver_memory_overhead=Variable.get(
             "spark_bronze_driver_memory_overhead", default="512"
         ),
         driver_node_selector=Variable.get(
-            "spark_bronze_driver_node_selector", default="ampere-k8s-node2"
+            "spark_bronze_driver_node_selector", default="ampere-k8s-node3"
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
