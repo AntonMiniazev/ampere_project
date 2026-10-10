@@ -1,4 +1,4 @@
-"""Apply the latest Raw landing batches to Bronze Iceberg tables."""
+"""Airflow DAG: apply the latest Raw landing batches to Bronze Iceberg tables."""
 
 from utils.iceberg_bronze_dag import build_bronze_dag
 

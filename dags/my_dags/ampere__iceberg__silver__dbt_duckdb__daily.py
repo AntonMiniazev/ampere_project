@@ -1,4 +1,4 @@
-"""Build and publish daily Silver tables, then trigger daily Gold."""
+"""Airflow DAG: build and publish daily Silver tables, then trigger daily Gold."""
 
 from utils.iceberg_dbt_layer import build_layer_dag
 

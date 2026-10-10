@@ -1,4 +1,4 @@
-"""Rebuild Silver from all available Bronze history, then trigger Gold."""
+"""Airflow DAG: rebuild Silver from all available Bronze history, then trigger Gold."""
 
 from utils.iceberg_dbt_layer import build_layer_dag
 

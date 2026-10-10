@@ -1,4 +1,4 @@
-"""Rebuild Bronze from all complete Raw landing history."""
+"""Airflow DAG: rebuild Bronze from all complete Raw landing history."""
 
 from utils.iceberg_bronze_dag import build_bronze_dag
 

@@ -1,4 +1,4 @@
-"""Rebuild Gold from published Silver history and refresh Curie's cache."""
+"""Airflow DAG: rebuild Gold from published Silver history and refresh Curie's cache."""
 
 from utils.iceberg_dbt_layer import build_layer_dag
 

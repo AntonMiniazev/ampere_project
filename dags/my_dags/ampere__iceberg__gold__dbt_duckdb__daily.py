@@ -1,4 +1,4 @@
-"""Build and publish daily Gold tables, then refresh Curie's cache."""
+"""Airflow DAG: build and publish daily Gold tables, then refresh Curie's cache."""
 
 from utils.iceberg_dbt_layer import build_layer_dag
 
