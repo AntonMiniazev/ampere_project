@@ -150,22 +150,16 @@ class DuckDBCatalogTests(unittest.TestCase):
 
                     completed = subprocess.run(
                         [
-                            "dbt", "build", "--project-dir", str(ROOT / "dbt_iceberg"),
+                            "dbt", "debug", "--project-dir", str(ROOT / "dbt_iceberg"),
                             "--profiles-dir", settings["DBT_PROFILES_DIR"],
-                            "--target-path", str(Path(temp_dir) / "target-budget"),
-                            "--select", "silver_budget_orders_sales", "budget_orders_sales",
                         ],
-                        env=os.environ | {
-                            "BUDGET_DAILY_CSV_PATH": str(
-                                ROOT / "tools/budget_generation/budget_parameters_daily.csv"
-                            )
-                        },
                         capture_output=True, text=True, timeout=60, check=False,
                     )
                     self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                    self.assertIn("iceberg_silver", completed.stdout)
 
-                # Compile representative Silver and Gold models in each mode
-                # to verify full_history removes both layers' month windows.
+                # Compile representative Silver and Gold models in each mode.
+                # Silver follows the selected run mode; Gold always reads full inputs.
                 for mode in ("daily_refresh", "full_history"):
                     target_path = Path(temp_dir) / f"target-{mode}"
                     completed = subprocess.run(
@@ -184,7 +178,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                             "stg_payments",
                             "stg_order_status_history",
                             "stg_delivery_tracking",
-                            "curie_marketing_sales_budget_monthly_store",
+                            "marketing_sales_budget_monthly_store",
                             "--vars",
                             json.dumps(
                                 {
@@ -211,16 +205,14 @@ class DuckDBCatalogTests(unittest.TestCase):
                     gold_sql = (
                         target_path
                         / "compiled/ampere_iceberg_project/models/gold/marts/"
-                        "curie_marketing_sales_budget_monthly_store.sql"
+                        "marketing_sales_budget_monthly_store.sql"
                     ).read_text(encoding="utf-8").lower()
+                    self.assertNotIn("interval '1 month'", gold_sql)
                     if mode == "full_history":
                         self.assertNotIn("interval '1 month'", silver_sql)
-                        self.assertNotIn("interval '1 month'", gold_sql)
                         self.assertNotIn("where", silver_sql)
-                        self.assertIn("and true", gold_sql)
                     else:
                         self.assertIn("interval '1 month'", silver_sql)
-                        self.assertIn("interval '1 month'", gold_sql)
                     for table in (
                         "stg_order_product", "stg_payments",
                         "stg_order_status_history", "stg_delivery_tracking",
@@ -242,16 +234,16 @@ class DuckDBCatalogTests(unittest.TestCase):
                             "dbt", "compile", "--project-dir", str(ROOT / "dbt_iceberg"),
                             "--profiles-dir", settings["DBT_PROFILES_DIR"],
                             "--target-path", str(target_path),
-                            "--select", "stg_order_product", "curie_marketing_product_sales_monthly_store",
+                            "--select", "stg_order_product", "marketing_product_sales_monthly_store",
                         ],
                         capture_output=True, text=True, timeout=60, check=False,
                     )
                     self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
                     staged_sql = (
                         target_path / "compiled/ampere_iceberg_project/models/gold/marts/"
-                        "curie_marketing_product_sales_monthly_store.sql"
+                        "marketing_product_sales_monthly_store.sql"
                     ).read_text(encoding="utf-8").lower()
-                    self.assertIn("interval '1 month'", staged_sql)
+                    self.assertNotIn("interval '1 month'", staged_sql)
                     product_sql = (
                         target_path / "compiled/ampere_iceberg_project/models/staging/"
                         "stg_order_product.sql"

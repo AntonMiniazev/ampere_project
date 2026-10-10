@@ -7,6 +7,7 @@ from datetime import datetime
 from airflow import DAG
 
 from utils.ampere_dag_config import (
+    ICEBERG_MUTATION_POOL,
     load_bronze_dag_config,
     minio_ssl_enabled,
     resolve_spark_image,
@@ -31,6 +32,8 @@ with DAG(
 ) as dag:
     initialize = SafeSparkKubernetesOperator(
         task_id="initialize__iceberg__catalog_from_contract_v3",
+        pool=ICEBERG_MUTATION_POOL,
+        pool_slots=1,
         namespace=CONFIG.spark_namespace,
         application_file="catalog_init_template_iceberg.yaml",
         params={

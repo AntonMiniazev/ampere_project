@@ -10,6 +10,7 @@ from airflow.sdk import Variable
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import (
+    ICEBERG_MUTATION_POOL,
     load_silver_dag_config,
     resolve_spark_image,
     standard_default_args,
@@ -31,6 +32,8 @@ with DAG(
 ) as dag:
     clean_iceberg_metadata = KubernetesPodOperator(
         task_id="clean__iceberg__expired_snapshots_and_orphans",
+        pool=ICEBERG_MUTATION_POOL,
+        pool_slots=1,
         name="ampere-iceberg-housekeeping",
         namespace=CONFIG.namespace,
         image=resolve_spark_image(),

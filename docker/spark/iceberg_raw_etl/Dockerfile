@@ -4,19 +4,21 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.0 /uv /uvx /bin/
 
 ENV PYTHONUNBUFFERED=1 \
     UV_PYTHON_INSTALL_DIR=/opt/ampere-python \
-    PYSPARK_PYTHON=/usr/local/bin/python3.14 \
-    PYSPARK_DRIVER_PYTHON=/usr/local/bin/python3.14
+    PYSPARK_PYTHON=/opt/ampere-venv/bin/python \
+    PYSPARK_DRIVER_PYTHON=/opt/ampere-venv/bin/python
 
 USER root
 ENV HOME=/root
 RUN uv python install 3.14 \
-    && ln -s "$(uv python find 3.14)" /usr/local/bin/python3.14 \
-    && uv pip install --system --python /usr/local/bin/python3.14 --no-cache \
+    && uv venv --python "$(uv python find 3.14)" /opt/ampere-venv \
+    && uv pip install --python /opt/ampere-venv/bin/python --no-cache \
     boto3==1.40.18 \
     pandas==2.3.3 \
     pyarrow==26.0.0 \
     "pyspark[connect]==4.1.0" \
     zstandard==0.25.0
+
+ENV PATH="/opt/ampere-venv/bin:${PATH}"
 
 # Pin Iceberg's Spark 4.1 runtime and the same Hadoop S3A libraries used by
 # the current Raw reader. The image stays independent of the shared Ivy cache.

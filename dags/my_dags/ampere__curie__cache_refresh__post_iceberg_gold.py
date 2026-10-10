@@ -22,14 +22,14 @@ REFRESH_PATH = "/api/cache/refresh_flightsql"
 STATUS_PATH = "/api/cache/status_flightsql"
 ADMIN_KEY_HEADER = "X-Curie-Admin-Key"
 EXPECTED_TABLES = {
-    "curie_marketing_sales_budget_monthly_store",
-    "curie_marketing_product_sales_monthly_store",
-    "curie_marketing_category_sales_monthly_store",
-    "curie_marketing_client_metrics_monthly_store",
-    "curie_marketing_active_client_month",
-    "curie_financial_performance_monthly_store",
-    "curie_financial_product_margin_monthly_store",
-    "curie_delivery_courier_performance_monthly_store",
+    "marketing_sales_budget_monthly_store",
+    "marketing_product_sales_monthly_store",
+    "marketing_category_sales_monthly_store",
+    "marketing_client_metrics_monthly_store",
+    "marketing_active_client_month",
+    "financial_performance_monthly_store",
+    "financial_product_margin_monthly_store",
+    "delivery_courier_performance_monthly_store",
 }
 
 

@@ -28,6 +28,9 @@ class IcebergContractTests(unittest.TestCase):
             contract.table("bronze", "assortment").write["mode"],
             "overwrite_partitions",
         )
+        payments = contract.table("bronze", "payments")
+        self.assertEqual(payments.sort_order[0]["source"], "payment_date")
+        self.assertEqual(payments.write["distribution"], "range")
         self.assertEqual(
             contract.table("silver", "fact_order_product").write["target_file_size_bytes"],
             134217728,

@@ -14,46 +14,6 @@ from duckdb_runtime import runtime_settings
 from tools.contracts.ampere_contract import load_contract
 
 
-# Every published model needs a stable business grain. Complete staged models
-# also delete keys missing from the new snapshot; daily fact slices never do.
-MERGE_KEYS = {
-    "silver": {
-        "budget_orders_sales": ("budget_name", "budget_date", "store_id"),
-        "dim_assortment": ("assortment_key",),
-        "dim_clients": ("client_id",),
-        "dim_costing": ("costing_key",),
-        "dim_delivery_costing": ("delivery_costing_key",),
-        "dim_delivery_resource": ("delivery_resource_id",),
-        "dim_delivery_type": ("delivery_type_id",),
-        "dim_order_statuses": ("order_status_id",),
-        "dim_product_categories": ("category_id",),
-        "dim_products": ("product_id",),
-        "dim_stores": ("store_id",),
-        "dim_zones": ("zone_id",),
-        "fact_orders": ("order_id",),
-        "fact_order_product": ("fact_order_product_key",),
-        "fact_payments": ("fact_payments_key",),
-        "fact_order_status_history": ("fact_order_status_history_key",),
-        "fact_delivery_tracking": ("fact_delivery_tracking_key",),
-    },
-    "gold": {
-        "curie_marketing_sales_budget_monthly_store": ("month", "store_id"),
-        "curie_marketing_product_sales_monthly_store": ("month", "store_id", "product_id"),
-        "curie_marketing_category_sales_monthly_store": ("month", "store_id", "category_name"),
-        "curie_marketing_client_metrics_monthly_store": ("month", "store_id"),
-        "curie_marketing_active_client_month": ("month", "store_id", "client_id"),
-        "curie_financial_performance_monthly_store": ("month", "store_id"),
-        "curie_financial_product_margin_monthly_store": ("month", "store_id", "product_id"),
-        "curie_delivery_courier_performance_monthly_store": ("month", "store_id", "courier_id"),
-    },
-}
-COMPLETE_MODELS = {
-    "silver": frozenset(
-        name for name in MERGE_KEYS["silver"] if not name.startswith("fact_")
-    ),
-    "gold": frozenset(),
-}
-NULLABLE_MERGE_KEYS: dict[tuple[str, str], frozenset[str]] = {}
 FULL_REBUILD_FACT_BATCHES = {
     "fact_delivery_tracking": 3,
     "fact_order_product": 3,
@@ -92,9 +52,14 @@ def publish_models(manifest_path: Path, layer: str) -> list[str]:
             f"Missing: {sorted(expected_tables - set(tables))}; "
             f"unexpected: {sorted(set(tables) - expected_tables)}"
         )
-    missing_keys = expected_tables - set(MERGE_KEYS[layer])
-    if missing_keys:
-        raise RuntimeError(f"Missing publisher business keys for {layer}: {sorted(missing_keys)}")
+    missing_publication = {
+        table for table in expected_tables
+        if not CONTRACT.table(layer, table).publication
+    }
+    if missing_publication:
+        raise RuntimeError(
+            f"Missing publication contract for {layer}: {sorted(missing_publication)}"
+        )
     return sorted(tables)
 
 
@@ -144,7 +109,12 @@ def assert_unique_keys(
 
 def is_complete_source(layer: str, table: str, run_mode: str) -> bool:
     """Identify a complete source snapshot, which may safely remove missing keys."""
-    return run_mode == "full_history" or table in COMPLETE_MODELS[layer]
+    spec = CONTRACT.table(layer, table)
+    try:
+        completeness = spec.publication["source_completeness"][run_mode]
+    except KeyError as exc:
+        raise ValueError(f"No source-completeness policy for {layer}.{table} in {run_mode}") from exc
+    return completeness == "full_snapshot"
 
 
 def target_exists(con: duckdb.DuckDBPyConnection, target: str) -> bool:
@@ -171,12 +141,11 @@ def validate_table(
     if complete_source:
         if row_count == 0:
             raise ValueError(f"Refusing to synchronize {target} from an empty table")
-    keys = MERGE_KEYS[layer][table]
-    nullable_keys = NULLABLE_MERGE_KEYS.get((layer, table), frozenset())
+    keys = CONTRACT.table(layer, table).publication["merge_keys"]
     if row_count:
-        assert_unique_keys(con, source, keys, nullable_keys)
+        assert_unique_keys(con, source, keys)
     if complete_source and run_mode == "daily_refresh":
-        assert_unique_keys(con, target, keys, nullable_keys)
+        assert_unique_keys(con, target, keys)
     return row_count
 
 
@@ -302,14 +271,15 @@ def publish_table(
     complete_source = is_complete_source(layer, table, run_mode)
     if layer == "silver" and run_mode == "full_history" and table in FULL_REBUILD_FACT_BATCHES:
         publish_full_history_fact_in_batches(
-            con, table, source, target, MERGE_KEYS[layer][table],
+            con, table, source, target,
+            CONTRACT.table(layer, table).publication["merge_keys"],
             FULL_REBUILD_FACT_BATCHES[table], row_count,
         )
         action = "synchronized in batches"
     elif row_count == 0:
         action = "unchanged (empty daily slice)"
     else:
-        keys = MERGE_KEYS[layer][table]
+        keys = CONTRACT.table(layer, table).publication["merge_keys"]
         # Replays leave unchanged Iceberg rows alone instead of writing
         # positional deletes for every match.
         predicate = merge_upsert(con, source, target, keys)

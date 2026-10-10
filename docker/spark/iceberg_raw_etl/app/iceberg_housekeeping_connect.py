@@ -17,8 +17,6 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 LOGGER = logging.getLogger("iceberg-housekeeping")
 SAFE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 CATALOGS = {"bronze": "iceberg_bronze", "silver": "iceberg_silver", "gold": "iceberg_gold"}
-MIN_MANIFESTS_FOR_REWRITE = 100
-MAX_COMPACTION_TABLE_BYTES = 4 * 1024**3
 CONTRACT = load_contract()
 
 
@@ -76,23 +74,52 @@ def _procedure_sql(
     return expire_sql, orphan_sql
 
 
-def _data_file_stats(spark: SparkSession, catalog: str, schema: str, table: str) -> tuple[int, int]:
+def _data_file_stats(
+    spark: SparkSession,
+    catalog: str,
+    schema: str,
+    table: str,
+    *,
+    min_input_files: int,
+    partitioned: bool,
+) -> tuple[int, int, int]:
+    """Return file count, bytes, and eligible file groups by Iceberg partition."""
     metadata = ".".join(map(_identifier, (catalog, schema, table, "data_files")))
+    group_columns = "spec_id, partition" if partitioned else "spec_id"
     row = spark.sql(
-        f"SELECT COUNT(*) AS file_count, COALESCE(SUM(file_size_in_bytes), 0) AS total_bytes FROM {metadata}"
+        "WITH file_groups AS ("
+        f"SELECT {group_columns}, COUNT(*) AS file_count, "
+        f"COALESCE(SUM(file_size_in_bytes), 0) AS total_bytes FROM {metadata} "
+        f"GROUP BY {group_columns}) "
+        "SELECT COALESCE(SUM(file_count), 0) AS file_count, "
+        "COALESCE(SUM(total_bytes), 0) AS total_bytes, "
+        f"COALESCE(SUM(CASE WHEN file_count >= {int(min_input_files)} THEN 1 ELSE 0 END), 0) "
+        "AS eligible_groups FROM file_groups"
     ).collect()[0]
-    return int(row.file_count), int(row.total_bytes)
+    return int(row.file_count), int(row.total_bytes), int(row.eligible_groups)
 
 
-def _delete_file_count(spark: SparkSession, catalog: str, schema: str, table: str) -> int:
+def _delete_file_stats(
+    spark: SparkSession,
+    catalog: str,
+    schema: str,
+    table: str,
+    *,
+    delete_file_count_threshold: int,
+    partitioned: bool,
+) -> tuple[int, int]:
+    """Return delete-file count and eligible partition groups."""
     metadata = ".".join(map(_identifier, (catalog, schema, table, "delete_files")))
-    try:
-        return int(spark.sql(f"SELECT COUNT(*) FROM {metadata}").collect()[0][0])
-    except Exception:
-        # Iceberg metadata tables may reject the query when the table has no
-        # delete-file support. Treat that as a hard error only for profiles
-        # that request delete-file rewriting (handled by the caller).
-        raise
+    group_columns = "spec_id, partition" if partitioned else "spec_id"
+    row = spark.sql(
+        "WITH delete_groups AS ("
+        f"SELECT {group_columns}, COUNT(*) AS file_count FROM {metadata} "
+        f"GROUP BY {group_columns}) "
+        "SELECT COALESCE(SUM(file_count), 0) AS file_count, "
+        f"COALESCE(SUM(CASE WHEN file_count >= {int(delete_file_count_threshold)} "
+        "THEN 1 ELSE 0 END), 0) AS eligible_groups FROM delete_groups"
+    ).collect()[0]
+    return int(row.file_count), int(row.eligible_groups)
 
 
 def _compaction_sql(catalog: str, schema: str, table: str, spec: ResolvedTable) -> str:
@@ -106,7 +133,8 @@ def _compaction_sql(catalog: str, schema: str, table: str, spec: ResolvedTable) 
         "partial-progress.max-commits": "10",
     }
     if maintenance.get("delete_files") == "rewrite_on_threshold":
-        options["delete-file-threshold"] = "1"
+        options["delete-file-threshold"] = str(maintenance["delete_file_count_threshold"])
+    options["max-concurrent-file-group-rewrites"] = "1"
     options_sql = ", ".join(f"{_literal(k)}, {_literal(v)}" for k, v in options.items())
     return (
         f"CALL {_identifier(catalog)}.system.rewrite_data_files("
@@ -127,22 +155,55 @@ def _compact_table(
     name = f"{catalog}.{schema}.{table}"
     spec = spec or _contract_table(catalog, schema, table)
     policy = spec.maintenance.get("data_compaction", "none")
-    if policy == "none":
+    delete_policy = spec.maintenance.get("delete_files", "none")
+    if policy == "none" and delete_policy == "none":
         LOGGER.info("Skipping compaction for %s: disabled by profile %s", name, spec.profile_name)
         return False
-    file_count, total_bytes = _data_file_stats(spark, catalog, schema, table)
     minimum = int(spec.maintenance.get("min_input_files", 5))
-    if file_count < minimum:
-        LOGGER.info("Skipping compaction for %s: data_files=%s below contract min_input_files=%s", name, file_count, minimum)
-        return False
-    if total_bytes > MAX_COMPACTION_TABLE_BYTES:
-        LOGGER.info("Skipping compaction for %s: active_bytes=%s exceeds safety limit=%s", name, total_bytes, MAX_COMPACTION_TABLE_BYTES)
+    file_count = total_bytes = data_groups = 0
+    if policy != "none":
+        file_count, total_bytes, data_groups = _data_file_stats(
+            spark,
+            catalog,
+            schema,
+            table,
+            min_input_files=minimum,
+            partitioned=bool(spec.partition_spec),
+        )
+
+    delete_files = delete_groups = 0
+    if delete_policy == "rewrite_on_threshold":
+        delete_files, delete_groups = _delete_file_stats(
+            spark,
+            catalog,
+            schema,
+            table,
+            delete_file_count_threshold=int(spec.maintenance["delete_file_count_threshold"]),
+            partitioned=bool(spec.partition_spec),
+        )
+
+    if not data_groups and not delete_groups:
+        LOGGER.info(
+            "Skipping compaction for %s: data_files=%s eligible_data_groups=%s "
+            "delete_files=%s eligible_delete_groups=%s",
+            name, file_count, data_groups, delete_files, delete_groups,
+        )
         return False
     if dry_run:
-        LOGGER.info("Would compact %s: data_files=%s active_bytes=%s", name, file_count, total_bytes)
+        LOGGER.info(
+            "Would rewrite %s: data_files=%s active_bytes=%s eligible_data_groups=%s "
+            "delete_files=%s eligible_delete_groups=%s",
+            name, file_count, total_bytes, data_groups,
+            delete_files, delete_groups,
+        )
         return False
 
-    LOGGER.info("Checking compaction for %s: active_data_files=%s active_bytes=%s", name, file_count, total_bytes)
+    LOGGER.info(
+        "Rewriting %s: active_data_files=%s active_bytes=%s eligible_data_groups=%s "
+        "delete_files=%s eligible_delete_groups=%s",
+        name, file_count, total_bytes, data_groups,
+        delete_files, delete_groups,
+    )
     finished = Event()
     started = time.monotonic()
 
@@ -194,16 +255,18 @@ def _maybe_rewrite_manifests(
     *,
     dry_run: bool,
 ) -> None:
-    if spec.maintenance.get("rewrite_manifests", "none") == "none":
+    policy = spec.maintenance.get("rewrite_manifests", "none")
+    if policy == "none":
         return
     metadata = ".".join(map(_identifier, (catalog, schema, table, "manifests")))
     count = int(spark.sql(f"SELECT COUNT(*) FROM {metadata}").collect()[0][0])
     name = f"{catalog}.{schema}.{table}"
-    if count < MIN_MANIFESTS_FOR_REWRITE:
-        LOGGER.info("Skipping manifest rewrite for %s: manifests=%s threshold=%s", name, count, MIN_MANIFESTS_FOR_REWRITE)
+    threshold = int(spec.maintenance.get("manifest_count_threshold", 0))
+    if policy == "on_threshold" and count < threshold:
+        LOGGER.info("Skipping manifest rewrite for %s: manifests=%s threshold=%s", name, count, threshold)
         return
     if dry_run:
-        LOGGER.info("Would rewrite manifests for %s: manifests=%s", name, count)
+        LOGGER.info("Would rewrite manifests for %s: manifests=%s policy=%s", name, count, policy)
         return
     result = spark.sql(
         f"CALL {_identifier(catalog)}.system.rewrite_manifests(table => {_literal(f'{schema}.{table}')})"

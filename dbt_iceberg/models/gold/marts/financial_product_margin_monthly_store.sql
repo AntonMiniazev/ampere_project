@@ -1,4 +1,4 @@
-{{ config(alias='curie_financial_product_margin_monthly_store', tags=['gold', 'publish']) }}
+{{ config(alias='financial_product_margin_monthly_store', tags=['gold', 'publish']) }}
 
 select
     cast(date_trunc('month', lines.order_date) as date) as month,
@@ -19,5 +19,4 @@ left join {{ ref('dim_costing') }} as costing
 left join {{ ref('dim_products') }} as products on lines.product_id = products.product_id
 left join {{ ref('dim_stores') }} as stores on lines.store_id = stores.store_id
 where lines.order_date is not null
-  and {{ ampere_gold_month_window_predicate('lines.order_date') }}
 group by 1, 2, 3, 4, 5, 6, 7

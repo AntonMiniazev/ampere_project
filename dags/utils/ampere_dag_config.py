@@ -14,6 +14,7 @@ DEFAULT_RELEASE_VERSION = "latest"
 DEFAULT_SPARK_SERVICE_ACCOUNT = "spark-operator-spark"
 DEFAULT_MINIO_ENDPOINT = "http://minio.ampere.svc.cluster.local:9000"
 DEFAULT_ETL_NODE = "ampere-k8s-node4"
+ICEBERG_MUTATION_POOL = "iceberg_pipeline_mutation"
 
 
 def get_optional_variable(name: str) -> str | None:

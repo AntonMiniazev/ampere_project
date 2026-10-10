@@ -28,8 +28,8 @@ flowchart TD
     D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; waits for completion"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
     D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__DAILY
     D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD
-    D_AMPERE__PRE_RAW__GENERATORS__DAILY -->|"upstream success; does not wait"| D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY
-    D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY
+    D_AMPERE__PRE_RAW__GENERATORS__DAILY -->|"upstream success; waits for completion"| D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY
+    D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY -->|"upstream success; waits for completion"| D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY
 
     D_AMPERE__PRE_RAW__GENERATORS__INIT:::manual
     D_AMPERE__ICEBERG__CATALOG__INIT:::manual
@@ -67,5 +67,5 @@ flowchart TD
 | `ampere__iceberg__gold__dbt_duckdb__full_rebuild` | `ampere__curie__cache_refresh__post_iceberg_gold` | `trigger__curie__cache_refresh__post_iceberg_gold` | upstream success; waits for completion |
 | `ampere__iceberg__silver__dbt_duckdb__daily` | `ampere__iceberg__gold__dbt_duckdb__daily` | `trigger__iceberg__gold__dbt_duckdb__daily` | upstream success; waits for completion |
 | `ampere__iceberg__silver__dbt_duckdb__full_rebuild` | `ampere__iceberg__gold__dbt_duckdb__full_rebuild` | `trigger__iceberg__gold__dbt_duckdb__full_rebuild` | upstream success; waits for completion |
-| `ampere__pre_raw__generators__daily` | `ampere__raw_landing__postgres_to_landing__daily` | `trigger__raw_landing__postgres_to_landing__daily` | upstream success; does not wait |
-| `ampere__raw_landing__postgres_to_landing__daily` | `ampere__iceberg__bronze__raw_to_iceberg__daily` | `trigger__iceberg__bronze__raw_to_iceberg__daily` | upstream success; does not wait |
+| `ampere__pre_raw__generators__daily` | `ampere__raw_landing__postgres_to_landing__daily` | `trigger__raw_landing__postgres_to_landing__daily` | upstream success; waits for completion |
+| `ampere__raw_landing__postgres_to_landing__daily` | `ampere__iceberg__bronze__raw_to_iceberg__daily` | `trigger__iceberg__bronze__raw_to_iceberg__daily` | upstream success; waits for completion |

@@ -9,7 +9,13 @@ from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable
 
-from utils.ampere_dag_config import load_bronze_dag_config, minio_ssl_enabled, resolve_spark_image, standard_default_args
+from utils.ampere_dag_config import (
+    ICEBERG_MUTATION_POOL,
+    load_bronze_dag_config,
+    minio_ssl_enabled,
+    resolve_spark_image,
+    standard_default_args,
+)
 from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
 from utils.stream_group_config import build_bronze_stream_groups
 
@@ -97,6 +103,8 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
             tasks.append(
                 SafeSparkKubernetesOperator(
                     task_id=f"run__sparkapp__group_{name}",
+                    pool=ICEBERG_MUTATION_POOL,
+                    pool_slots=1,
                     namespace=config.spark_namespace,
                     application_file="raw_to_bronze_template_iceberg.yaml",
                     params=params,

@@ -1,4 +1,4 @@
-{{ config(alias='curie_marketing_sales_budget_monthly_store', tags=['gold', 'publish']) }}
+{{ config(alias='marketing_sales_budget_monthly_store', tags=['gold', 'publish']) }}
 
 with actual_sales as (
     select
@@ -9,7 +9,6 @@ with actual_sales as (
     from {{ ref('fact_orders') }}
     where latest_order_status_id = 3
       and order_date is not null
-      and {{ ampere_gold_month_window_predicate('order_date') }}
     group by 1, 2
 ),
 
@@ -21,7 +20,6 @@ monthly_budget as (
         cast(sum(orders_budget_daily) as decimal(14, 4)) as budget_order_count
     from {{ ref('silver_budget_orders_sales') }}
     where budget_date is not null
-      and {{ ampere_gold_month_window_predicate('budget_date') }}
     group by 1, 2
 ),
 

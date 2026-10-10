@@ -24,6 +24,8 @@ _COMPACTION_POLICIES = {"conditional_binpack", "none"}
 _DELETE_POLICIES = {"rewrite_on_threshold", "none"}
 _MANIFEST_POLICIES = {"on_threshold", "always", "none"}
 _DUCKDB_PARTITION_TRANSFORMS = {"identity", "bucket", "truncate"}
+_MIN_RETENTION_DAYS = 14
+_SOURCE_COMPLETENESS = {"partial", "full_snapshot"}
 
 
 class ContractError(ValueError):
@@ -42,6 +44,7 @@ class ResolvedTable:
     sort_order: tuple[dict[str, str], ...]
     write: dict[str, Any]
     maintenance: dict[str, Any]
+    publication: dict[str, Any]
 
     @property
     def column_names(self) -> tuple[str, ...]:
@@ -95,6 +98,89 @@ def _merge(default: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _validate_maintenance(name: str, raw: Any) -> dict[str, Any]:
+    path = f"{name}.maintenance"
+    maintenance = _object(raw, path)
+    policies = {
+        "data_compaction": _COMPACTION_POLICIES,
+        "delete_files": _DELETE_POLICIES,
+        "rewrite_manifests": _MANIFEST_POLICIES,
+    }
+    for key, allowed in policies.items():
+        value = maintenance.get(key)
+        if value is not None and value not in allowed:
+            _fail(f"{path}.{key}", f"unsupported value {value!r}")
+    for key in ("min_input_files", "delete_file_count_threshold", "manifest_count_threshold"):
+        value = maintenance.get(key)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+        ):
+            _fail(f"{path}.{key}", "must be a positive integer")
+    if maintenance.get("data_compaction", "none") != "none":
+        minimum = maintenance.get("min_input_files", 5)
+        if minimum < 2:
+            _fail(f"{path}.min_input_files", "must be at least 2 for a useful file rewrite")
+    if maintenance.get("delete_files") == "rewrite_on_threshold":
+        if "delete_file_count_threshold" not in maintenance:
+            _fail(f"{path}.delete_file_count_threshold", "required when delete_files is rewrite_on_threshold")
+    if maintenance.get("rewrite_manifests") == "on_threshold":
+        if "manifest_count_threshold" not in maintenance:
+            _fail(f"{path}.manifest_count_threshold", "required when rewrite_manifests is on_threshold")
+    for key in ("snapshot_retention_days", "orphan_retention_days"):
+        value = maintenance.get(key, _MIN_RETENTION_DAYS)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < _MIN_RETENTION_DAYS
+        ):
+            _fail(f"{path}.{key}", f"must be at least {_MIN_RETENTION_DAYS} days")
+    return maintenance
+
+
+def _validate_publication(layer: str, table_path: str, raw: Any, columns: set[str]) -> dict[str, Any]:
+    if layer not in {"silver", "gold"}:
+        if raw is not None:
+            _fail(f"{table_path}.publication", "is only supported for Silver and Gold tables")
+        return {}
+    publication = _object(raw, f"{table_path}.publication")
+    raw_keys = publication.get("merge_keys")
+    if not isinstance(raw_keys, list) or not raw_keys:
+        _fail(f"{table_path}.publication.merge_keys", "must be a non-empty ordered list")
+    keys = [_identifier(key, f"{table_path}.publication.merge_keys") for key in raw_keys]
+    if len(set(keys)) != len(keys):
+        _fail(f"{table_path}.publication.merge_keys", "must not contain duplicates")
+    missing = set(keys) - columns
+    if missing:
+        _fail(f"{table_path}.publication.merge_keys", f"unknown contracted columns {sorted(missing)}")
+
+    completeness = _object(
+        publication.get("source_completeness"),
+        f"{table_path}.publication.source_completeness",
+    )
+    if set(completeness) != {"daily_refresh", "full_history"}:
+        _fail(
+            f"{table_path}.publication.source_completeness",
+            "must define daily_refresh and full_history",
+        )
+    for run_mode, value in completeness.items():
+        if not isinstance(value, str) or value not in _SOURCE_COMPLETENESS:
+            _fail(
+                f"{table_path}.publication.source_completeness.{run_mode}",
+                f"unsupported value {value!r}",
+            )
+    if completeness["full_history"] != "full_snapshot":
+        _fail(
+            f"{table_path}.publication.source_completeness.full_history",
+            "full-history publication must be a full_snapshot",
+        )
+    if layer == "gold" and completeness["daily_refresh"] != "full_snapshot":
+        _fail(
+            f"{table_path}.publication.source_completeness.daily_refresh",
+            "Gold daily publication must be a full_snapshot",
+        )
+    return {"merge_keys": tuple(keys), "source_completeness": dict(completeness)}
+
+
 def _validate_profile(name: str, raw: Any) -> dict[str, Any]:
     path = f"physical_profiles.{name}"
     profile = _object(raw, path)
@@ -111,20 +197,7 @@ def _validate_profile(name: str, raw: Any) -> dict[str, Any]:
     if target_size is not None and (not isinstance(target_size, int) or target_size <= 0):
         _fail(f"{path}.write.target_file_size_bytes", "must be a positive integer")
 
-    maintenance = _object(profile.get("maintenance", {}), f"{path}.maintenance")
-    policies = {
-        "data_compaction": _COMPACTION_POLICIES,
-        "delete_files": _DELETE_POLICIES,
-        "rewrite_manifests": _MANIFEST_POLICIES,
-    }
-    for key, allowed in policies.items():
-        value = maintenance.get(key)
-        if value is not None and value not in allowed:
-            _fail(f"{path}.maintenance.{key}", f"unsupported value {value!r}")
-    for key in ("min_input_files", "snapshot_retention_days", "orphan_retention_days"):
-        value = maintenance.get(key)
-        if value is not None and (not isinstance(value, int) or value < 1):
-            _fail(f"{path}.maintenance.{key}", "must be a positive integer")
+    maintenance = _validate_maintenance(path, profile.get("maintenance", {}))
     return profile
 
 
@@ -205,6 +278,7 @@ def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
                 if item.get("direction", "asc") not in {"asc", "desc"}:
                     _fail(f"{item_path}.direction", "must be asc or desc")
             write = _merge(profile.get("write", {}), table_profile.get("write", {}))
+            publication = _validate_publication(layer, table_path, table.get("publication"), names)
             if layer in {"silver", "gold"}:
                 if write.get("distribution", "none") != "none":
                     _fail(
@@ -232,7 +306,11 @@ def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
                 partition_spec=tuple(partition_spec),
                 sort_order=tuple(sort_order),
                 write=write,
-                maintenance=_merge(profile.get("maintenance", {}), table_profile.get("maintenance", {})),
+                maintenance=_validate_maintenance(
+                    table_path,
+                    _merge(profile.get("maintenance", {}), table_profile.get("maintenance", {})),
+                ),
+                publication=publication,
             )
     if len(resolved) != 42:
         _fail("catalog.ampere.layers", f"expected 42 tables including the ops registry, found {len(resolved)}")

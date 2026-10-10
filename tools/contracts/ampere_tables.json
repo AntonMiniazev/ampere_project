@@ -1618,6 +1618,17 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "budget_name",
+                "budget_date",
+                "store_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "dim_assortment": {
@@ -1679,6 +1690,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "assortment_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "dim_clients": {
@@ -1739,6 +1759,15 @@
                 "profile": "silver_dimension",
                 "partition_spec": [],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "client_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -1806,6 +1835,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "costing_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "dim_delivery_costing": {
@@ -1861,6 +1899,15 @@
                 "profile": "silver_dimension",
                 "partition_spec": [],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "delivery_costing_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -1933,6 +1980,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "delivery_resource_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "dim_delivery_type": {
@@ -1968,6 +2024,15 @@
                 "profile": "silver_dimension",
                 "partition_spec": [],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "delivery_type_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -2005,6 +2070,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "order_status_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "dim_product_categories": {
@@ -2040,6 +2114,15 @@
                 "profile": "silver_dimension",
                 "partition_spec": [],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "category_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -2112,6 +2195,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "product_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "dim_stores": {
@@ -2152,6 +2244,15 @@
                 "profile": "silver_dimension",
                 "partition_spec": [],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "store_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -2203,6 +2304,15 @@
                 "profile": "silver_dimension",
                 "partition_spec": [],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "zone_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -2310,6 +2420,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "order_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "partial",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "fact_order_product": {
@@ -2401,6 +2520,15 @@
                 ],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "fact_order_product_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "partial",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "fact_payments": {
@@ -2477,6 +2605,15 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "fact_payments_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "partial",
+                "full_history": "full_snapshot"
+              }
             }
           },
           "fact_order_status_history": {
@@ -2547,6 +2684,15 @@
                   }
                 ],
                 "sort_order": []
+              }
+            },
+            "publication": {
+              "merge_keys": [
+                "fact_order_status_history_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "partial",
+                "full_history": "full_snapshot"
               }
             }
           },
@@ -2629,11 +2775,20 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "fact_delivery_tracking_key"
+              ],
+              "source_completeness": {
+                "daily_refresh": "partial",
+                "full_history": "full_snapshot"
+              }
             }
           }
         },
         "gold": {
-          "curie_marketing_sales_budget_monthly_store": {
+          "marketing_sales_budget_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -2682,9 +2837,19 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_marketing_product_sales_monthly_store": {
+          "marketing_product_sales_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -2738,9 +2903,20 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id",
+                "product_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_marketing_category_sales_monthly_store": {
+          "marketing_category_sales_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -2784,9 +2960,20 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id",
+                "category_name"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_marketing_client_metrics_monthly_store": {
+          "marketing_client_metrics_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -2835,9 +3022,19 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_marketing_active_client_month": {
+          "marketing_active_client_month": {
             "columns": [
               {
                 "name": "month",
@@ -2861,9 +3058,20 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id",
+                "client_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_financial_performance_monthly_store": {
+          "financial_performance_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -2917,9 +3125,19 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_financial_product_margin_monthly_store": {
+          "financial_product_margin_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -2973,9 +3191,20 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id",
+                "product_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           },
-          "curie_delivery_courier_performance_monthly_store": {
+          "delivery_courier_performance_monthly_store": {
             "columns": [
               {
                 "name": "month",
@@ -3029,6 +3258,17 @@
                 "partition_spec": [],
                 "sort_order": []
               }
+            },
+            "publication": {
+              "merge_keys": [
+                "month",
+                "store_id",
+                "courier_id"
+              ],
+              "source_completeness": {
+                "daily_refresh": "full_snapshot",
+                "full_history": "full_snapshot"
+              }
             }
           }
         }
@@ -3046,7 +3286,8 @@
             "min_input_files": 5,
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100
           }
         },
         "bronze_mutable_small": {
@@ -3061,13 +3302,16 @@
             "min_input_files": 5,
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100,
+            "delete_files": "rewrite_on_threshold",
+            "delete_file_count_threshold": 1
           }
         },
         "bronze_fact_monthly": {
           "format_version": 2,
           "write": {
-            "distribution": "hash",
+            "distribution": "range",
             "target_file_size_bytes": 134217728,
             "mode": "merge"
           },
@@ -3076,7 +3320,10 @@
             "min_input_files": 5,
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100,
+            "delete_files": "rewrite_on_threshold",
+            "delete_file_count_threshold": 1
           }
         },
         "bronze_ops_registry": {
@@ -3090,7 +3337,8 @@
             "min_input_files": 5,
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100
           }
         },
         "silver_dimension": {
@@ -3105,7 +3353,9 @@
             "delete_files": "rewrite_on_threshold",
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100,
+            "delete_file_count_threshold": 1
           }
         },
         "silver_fact": {
@@ -3120,7 +3370,9 @@
             "delete_files": "rewrite_on_threshold",
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100,
+            "delete_file_count_threshold": 1
           }
         },
         "gold_aggregate": {
@@ -3135,7 +3387,9 @@
             "delete_files": "rewrite_on_threshold",
             "rewrite_manifests": "on_threshold",
             "snapshot_retention_days": 14,
-            "orphan_retention_days": 14
+            "orphan_retention_days": 14,
+            "manifest_count_threshold": 100,
+            "delete_file_count_threshold": 1
           }
         }
       }

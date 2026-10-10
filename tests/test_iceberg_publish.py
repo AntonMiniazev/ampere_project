@@ -126,34 +126,49 @@ class PublishTests(unittest.TestCase):
             (10,),
         )
 
-    def test_gold_daily_merge_retains_older_aggregate_months(self) -> None:
-        """Gold publication retains aggregate months outside the current slice."""
+    def test_gold_daily_snapshot_removes_missing_keys_and_rejects_empty_source(self) -> None:
+        """Gold daily publication synchronizes a full snapshot safely."""
         for alias in ("staged_gold", "publish_gold"):
             self.con.execute(f"ATTACH ':memory:' AS {alias}")
             self.con.execute(f"CREATE SCHEMA {alias}.gold")
             self.con.execute(
-                f"CREATE TABLE {alias}.gold.curie_marketing_sales_budget_monthly_store "
+                f"CREATE TABLE {alias}.gold.marketing_sales_budget_monthly_store "
                 "(month DATE, store_id INTEGER, sales_amount INTEGER)"
             )
         self.con.execute(
-            "INSERT INTO publish_gold.gold.curie_marketing_sales_budget_monthly_store VALUES "
+            "INSERT INTO publish_gold.gold.marketing_sales_budget_monthly_store VALUES "
             "(DATE '2025-12-01', 1, 10), (DATE '2026-10-01', 1, 20)"
         )
         self.con.execute(
-            "INSERT INTO staged_gold.gold.curie_marketing_sales_budget_monthly_store VALUES "
+            "INSERT INTO staged_gold.gold.marketing_sales_budget_monthly_store VALUES "
             "(DATE '2026-10-01', 1, 25), (DATE '2026-10-01', 2, 30)"
         )
         publish_catalog.publish_table(
-            self.con, "gold", "curie_marketing_sales_budget_monthly_store", "daily_refresh"
+            self.con, "gold", "marketing_sales_budget_monthly_store", "daily_refresh"
         )
         rows = self.con.execute(
             "SELECT month, store_id, sales_amount "
-            "FROM publish_gold.gold.curie_marketing_sales_budget_monthly_store "
+            "FROM publish_gold.gold.marketing_sales_budget_monthly_store "
             "ORDER BY month, store_id"
         ).fetchall()
         self.assertEqual(
             rows,
-            [(date(2025, 12, 1), 1, 10), (date(2026, 10, 1), 1, 25), (date(2026, 10, 1), 2, 30)],
+            [(date(2026, 10, 1), 1, 25), (date(2026, 10, 1), 2, 30)],
+        )
+        self.con.execute(
+            "DELETE FROM staged_gold.gold.marketing_sales_budget_monthly_store"
+        )
+        with self.assertRaisesRegex(ValueError, "empty table"):
+            publish_catalog.publish_table(
+                self.con, "gold", "marketing_sales_budget_monthly_store", "daily_refresh"
+            )
+        self.assertEqual(
+            self.con.execute(
+                "SELECT month, store_id, sales_amount "
+                "FROM publish_gold.gold.marketing_sales_budget_monthly_store "
+                "ORDER BY month, store_id"
+            ).fetchall(),
+            [(date(2026, 10, 1), 1, 25), (date(2026, 10, 1), 2, 30)],
         )
 
     def test_complete_dimension_synchronizes_missing_and_changed_keys(self) -> None:
@@ -287,25 +302,25 @@ class PublishTests(unittest.TestCase):
             self.con.execute(f"ATTACH ':memory:' AS {alias}")
             self.con.execute(f"CREATE SCHEMA {alias}.gold")
             self.con.execute(
-                f"CREATE TABLE {alias}.gold.curie_marketing_sales_budget_monthly_store "
+                f"CREATE TABLE {alias}.gold.marketing_sales_budget_monthly_store "
                 "(month DATE, store_id INTEGER, sales_amount INTEGER)"
             )
         self.con.execute(
-            "INSERT INTO publish_gold.gold.curie_marketing_sales_budget_monthly_store VALUES "
+            "INSERT INTO publish_gold.gold.marketing_sales_budget_monthly_store VALUES "
             "(DATE '2026-10-01', 1, 10), (DATE '2026-10-01', 2, 20)"
         )
         self.con.execute(
-            "INSERT INTO staged_gold.gold.curie_marketing_sales_budget_monthly_store "
+            "INSERT INTO staged_gold.gold.marketing_sales_budget_monthly_store "
             "VALUES (DATE '2026-10-01', 1, 15)"
         )
         for _ in range(2):
             publish_catalog.publish_table(
-                self.con, "gold", "curie_marketing_sales_budget_monthly_store", "daily_refresh"
+                self.con, "gold", "marketing_sales_budget_monthly_store", "daily_refresh"
             )
         self.assertEqual(
             self.con.execute(
                 "SELECT month, store_id, sales_amount "
-                "FROM publish_gold.gold.curie_marketing_sales_budget_monthly_store"
+                "FROM publish_gold.gold.marketing_sales_budget_monthly_store"
             ).fetchall(),
             [(date(2026, 10, 1), 1, 15), (date(2026, 10, 1), 2, 20)],
         )
@@ -343,7 +358,7 @@ class PublishTests(unittest.TestCase):
         """Three merges update, insert, and remove keys across both endpoints."""
         for table in publish_catalog.FULL_REBUILD_FACT_BATCHES:
             with self.subTest(table=table):
-                key = publish_catalog.MERGE_KEYS["silver"][table][0]
+                key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
                 for alias in ("staged_silver", "publish_silver"):
                     self.con.execute(
                         f"CREATE TABLE {alias}.silver.{table} "
@@ -391,7 +406,7 @@ class PublishTests(unittest.TestCase):
     def test_batched_full_history_requires_initialized_fact(self) -> None:
         """The three-range writer requires the contract-created target table."""
         table = "fact_order_product"
-        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
         self.con.execute(
             f"CREATE TABLE staged_silver.silver.{table} "
             f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
@@ -406,7 +421,7 @@ class PublishTests(unittest.TestCase):
     def test_batched_full_history_rejects_null_order_id(self) -> None:
         """A null batching key must fail before any target change."""
         table = "fact_order_product"
-        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
         self.con.execute(
             f"CREATE TABLE staged_silver.silver.{table} "
             f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
@@ -433,7 +448,7 @@ class PublishTests(unittest.TestCase):
     def test_batched_full_history_resumes_after_interrupted_part(self) -> None:
         """A retry completes independently committed ranges without duplicate rows."""
         table = "fact_order_product"
-        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
         for alias in ("staged_silver", "publish_silver"):
             self.con.execute(
                 f"CREATE TABLE {alias}.silver.{table} "
@@ -476,7 +491,7 @@ class PublishTests(unittest.TestCase):
     def test_large_fact_daily_slice_keeps_single_merge(self) -> None:
         """Batching applies only to full-history runs, never daily slices."""
         table = "fact_order_product"
-        key = publish_catalog.MERGE_KEYS["silver"][table][0]
+        key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
         for alias in ("staged_silver", "publish_silver"):
             self.con.execute(
                 f"CREATE TABLE {alias}.silver.{table} "

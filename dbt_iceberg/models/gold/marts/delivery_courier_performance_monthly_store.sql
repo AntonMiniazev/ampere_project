@@ -1,4 +1,4 @@
-{{ config(alias='curie_delivery_courier_performance_monthly_store', tags=['gold', 'publish']) }}
+{{ config(alias='delivery_courier_performance_monthly_store', tags=['gold', 'publish']) }}
 
 with delivered_orders as (
     select
@@ -17,7 +17,6 @@ with delivered_orders as (
       and tracking.courier_id is not null
       and orders.latest_order_status_id = 3
       and orders.order_date is not null
-      and {{ ampere_gold_month_window_predicate('orders.order_date') }}
     qualify assignment_rank = 1
 ),
 order_tariffs as (

@@ -1,4 +1,4 @@
-{{ config(alias='curie_marketing_active_client_month', tags=['gold', 'publish']) }}
+{{ config(alias='marketing_active_client_month', tags=['gold', 'publish']) }}
 
 select distinct
     cast(date_trunc('month', order_date) as date) as month,
@@ -7,5 +7,4 @@ select distinct
 from {{ ref('fact_orders') }}
 where latest_order_status_id = 3
   and order_date is not null
-  and {{ ampere_gold_month_window_predicate('order_date') }}
   and client_id is not null

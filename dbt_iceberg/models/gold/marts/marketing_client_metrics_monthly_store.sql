@@ -1,4 +1,4 @@
-{{ config(alias='curie_marketing_client_metrics_monthly_store', tags=['gold', 'publish']) }}
+{{ config(alias='marketing_client_metrics_monthly_store', tags=['gold', 'publish']) }}
 
 with monthly_orders as (
     select
@@ -8,7 +8,6 @@ with monthly_orders as (
     from {{ ref('fact_orders') }}
     where latest_order_status_id = 3
       and order_date is not null
-      and {{ ampere_gold_month_window_predicate('order_date') }}
       and client_id is not null
     group by 1, 2
 ),
@@ -27,18 +26,15 @@ months as (
     select distinct cast(date_trunc('month', order_date) as date) as month
     from {{ ref('fact_orders') }}
     where order_date is not null
-      and {{ ampere_gold_month_window_predicate('order_date') }}
     union
     select distinct cast(date_trunc('month', registration_date) as date)
     from clients
     where registration_date is not null
-      and {{ ampere_gold_month_window_predicate('registration_date') }}
     union
     select distinct cast(date_trunc('month', updated_at) as date)
     from clients
     where is_churned = true
       and updated_at is not null
-      and {{ ampere_gold_month_window_predicate('updated_at') }}
 ),
 
 store_months as (

@@ -1,4 +1,4 @@
-{{ config(alias='curie_financial_performance_monthly_store', tags=['gold', 'publish']) }}
+{{ config(alias='financial_performance_monthly_store', tags=['gold', 'publish']) }}
 
 with product_costs as (
     select
@@ -43,7 +43,6 @@ actuals as (
     left join delivery_costs on orders.order_id = delivery_costs.order_id
     where orders.latest_order_status_id = 3
       and orders.order_date is not null
-      and {{ ampere_gold_month_window_predicate('orders.order_date') }}
     group by 1, 2
 ),
 budgets as (
@@ -53,7 +52,6 @@ budgets as (
         cast(sum(sales_amount_daily) as decimal(14, 4)) as budget_revenue_amount
     from {{ ref('silver_budget_orders_sales') }}
     where budget_date is not null
-      and {{ ampere_gold_month_window_predicate('budget_date') }}
     group by 1, 2
 )
 select

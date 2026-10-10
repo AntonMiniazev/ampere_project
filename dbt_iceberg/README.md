@@ -15,11 +15,21 @@ published table, then publishes that layer. A Silver run reads Bronze through
 Lakekeeper. A Gold run reads published Silver through Lakekeeper and stages
 only Gold output locally. Gold never reads a local Silver workspace.
 
-Daily runs use the current and previous month window. Fact publication merges
-the staged keys without deleting history outside that slice. Complete Silver
-dimensions and budgets also remove keys absent from their staged source. Gold
-daily runs merge recomputed monthly aggregates. Full-history runs use complete
-sources and synchronize all keys.
+Silver daily runs use the current and previous month window for their fact
+inputs. Fact publication merges the staged keys without deleting history
+outside that slice. Complete Silver dimensions and budgets also remove keys
+absent from their staged source. Every Gold run reads all published Silver
+history and stages complete snapshots of all eight aggregates. Daily and
+full-history Gold publication both delete keys missing from the validated
+snapshot; an empty complete Gold model fails before any table is changed.
+
+The Gold Iceberg tables are `marketing_sales_budget_monthly_store`,
+`marketing_product_sales_monthly_store`,
+`marketing_category_sales_monthly_store`,
+`marketing_client_metrics_monthly_store`, `marketing_active_client_month`,
+`financial_performance_monthly_store`,
+`financial_product_margin_monthly_store`, and
+`delivery_courier_performance_monthly_store`.
 
 Three large Silver fact tables use deterministic `order_id` ranges during a
 full-history publish: `fact_delivery_tracking`, `fact_order_product`, and
@@ -35,6 +45,11 @@ property while writing partitioned tables, so those writes explicitly ignore
 that setting and weekly Spark housekeeping applies the contract target during
 compaction. The contract loader rejects unsupported DuckDB layouts.
 
+Housekeeping evaluates active `data_files` and `delete_files` metadata by Iceberg
+partition. `min_input_files`, `delete_file_count_threshold`, and
+`manifest_count_threshold` are validated profile settings; the delete-file
+threshold counts delete files, not deleted records.
+
 Airflow DAGs:
 
 - `ampere__iceberg__silver__dbt_duckdb__daily`
@@ -44,8 +59,10 @@ Airflow DAGs:
 
 The daily Silver DAG triggers daily Gold. The full-history Silver DAG triggers
 full-history Gold. Gold triggers Curie cache refresh only after successful
-publication. Airflow pools `iceberg_silver_publish` and
-`iceberg_gold_publish` serialize daily and full-history work for their layer.
+publication. Catalog initialization, Bronze/Silver/Gold publication, and
+housekeeping share the one-slot Airflow pool `iceberg_pipeline_mutation`. It
+must be provisioned before deploying the DAGs; it serializes all table writes
+and maintenance.
 
 ## Runtime settings
 

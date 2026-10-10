@@ -21,6 +21,7 @@ from kubernetes.client import (
 )
 
 from utils.ampere_dag_config import (
+    ICEBERG_MUTATION_POOL,
     load_silver_dag_config,
     resolve_release_image,
     standard_default_args,
@@ -144,7 +145,8 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
             image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
             service_account_name=config.service_account,
             node_selector=config.node_selector,
-            pool=f"iceberg_{layer}_publish",
+            pool=ICEBERG_MUTATION_POOL,
+            pool_slots=1,
             init_containers=[
                 V1Container(
                     name="combine-ca-bundle",
