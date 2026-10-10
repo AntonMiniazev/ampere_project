@@ -34,6 +34,7 @@ def build_mutable_dim_plan(
         table_lookback_days = group_lookback_days
     table_watermark_col = table_meta.get("watermark_column") or group_watermark_col
     table_created_col = table_meta.get("created_column") or None
+    full_scan = bool(table_meta.get("full_scan", False))
     table_cursor_granularity = (
         table_meta.get("cursor_granularity") or "timestamp"
     ).strip().lower()
@@ -69,7 +70,7 @@ def build_mutable_dim_plan(
         table_created_from = datetime(1900, 1, 1, tzinfo=timezone.utc)
 
     where_clause = None
-    if not bootstrap_full_extract:
+    if not bootstrap_full_extract and not full_scan:
         where_clause = build_where_clause(
             group_mode,
             group_partition_key,
@@ -99,6 +100,7 @@ def build_mutable_dim_plan(
         table_watermark_from=table_watermark_from,
         table_created_from=table_created_from,
         table_watermark_to=table_watermark_to,
+        full_scan=full_scan,
         bootstrap_full_extract=bootstrap_full_extract,
         initial_event_load=False,
         where_clause=where_clause,
@@ -129,6 +131,8 @@ def write_mutable_dim_table(
         **manifest_base,
         "extract_date": run_date_str,
     }
+    if plan.full_scan:
+        manifest_context["full_scan"] = True
     upper = plan.table_watermark_to or datetime.now(timezone.utc)
     if plan.bootstrap_full_extract:
         lower = datetime(1900, 1, 1, tzinfo=timezone.utc)

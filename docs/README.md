@@ -7,7 +7,7 @@ After a successful Gold publish, the Curie refresh DAG requests a FlightSQL cach
 ## Layers
 
 1. **Source:** Python generators create orders, clients, products, payments, delivery activity, and costs in PostgreSQL.
-2. **Raw:** Spark extracts immutable Parquet batches to MinIO. A manifest and `_SUCCESS` marker identify a complete batch; state files track extraction progress. The Raw and Bronze SparkApplication templates load bundled JARs from driver and executor classpaths, avoiding a startup copy into the application directory, which the runtime user cannot write.
+2. **Raw:** Spark extracts immutable Parquet batches to MinIO. A manifest and `_SUCCESS` marker identify a complete batch; state files track extraction progress. The small mutable `clients` dimension is fully extracted each day so a missed or previously absent client can be reconciled; Bronze merges those rows by key. Other mutable dimensions use their configured watermarks. The Raw and Bronze SparkApplication templates load bundled JARs from driver and executor classpaths, avoiding a startup copy into the application directory, which the runtime user cannot write.
 3. **Bronze:** Spark applies complete batches to Iceberg tables in Lakekeeper. Snapshot partitions are replaced, mutable dimensions and events are merged, and facts follow their configured append or merge strategy. The Bronze apply registry tracks processed batches.
 4. **Silver:** An isolated dbt/DuckDB pod stages, cleans, joins, tests, and publishes reusable entities.
 5. **Gold:** A separate dbt/DuckDB pod reads published Silver tables and publishes sales, delivery, cost, and margin marts.
@@ -18,6 +18,8 @@ After a successful Gold publish, the Curie refresh DAG requests a FlightSQL cach
 ## Orchestration and recovery
 
 The scheduled generator waits for Raw landing; Raw landing waits for Bronze; and the Bronze, Silver, and Gold handoffs wait for downstream success while preserving the same Airflow logical date. Full rebuild uses Bronze, Silver, and Gold full-history DAGs in the same order after catalog initialization. All catalog initialization, publication, and housekeeping tasks share the one-slot Airflow pool `iceberg_pipeline_mutation`, so these table mutations cannot overlap. This pool must exist before deploying the DAGs. [The DAG inventory and trigger graph](dataflow/generated/airflow_dag_orchestration.md) is generated from checked-in DAG metadata.
+
+Default CPU requests target the 6-CPU node4 capacity while preserving headroom for resident services: Raw executors request 700m each; Bronze snapshots/mutable-dimension executors request 750m each; Bronze facts/events executors request 1250m each with two executors; the generator requests 1500m; and daily and full-history dbt pods request 2 CPUs. Airflow Variables can override Spark and dbt CPU requests; the request overrides checked for this sizing change are absent. Catalog-init and housekeeping client pods stay at 250m because their Spark work runs on Spark Connect.
 
 After a successful Sunday Curie cache refresh, housekeeping uses contract v3 to discover its table scope and resolve retention, compaction thresholds, target file size, delete-file handling, and manifest rewrite policy. Its delete-file trigger counts active delete files per Iceberg partition, not deleted records. It checks table conformance before maintenance and keeps extra tables and Raw landing outside its scope. Table rows are unchanged.
 

@@ -44,6 +44,7 @@ class RawTablePlan:
     initial_event_load: bool
     where_clause: str | None
     dbtable: str
+    full_scan: bool = False
 
 
 def build_where_clause(

@@ -57,7 +57,7 @@ with DAG(
             "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
         ],
         container_resources=V1ResourceRequirements(
-            requests={"cpu": "500m", "memory": "1536Mi"},
+            requests={"cpu": "1500m", "memory": "1536Mi"},
             limits={"cpu": "4", "memory": "6Gi"},
         ),
         get_logs=True,

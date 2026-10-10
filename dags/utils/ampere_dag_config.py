@@ -198,7 +198,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - driver_memory: Spark driver memory setting. Default `2500m`.
     - driver_memory_overhead: Extra Kubernetes memory overhead for the driver. Default `512m`.
     - executor_cores: Spark executor CPU core count. Default `1`.
-    - executor_core_request: Kubernetes CPU request for each executor. Default `250m`.
+    - executor_core_request: Kubernetes CPU request for each executor. Default `700m`.
     - executor_memory: Spark executor memory setting. Default `1536m`.
     - executor_memory_overhead: Extra Kubernetes memory overhead for each executor. Default `384m`.
     - executor_instances: Default executor count for raw jobs. Default `4`.
@@ -237,7 +237,7 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
-            "spark_executor_core_request", default="400m"
+            "spark_executor_core_request", default="700m"
         ),
         executor_memory=Variable.get("spark_executor_memory", default="2000m"),
         executor_memory_overhead=Variable.get(
@@ -329,13 +329,13 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         ),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
-            "spark_executor_core_request", default="250m"
+            "spark_executor_core_request", default="750m"
         ),
         executor_cores_facts_events=int(
             Variable.get("spark_bronze_executor_cores_facts_events", default="2")
         ),
         executor_core_request_facts_events=Variable.get(
-            "spark_bronze_executor_core_request_facts_events", default="400m"
+            "spark_bronze_executor_core_request_facts_events", default="1250m"
         ),
         executor_memory=Variable.get("spark_executor_memory", default="1536m"),
         executor_memory_overhead=Variable.get(

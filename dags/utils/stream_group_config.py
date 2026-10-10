@@ -140,6 +140,7 @@ def build_raw_stream_groups(
                         "cursor_granularity": table_map[table].get(
                             "cursor_granularity", "timestamp"
                         ),
+                        "full_scan": bool(table_map[table].get("full_scan", False)),
                     }
                     for table in tables_list
                 }

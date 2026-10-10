@@ -94,7 +94,7 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
         scratch_limit = {} if scratch_claim else {"ephemeral-storage": "24Gi"}
         resources = V1ResourceRequirements(
             requests={
-                "cpu": Variable.get("iceberg_full_rebuild_dbt_cpu_request", default="1"),
+                "cpu": Variable.get("iceberg_full_rebuild_dbt_cpu_request", default="2"),
                 "memory": Variable.get("iceberg_full_rebuild_dbt_pod_memory_request", default="6Gi"),
                 **scratch_request,
             },
@@ -116,7 +116,7 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
         scratch_volume = V1Volume(name="dbt-scratch", empty_dir=V1EmptyDirVolumeSource(size_limit="12Gi"))
         resources = V1ResourceRequirements(
             requests={
-                "cpu": Variable.get("iceberg_dbt_cpu_request", default="500m"),
+                "cpu": Variable.get("iceberg_dbt_cpu_request", default="2"),
                 "memory": Variable.get("iceberg_dbt_pod_memory_request", default="2Gi"),
                 "ephemeral-storage": "4Gi",
             },
