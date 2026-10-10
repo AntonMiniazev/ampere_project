@@ -12,7 +12,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 from utils.ampere_dag_config import (
     ICEBERG_MUTATION_POOL,
     load_silver_dag_config,
-    resolve_spark_image,
+    resolve_spark_connect_client_image,
     standard_default_args,
 )
 
@@ -36,13 +36,13 @@ with DAG(
         pool_slots=1,
         name="ampere-iceberg-housekeeping",
         namespace=CONFIG.namespace,
-        image=resolve_spark_image(),
+        image=resolve_spark_connect_client_image(),
         image_pull_policy="Always",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         service_account_name=CONFIG.service_account,
         node_selector=CONFIG.node_selector,
-        # Only a client pod starts; maintenance runs on the existing Spark service.
-        cmds=["python3", "/opt/spark/app/iceberg_housekeeping_connect.py"],
+        # Only a lightweight client pod starts; work runs on the Spark Connect service.
+        cmds=["python3", "/opt/ampere/app/iceberg_housekeeping_connect.py"],
         arguments=[
             "--spark-remote",
             Variable.get(

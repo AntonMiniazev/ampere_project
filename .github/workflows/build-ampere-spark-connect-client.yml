@@ -1,0 +1,45 @@
+name: Build ampere-spark-connect-client image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [migration/iceberg, main]
+    paths:
+      - docker/spark/connect_client/**
+      - docker/spark/iceberg_raw_etl/app/initialize_iceberg_catalog.py
+      - docker/spark/iceberg_raw_etl/app/iceberg_housekeeping_connect.py
+      - tools/__init__.py
+      - tools/contracts/**
+      - .github/workflows/build-ampere-spark-connect-client.yml
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/antonminiazev/ampere-spark-connect-client
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=raw,value=migration-latest,enable=${{ github.ref == 'refs/heads/migration/iceberg' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/spark/connect_client/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

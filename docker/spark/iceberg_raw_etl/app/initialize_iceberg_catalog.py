@@ -8,8 +8,7 @@ import os
 from pyspark.sql import SparkSession
 
 from tools.contracts.ampere_contract import AmpereContract, ResolvedTable, load_contract
-from iceberg_bronze.catalog import quote_ident
-from tools.contracts.spark_conformance import validate_spark_table
+from tools.contracts.spark_conformance import quote_identifier, validate_spark_table
 
 
 def _sql_literal(value: str) -> str:
@@ -21,7 +20,7 @@ def _catalog_name(layer: str) -> str:
 
 
 def _partition_expression(spec: dict[str, str]) -> str:
-    source = quote_ident(spec["source"])
+    source = quote_identifier(spec["source"])
     transform = spec["transform"]
     return source if transform == "identity" else f"{transform}({source})"
 
@@ -29,10 +28,13 @@ def _partition_expression(spec: dict[str, str]) -> str:
 def _create_table(spark: SparkSession, contract: AmpereContract, table: ResolvedTable) -> None:
     catalog = _catalog_name(table.layer)
     namespace = table.namespace
-    target = f"{quote_ident(catalog)}.{quote_ident(namespace)}.{quote_ident(table.name)}"
-    spark.sql(f"CREATE NAMESPACE IF NOT EXISTS {quote_ident(catalog)}.{quote_ident(namespace)}")
+    target = f"{quote_identifier(catalog)}.{quote_identifier(namespace)}.{quote_identifier(table.name)}"
+    spark.sql(
+        f"CREATE NAMESPACE IF NOT EXISTS "
+        f"{quote_identifier(catalog)}.{quote_identifier(namespace)}"
+    )
     columns = ", ".join(
-        f"{quote_ident(column['name'])} {column['type_text']}"
+        f"{quote_identifier(column['name'])} {column['type_text']}"
         for column in table.columns
     )
     partitions = (
@@ -56,7 +58,7 @@ def _create_table(spark: SparkSession, contract: AmpereContract, table: Resolved
     )
     if table.sort_order:
         ordering = ", ".join(
-            f"{quote_ident(item['source'])} {item.get('direction', 'asc').upper()}"
+            f"{quote_identifier(item['source'])} {item.get('direction', 'asc').upper()}"
             for item in table.sort_order
         )
         spark.sql(f"ALTER TABLE {target} WRITE ORDERED BY {ordering}")

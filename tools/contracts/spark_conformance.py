@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gzip
+import json
 from typing import Any
 
 
@@ -33,11 +35,22 @@ def _active_partition_spec(spark: Any, target: str) -> list[tuple[str, str]]:
         metadata_uri = "s3a://" + metadata_uri[len("s3://"):]
     try:
         metadata_row = (
-            spark.read.option("multiLine", "true").json(metadata_uri).first()
+            spark.read.format("binaryFile")
+            .load(metadata_uri)
+            .select("content")
+            .first()
         )
         if metadata_row is None:
+            raise ValueError("metadata file contains no row")
+        content = metadata_row["content"]
+        if not isinstance(content, (bytes, bytearray, memoryview)):
+            raise TypeError("binaryFile returned metadata content that is not bytes")
+        payload = bytes(content)
+        if payload.startswith(b"\x1f\x8b"):
+            payload = gzip.decompress(payload)
+        metadata = json.loads(payload)
+        if not isinstance(metadata, dict):
             raise ValueError("metadata JSON contains no object")
-        metadata = metadata_row.asDict(recursive=True)
     except Exception as exc:
         raise RuntimeError(
             f"Cannot load Iceberg metadata JSON {metadata_uri} for {target}"

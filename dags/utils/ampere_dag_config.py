@@ -58,6 +58,19 @@ def resolve_spark_image() -> str:
     return image
 
 
+def resolve_spark_connect_client_image() -> str:
+    """Resolve the lightweight image used by Spark Connect client pods."""
+    repository = "ghcr.io/antonminiazev/ampere-spark-connect-client"
+    image = get_optional_variable("iceberg_spark_connect_client_image") or resolve_release_image(
+        repository
+    )
+    if not image.startswith(f"{repository}:"):
+        raise ValueError(
+            "iceberg_spark_connect_client_image must name the Spark Connect client repository"
+        )
+    return image
+
+
 def minio_ssl_enabled(endpoint: str) -> str:
     """Translate an endpoint URL into SparkApplication's string SSL flag."""
     return "true" if endpoint.startswith("https://") else "false"

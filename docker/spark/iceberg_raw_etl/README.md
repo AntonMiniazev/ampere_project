@@ -1,8 +1,8 @@
 # Spark Iceberg runtime
 
-This Spark image runs PostgreSQL-to-Raw extraction, Raw-to-Bronze daily and
-full-history application, contract-driven catalog initialization, and the
-Spark Connect housekeeping client. The image includes
+This Spark image runs PostgreSQL-to-Raw extraction and Raw-to-Bronze daily and
+full-history application. Catalog initialization and housekeeping use the
+separate lightweight Spark Connect client image. This image includes
 `tools/contracts/ampere_tables.json` and the shared v3 resolver from the same
 repository revision as its application code.
 
@@ -25,7 +25,6 @@ skips compaction until the contract's minimum active-file threshold is met,
 preserves table rows, expires snapshots, and removes aged orphan files. A dry
 run previews cleanup without changing table data or metadata.
 
-The image bundles Spark 4.1 and Iceberg runtime JARs for both Raw and Bronze
+The image bundles Spark 4.1 and Iceberg runtime JARs for Raw and Bronze
 SparkApplications. Lakekeeper access uses the Spark Entra client and MinIO
-credentials supplied by Kubernetes Secrets. Catalog initialization requires
-the three Airflow warehouse variables and the existing Spark client Secret.
+credentials supplied by Kubernetes Secrets.

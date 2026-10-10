@@ -12,7 +12,7 @@ from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 from utils.ampere_dag_config import (
     ICEBERG_MUTATION_POOL,
     load_silver_dag_config,
-    resolve_spark_image,
+    resolve_spark_connect_client_image,
     standard_default_args,
 )
 
@@ -33,14 +33,14 @@ with DAG(
         task_id="initialize__iceberg__catalog_from_contract_v3",
         name="ampere-iceberg-catalog-init",
         namespace=CONFIG.namespace,
-        image=resolve_spark_image(),
+        image=resolve_spark_connect_client_image(),
         image_pull_policy="Always",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         service_account_name=CONFIG.service_account,
         node_selector=CONFIG.node_selector,
         pool=ICEBERG_MUTATION_POOL,
         pool_slots=1,
-        cmds=["python3", "/opt/spark/app/initialize_iceberg_catalog.py"],
+        cmds=["python3", "/opt/ampere/app/initialize_iceberg_catalog.py"],
         env_vars={
             "SPARK_REMOTE": Variable.get(
                 "iceberg_spark_connect_remote",
