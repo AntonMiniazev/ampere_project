@@ -311,7 +311,7 @@ class PublishTests(unittest.TestCase):
         )
         self.con.execute(
             "INSERT INTO staged_gold.gold.marketing_sales_budget_monthly_store "
-            "VALUES (DATE '2026-10-01', 1, 15)"
+            "VALUES (DATE '2026-10-01', 1, 15), (DATE '2026-10-01', 2, 20)"
         )
         for _ in range(2):
             publish_catalog.publish_table(
