@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -23,7 +23,8 @@ os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/contracts/ampere_tables.
 from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402
 from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
-from iceberg_bronze.main import _registry_progress  # noqa: E402
+from iceberg_bronze.main import _processed_batches, _registry_progress  # noqa: E402
+from iceberg_bronze.snapshots import apply_snapshot_batches  # noqa: E402
 from initialize_iceberg_catalog import _create_table  # noqa: E402
 from tools.contracts.ampere_contract import load_contract  # noqa: E402
 
@@ -60,6 +61,100 @@ class IcebergRegistryTests(unittest.TestCase):
             self.assertEqual(progress["delivery_tracking"].earliest_failed_partition_value, "2025-12-16")
         finally:
             spark.stop()
+
+    def test_superseded_snapshot_registry_rows_remain_replayable(self) -> None:
+        """Only applied or terminal skips suppress replay of a Raw batch."""
+        spark = SparkSession.builder.master("local[2]").appName("iceberg-registry-replay").getOrCreate()
+        spark.sparkContext.setLogLevel("ERROR")
+        try:
+            history = spark.sql(
+                "SELECT * FROM VALUES "
+                "('assortment','applied','2026-10-01','applied','ok'),"
+                "('assortment','empty','2026-10-02','skipped','empty batch'),"
+                "('assortment','old','2026-10-03','skipped','superseded by latest snapshot'),"
+                "('clients','other','2026-10-04','applied','ok') "
+                "AS t(source_table,run_id,partition_value,status,details)"
+            )
+            processed = _processed_batches(
+                history, "assortment", ["applied", "empty", "old", "other"]
+            )
+            self.assertEqual(
+                processed,
+                {("applied", "2026-10-01"), ("empty", "2026-10-02")},
+            )
+        finally:
+            spark.stop()
+
+    def test_snapshot_rebuild_keeps_each_date_and_latest_retry(self) -> None:
+        """Apply each snapshot date, selecting only the latest run per date."""
+        spark = MagicMock()
+        batches = []
+        for partition_value, run_id, ingest_ts in (
+            ("2026-10-01", "old", "2026-10-01T05:00:00+00:00"),
+            ("2026-10-01", "retry", "2026-10-01T06:00:00+00:00"),
+            ("2026-10-02", "next-day", "2026-10-02T05:00:00+00:00"),
+        ):
+            manifest = {
+                "manifest_version": 1,
+                "source_system": "postgres-pre-raw",
+                "source_schema": "source",
+                "source_table": "assortment",
+                "contract_name": "ampere",
+                "contract_version": "v3",
+                "run_id": run_id,
+                "ingest_ts_utc": ingest_ts,
+                "batch_type": "snapshot",
+                "storage_format": "parquet",
+                "schema_hash": "hash",
+                "checksum": "checksum",
+                "file_count": 1,
+                "row_count": 1,
+                "files": [{"path": f"s3a://raw/{run_id}.parquet", "size_bytes": 1, "row_count": 1, "checksum": "checksum"}],
+                "checks": [],
+                "min_max": {},
+                "null_counts": {},
+                "producer": {},
+                "source_extract": {},
+                "snapshot_date": partition_value,
+            }
+            batches.append(
+                {
+                    "manifest": manifest,
+                    "manifest_path": f"s3a://raw/{run_id}/_manifest.json",
+                    "partition_kind": "snapshot_date",
+                    "partition_value": partition_value,
+                    "run_id": run_id,
+                    "ingest_ts_utc": ingest_ts,
+                }
+            )
+
+        registry_rows = []
+        with patch("iceberg_bronze.snapshots.F.lit", side_effect=lambda value: value):
+            apply_snapshot_batches(
+                spark=spark,
+                table="assortment",
+                bronze_table_name="iceberg_bronze.bronze.assortment",
+                registry_schema=None,
+                registry_rows=registry_rows,
+                source_system="postgres-pre-raw",
+                source_schema="source",
+                sorted_batches=batches,
+                expected_schema_hash=None,
+                expected_contract_version=None,
+                logger=logging.getLogger("snapshot-test"),
+            )
+
+        self.assertEqual(spark.read.parquet.call_count, 2)
+        self.assertEqual(spark.read.parquet.call_args_list[0].args[0], "s3a://raw/retry.parquet")
+        self.assertEqual(spark.read.parquet.call_args_list[1].args[0], "s3a://raw/next-day.parquet")
+        self.assertCountEqual(
+            [(row["run_id"], row["status"], row["details"]) for row in registry_rows],
+            [
+                ("old", "skipped", "superseded by latest snapshot"),
+                ("retry", "applied", "ok"),
+                ("next-day", "applied", "ok"),
+            ],
+        )
 
     def test_mutable_merge_guards_against_older_extract(self) -> None:
         """Build the source-date guard independently of the runtime JAR."""

@@ -249,6 +249,31 @@ def _registry_progress(registry_history):
     return {row.source_table: row for row in progress_rows}
 
 
+def _processed_batches(
+    registry_history, table: str, candidate_run_ids: list[str]
+) -> set[tuple[str, str]]:
+    """Return terminal batches while leaving superseded snapshots replayable.
+
+    Older full rebuilds could mark historical snapshot partitions as superseded
+    because they selected one winner across the whole table. Those rows do not
+    prove the source partition was applied and must remain eligible for replay.
+    """
+    terminal_status = (F.col("status") == "applied") | (
+        (F.col("status") == "skipped")
+        & (F.coalesce(F.col("details"), F.lit("")) != "superseded by latest snapshot")
+    )
+    return {
+        (row.run_id, row.partition_value)
+        for row in registry_history.filter(
+            (F.col("source_table") == table)
+            & terminal_status
+            & F.col("run_id").isin(candidate_run_ids)
+        )
+        .select("run_id", "partition_value")
+        .collect()
+    }
+
+
 def main() -> None:
     """Apply raw landing batches to Bronze Iceberg tables.
 
@@ -481,16 +506,9 @@ def main() -> None:
             # A run id is only unique together with its partition. Fetch all
             # registry partitions for candidate run ids, then compare both keys.
             candidate_run_ids = sorted({candidate["run_id"] for candidate in candidates})
-            applied_batches = {
-                (row.run_id, row.partition_value)
-                for row in registry_history.filter(
-                    (F.col("source_table") == table)
-                    & F.col("status").isin("applied", "skipped")
-                    & F.col("run_id").isin(candidate_run_ids)
-                )
-                .select("run_id", "partition_value")
-                .collect()
-            }
+            applied_batches = _processed_batches(
+                registry_history, table, candidate_run_ids
+            )
 
             apply_queue = []
             seen_batches = set()

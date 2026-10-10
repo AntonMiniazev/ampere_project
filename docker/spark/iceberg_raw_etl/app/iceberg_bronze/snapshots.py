@@ -29,8 +29,8 @@ def apply_snapshot_batches(
 ) -> None:
     """Apply snapshot batches sequentially into a partitioned Iceberg table.
 
-    Each batch overwrites the target snapshot_date partition to keep a stable
-    point-in-time snapshot history while maintaining idempotency on retries.
+    The newest batch for each snapshot_date overwrites that target partition,
+    preserving point-in-time history while making retries idempotent.
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
@@ -73,16 +73,6 @@ def apply_snapshot_batches(
         logger.warning("Missing snapshot partition values for %s", table)
         return
 
-    latest_partition_value = max(partition_values)
-    latest_batches = [
-        batch
-        for batch in sorted_batches
-        if batch.get("partition_value") == latest_partition_value
-    ]
-    if not latest_batches:
-        logger.warning("No snapshot batch found for %s at %s", table, latest_partition_value)
-        return
-
     def _latest_batch_key(batch: dict) -> tuple:
         """Build an ordering key so the newest snapshot batch wins deterministically.
 
@@ -97,8 +87,26 @@ def apply_snapshot_batches(
         ingest_key = ingest_dt or datetime(1, 1, 1, tzinfo=timezone.utc)
         return (ingest_key, batch.get("run_id", ""))
 
-    latest_batch = max(latest_batches, key=_latest_batch_key)
-    superseded_batches = [batch for batch in sorted_batches if batch is not latest_batch]
+    latest_by_partition: dict[str, dict] = {}
+    superseded_batches = []
+    for batch in sorted_batches:
+        partition_value = batch.get("partition_value")
+        if not partition_value:
+            continue
+        current = latest_by_partition.get(partition_value)
+        if current is None:
+            latest_by_partition[partition_value] = batch
+        elif _latest_batch_key(batch) > _latest_batch_key(current):
+            superseded_batches.append(current)
+            latest_by_partition[partition_value] = batch
+        else:
+            superseded_batches.append(batch)
+
+    latest_batches = [latest_by_partition[value] for value in sorted(latest_by_partition)]
+    if not latest_batches:
+        logger.warning("No snapshot batch has a partition value for %s", table)
+        return
+
     for batch in superseded_batches:
         manifest = batch["manifest"]
         batch_apply_ts = datetime.now(timezone.utc).isoformat()
@@ -122,7 +130,7 @@ def apply_snapshot_batches(
             table,
         )
 
-    for batch in [latest_batch]:
+    for batch in latest_batches:
         # Step A: Validate the manifest and decide whether to apply or skip.
         # This ensures only complete, compatible batches are written.
         # The expected outcome is either a write attempt or a registry skip row.
