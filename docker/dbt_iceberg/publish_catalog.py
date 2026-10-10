@@ -16,7 +16,7 @@ from tools.contracts.ampere_contract import load_contract
 
 FULL_REBUILD_FACT_BATCHES = {
     "fact_delivery_tracking": 3,
-    "fact_order_product": 3,
+    "fact_order_product": 6,
     "fact_order_status_history": 3,
 }
 CONTRACT = load_contract()

@@ -354,8 +354,8 @@ class PublishTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "catalog__init"):
             publish_catalog.publish_table(self.con, "silver", "fact_orders", "full_history")
 
-    def test_large_full_history_facts_use_three_complete_ranges(self) -> None:
-        """Three merges update, insert, and remove keys across both endpoints."""
+    def test_large_full_history_facts_use_configured_complete_ranges(self) -> None:
+        """Configured merges update, insert, and remove keys across both endpoints."""
         for table in publish_catalog.FULL_REBUILD_FACT_BATCHES:
             with self.subTest(table=table):
                 key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
@@ -398,13 +398,13 @@ class PublishTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     sum(sql.startswith("MERGE INTO") for sql in recording.statements),
-                    6,
+                    publish_catalog.FULL_REBUILD_FACT_BATCHES[table] * 2,
                 )
                 self.con.execute(f"DROP TABLE staged_silver.silver.{table}")
                 self.con.execute(f"DROP TABLE publish_silver.silver.{table}")
 
     def test_batched_full_history_requires_initialized_fact(self) -> None:
-        """The three-range writer requires the contract-created target table."""
+        """The batched writer requires the contract-created target table."""
         table = "fact_order_product"
         key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
         self.con.execute(
