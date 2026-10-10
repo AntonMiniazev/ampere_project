@@ -114,6 +114,7 @@ def _candidate_runs(
     base_path: str,
     partition_key: str,
     search_start: Optional[date],
+    latest_only: bool = False,
 ) -> list[dict]:
     """Collect run folders that contain _SUCCESS and _manifest.json.
 
@@ -122,12 +123,17 @@ def _candidate_runs(
         base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
         partition_key: Partition type, e.g. "snapshot_date".
         search_start: Earliest date to consider, e.g. date(2026, 1, 20) or None.
+        latest_only: Inspect only the newest partition. Full snapshot rebuilds
+            use this because downstream dimensions consume complete current
+            snapshots, not their daily copies.
 
     Examples:
         _candidate_runs(spark, "s3a://ampere-raw/.../orders", "event_date", date(2026, 1, 20))
     """
     candidates = []
     partitions = _list_partitions(spark, base_path, partition_key)
+    if latest_only and partitions:
+        partitions = [partitions[-1]]
 
     for partition_date in partitions:
         if search_start and partition_date < search_start:
@@ -236,9 +242,7 @@ def _registry_progress(registry_history):
     )
     latest_success = successful.groupBy("source_table").agg(
         F.max("partition_value").alias("latest_partition_value"),
-        F.max_by("contract_version", "apply_ts_utc").alias(
-            "latest_contract_version"
-        ),
+        F.max_by("contract_version", "apply_ts_utc").alias("latest_contract_version"),
     )
     oldest_failure = unresolved_failures.groupBy("source_table").agg(
         F.min("partition_value").alias("earliest_failed_partition_value")
@@ -333,7 +337,9 @@ def main() -> None:
     spark = (
         SparkSession.builder.appName(args.app_name)
         .config("spark.sql.session.timeZone", "UTC")
-        .config("spark.redaction.regex", "(?i)secret|password|token|credential|access.key")
+        .config(
+            "spark.redaction.regex", "(?i)secret|password|token|credential|access.key"
+        )
         .getOrCreate()
     )
     configure_s3(spark, minio_endpoint, minio_access_key, minio_secret_key)
@@ -486,12 +492,33 @@ def main() -> None:
                 )
             )
             if args.rebuild_all:
-                logger.info("BRONZE_TABLE_PROGRESS status=full_rebuild group=%s table=%s", group_name, table)
+                logger.info(
+                    "BRONZE_TABLE_PROGRESS status=full_rebuild group=%s table=%s",
+                    group_name,
+                    table,
+                )
+            if partition_key == "extract_date":
+                logger.info(
+                    "BRONZE_TABLE_PROGRESS status=search group=%s table=%s "
+                    "rebuild_all=%s raw_state_last_ingest=%s registry_start=%s search_start=%s",
+                    group_name,
+                    table,
+                    args.rebuild_all,
+                    state_last_ingest.isoformat() if state_last_ingest else None,
+                    registry_date.isoformat() if registry_date else None,
+                    search_start.isoformat() if search_start else None,
+                )
 
             # Step 7: Discover candidate runs and load manifests.
             # This filters to batches with _SUCCESS and builds the apply queue.
             # The expected outcome is a list of candidate batches ready for validation.
-            candidates = _candidate_runs(spark, raw_base, partition_key, search_start)
+            candidates = _candidate_runs(
+                spark,
+                raw_base,
+                partition_key,
+                search_start,
+                latest_only=args.rebuild_all and partition_key == "snapshot_date",
+            )
             if not candidates:
                 logger.info(
                     "BRONZE_TABLE_PROGRESS status=no_candidates group=%s table=%s "
@@ -505,7 +532,9 @@ def main() -> None:
 
             # A run id is only unique together with its partition. Fetch all
             # registry partitions for candidate run ids, then compare both keys.
-            candidate_run_ids = sorted({candidate["run_id"] for candidate in candidates})
+            candidate_run_ids = sorted(
+                {candidate["run_id"] for candidate in candidates}
+            )
             applied_batches = _processed_batches(
                 registry_history, table, candidate_run_ids
             )
@@ -643,6 +672,7 @@ def main() -> None:
                     expected_contract_version=expected_contract_version,
                     logger=logger,
                     align_to_target_schema=_align_to_iceberg_bronze_schema,
+                    replace_table=args.rebuild_all,
                 )
             elif partition_key == "extract_date":
                 apply_mutable_dim_batches(

@@ -12,11 +12,13 @@ passes the configured executor node selector to the SparkApplication template;
 `spark_executor_node_selector` defaults to `ampere-k8s-node4`.
 
 The daily Bronze DAG selects validated Raw batches using the registry and
-configured lookbacks. The full-rebuild DAG scans every validated Raw manifest
-and replays it into the freshly initialized tables. Snapshot partitions,
-mutable dimensions, facts, and events keep their existing write semantics.
-Raw extraction partition keys remain separate from Iceberg physical
-partitioning.
+configured lookbacks. For snapshot dimensions, a full rebuild selects the
+latest complete Raw snapshot and atomically replaces the Bronze table, avoiding
+hundreds of redundant daily snapshot writes. Daily runs continue to retain
+their date partitions. Mutable dimensions, facts, and events still replay all
+validated Raw history during a full rebuild so incremental changes and event
+history are preserved. Raw extraction partition keys remain separate from
+Iceberg physical partitioning.
 
 The image bundles Spark 4.1 and Iceberg runtime JARs for Raw and Bronze
 SparkApplications. Its Python environment includes classic PySpark and boto3

@@ -26,11 +26,14 @@ def apply_snapshot_batches(
     expected_contract_version: str | None,
     logger: logging.Logger,
     align_to_target_schema: Callable | None = None,
+    replace_table: bool = False,
 ) -> None:
     """Apply snapshot batches sequentially into a partitioned Iceberg table.
 
     The newest batch for each snapshot_date overwrites that target partition,
-    preserving point-in-time history while making retries idempotent.
+    preserving daily history while making retries idempotent. Full rebuilds
+    pass only the latest source date and atomically replace the target table,
+    removing stale daily snapshot partitions.
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
@@ -102,7 +105,9 @@ def apply_snapshot_batches(
         else:
             superseded_batches.append(batch)
 
-    latest_batches = [latest_by_partition[value] for value in sorted(latest_by_partition)]
+    latest_batches = [
+        latest_by_partition[value] for value in sorted(latest_by_partition)
+    ]
     if not latest_batches:
         logger.warning("No snapshot batch has a partition value for %s", table)
         return
@@ -259,9 +264,7 @@ def apply_snapshot_batches(
             )
             continue
 
-        file_paths = [
-            f["path"] for f in manifest.get("files", []) if f.get("path")
-        ]
+        file_paths = [f["path"] for f in manifest.get("files", []) if f.get("path")]
         if not file_paths:
             logger.warning(
                 "No file paths in manifest for %s run_id=%s",
@@ -296,9 +299,14 @@ def apply_snapshot_batches(
             df = df.withColumn("snapshot_date", F.lit(partition_value))
             if align_to_target_schema is not None:
                 df = align_to_target_schema(table, df)
-            # Commit the replacement as one Iceberg snapshot so a failed task
-            # cannot leave this date empty between a delete and an append.
-            df.writeTo(bronze_table_name).overwritePartitions()
+            # Commit the replacement as one Iceberg snapshot. Full rebuilds
+            # replace the table with the latest complete source snapshot;
+            # daily runs replace only the matching date partition.
+            writer = df.writeTo(bronze_table_name)
+            if replace_table:
+                writer.overwrite(F.lit(True))
+            else:
+                writer.overwritePartitions()
 
             # Step C: Record the applied batch in the registry.
             # This keeps idempotency and traceability for future runs.

@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +24,12 @@ os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/contracts/ampere_tables.
 from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402
 from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
-from iceberg_bronze.main import _processed_batches, _registry_progress  # noqa: E402
+from iceberg_bronze.main import (  # noqa: E402
+    _candidate_runs,
+    _processed_batches,
+    _registry_progress,
+    _search_start_date,
+)
 from iceberg_bronze.snapshots import apply_snapshot_batches  # noqa: E402
 from initialize_iceberg_catalog import _create_table  # noqa: E402
 from tools.contracts.ampere_contract import load_contract  # noqa: E402
@@ -55,16 +61,25 @@ class IcebergRegistryTests(unittest.TestCase):
             )
             progress = _registry_progress(history)
             self.assertEqual(progress["payments"].latest_partition_value, "2026-09-29")
-            self.assertEqual(progress["payments"].earliest_failed_partition_value, "2025-12-16")
+            self.assertEqual(
+                progress["payments"].earliest_failed_partition_value, "2025-12-16"
+            )
             self.assertEqual(progress["payments"].latest_contract_version, "v2")
             self.assertIsNone(progress["delivery_tracking"].latest_partition_value)
-            self.assertEqual(progress["delivery_tracking"].earliest_failed_partition_value, "2025-12-16")
+            self.assertEqual(
+                progress["delivery_tracking"].earliest_failed_partition_value,
+                "2025-12-16",
+            )
         finally:
             spark.stop()
 
     def test_superseded_snapshot_registry_rows_remain_replayable(self) -> None:
         """Only applied or terminal skips suppress replay of a Raw batch."""
-        spark = SparkSession.builder.master("local[2]").appName("iceberg-registry-replay").getOrCreate()
+        spark = (
+            SparkSession.builder.master("local[2]")
+            .appName("iceberg-registry-replay")
+            .getOrCreate()
+        )
         spark.sparkContext.setLogLevel("ERROR")
         try:
             history = spark.sql(
@@ -109,7 +124,14 @@ class IcebergRegistryTests(unittest.TestCase):
                 "checksum": "checksum",
                 "file_count": 1,
                 "row_count": 1,
-                "files": [{"path": f"s3a://raw/{run_id}.parquet", "size_bytes": 1, "row_count": 1, "checksum": "checksum"}],
+                "files": [
+                    {
+                        "path": f"s3a://raw/{run_id}.parquet",
+                        "size_bytes": 1,
+                        "row_count": 1,
+                        "checksum": "checksum",
+                    }
+                ],
                 "checks": [],
                 "min_max": {},
                 "null_counts": {},
@@ -145,8 +167,12 @@ class IcebergRegistryTests(unittest.TestCase):
             )
 
         self.assertEqual(spark.read.parquet.call_count, 2)
-        self.assertEqual(spark.read.parquet.call_args_list[0].args[0], "s3a://raw/retry.parquet")
-        self.assertEqual(spark.read.parquet.call_args_list[1].args[0], "s3a://raw/next-day.parquet")
+        self.assertEqual(
+            spark.read.parquet.call_args_list[0].args[0], "s3a://raw/retry.parquet"
+        )
+        self.assertEqual(
+            spark.read.parquet.call_args_list[1].args[0], "s3a://raw/next-day.parquet"
+        )
         self.assertCountEqual(
             [(row["run_id"], row["status"], row["details"]) for row in registry_rows],
             [
@@ -156,13 +182,118 @@ class IcebergRegistryTests(unittest.TestCase):
             ],
         )
 
+    def test_snapshot_full_rebuild_replaces_table(self) -> None:
+        """A full rebuild replaces old daily partitions with the latest batch."""
+        spark = MagicMock()
+        source = MagicMock()
+        source.withColumn.return_value = source
+        writer = MagicMock()
+        source.writeTo.return_value = writer
+        spark.read.parquet.return_value = source
+        manifest = {
+            "manifest_version": 1,
+            "source_system": "postgres-pre-raw",
+            "source_schema": "source",
+            "source_table": "stores",
+            "contract_name": "ampere",
+            "contract_version": "v3",
+            "run_id": "latest",
+            "ingest_ts_utc": "2026-10-10T05:00:00+00:00",
+            "batch_type": "snapshot",
+            "storage_format": "parquet",
+            "schema_hash": "hash",
+            "checksum": "checksum",
+            "file_count": 1,
+            "row_count": 1,
+            "files": [
+                {
+                    "path": "s3a://raw/latest.parquet",
+                    "size_bytes": 1,
+                    "row_count": 1,
+                    "checksum": "checksum",
+                }
+            ],
+            "checks": [],
+            "min_max": {},
+            "null_counts": {},
+            "producer": {},
+            "source_extract": {},
+            "snapshot_date": "2026-10-10",
+        }
+        batch = {
+            "manifest": manifest,
+            "manifest_path": "s3a://raw/latest/_manifest.json",
+            "partition_kind": "snapshot_date",
+            "partition_value": "2026-10-10",
+            "run_id": "latest",
+            "ingest_ts_utc": "2026-10-10T05:00:00+00:00",
+        }
+
+        with patch("iceberg_bronze.snapshots.F.lit", side_effect=lambda value: value):
+            apply_snapshot_batches(
+                spark=spark,
+                table="stores",
+                bronze_table_name="iceberg_bronze.bronze.stores",
+                registry_schema=None,
+                registry_rows=[],
+                source_system="postgres-pre-raw",
+                source_schema="source",
+                sorted_batches=[batch],
+                expected_schema_hash=None,
+                expected_contract_version=None,
+                logger=logging.getLogger("snapshot-test"),
+                replace_table=True,
+            )
+
+        writer.overwrite.assert_called_once_with(True)
+        writer.overwritePartitions.assert_not_called()
+
+    def test_snapshot_full_rebuild_discovers_only_latest_partition(self) -> None:
+        spark = MagicMock()
+        with (
+            patch(
+                "iceberg_bronze.main._list_partitions",
+                return_value=[date(2026, 10, 8), date(2026, 10, 9), date(2026, 10, 10)],
+            ),
+            patch("iceberg_bronze.main.list_dirs", return_value=["run_id=latest"]),
+            patch("iceberg_bronze.main.exists", return_value=True),
+        ):
+            candidates = _candidate_runs(
+                spark,
+                "s3a://raw/stores",
+                "snapshot_date",
+                None,
+                latest_only=True,
+            )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["partition_value"], "2026-10-10")
+
+    def test_mutable_daily_search_uses_raw_state_and_registry_recovery_window(
+        self,
+    ) -> None:
+        raw_state_ingest = datetime(2026, 10, 10, 5, tzinfo=timezone.utc)
+        start = _search_start_date(
+            "extract_date",
+            date(2026, 10, 8),
+            raw_state_ingest,
+            date(2026, 10, 10),
+            0,
+            has_registry_rows=True,
+        )
+
+        self.assertEqual(start, date(2026, 10, 7))
+
     def test_mutable_merge_guards_against_older_extract(self) -> None:
         """Build the source-date guard independently of the runtime JAR."""
         spark = MagicMock()
         source = MagicMock()
         source.columns = ["id", "fullname", "_bronze_last_manifest_path"]
         merge_to_iceberg(
-            spark, source, "iceberg_bronze.bronze.clients", ["id"],
+            spark,
+            source,
+            "iceberg_bronze.bronze.clients",
+            ["id"],
             source_extract_date="2026-07-09",
         )
         sql = spark.sql.call_args.args[0]
@@ -171,7 +302,9 @@ class IcebergRegistryTests(unittest.TestCase):
         self.assertIn("<= '2026-07-09'", sql)
 
 
-@unittest.skipUnless(os.getenv("ICEBERG_RUNTIME_JAR"), "Iceberg runtime JAR not supplied")
+@unittest.skipUnless(
+    os.getenv("ICEBERG_RUNTIME_JAR"), "Iceberg runtime JAR not supplied"
+)
 class IcebergSparkTests(unittest.TestCase):
     """Check snapshot replacement and mutable-dimension merge against Iceberg."""
 
@@ -237,9 +370,7 @@ class IcebergSparkTests(unittest.TestCase):
                     logger=logger,
                 )
                 for fullname in ("first", "second"):
-                    source = spark.createDataFrame(
-                        [(7, fullname)], ["id", "fullname"]
-                    )
+                    source = spark.createDataFrame([(7, fullname)], ["id", "fullname"])
                     aligned = align_df_to_iceberg_schema(
                         spark,
                         source,
@@ -250,7 +381,10 @@ class IcebergSparkTests(unittest.TestCase):
                     )
                     merge_to_iceberg(spark, aligned, dimension_table, ["id"])
                 self.assertEqual(
-                    [(row.id, row.fullname) for row in spark.table(dimension_table).collect()],
+                    [
+                        (row.id, row.fullname)
+                        for row in spark.table(dimension_table).collect()
+                    ],
                     [(7, "second")],
                 )
 
@@ -261,15 +395,28 @@ class IcebergSparkTests(unittest.TestCase):
                     ("2026-07-09", "stale-july"),
                 ):
                     source = spark.createDataFrame(
-                        [(7, fullname, f"s3a://raw/clients/extract_date={extract_date}/run_id=x/_manifest.json")],
+                        [
+                            (
+                                7,
+                                fullname,
+                                f"s3a://raw/clients/extract_date={extract_date}/run_id=x/_manifest.json",
+                            )
+                        ],
                         ["id", "fullname", "_bronze_last_manifest_path"],
                     )
                     aligned = align_df_to_iceberg_schema(
-                        spark, source, catalog="iceberg_bronze", schema="bronze",
-                        table="clients", logger=logger,
+                        spark,
+                        source,
+                        catalog="iceberg_bronze",
+                        schema="bronze",
+                        table="clients",
+                        logger=logger,
                     )
                     merge_to_iceberg(
-                        spark, aligned, dimension_table, ["id"],
+                        spark,
+                        aligned,
+                        dimension_table,
+                        ["id"],
                         source_extract_date=extract_date,
                     )
                 client = spark.table(dimension_table).where("id = 7").first()
