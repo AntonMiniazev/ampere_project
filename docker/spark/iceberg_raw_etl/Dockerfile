@@ -12,11 +12,16 @@ ENV HOME=/root
 RUN uv python install 3.14 \
     && uv venv --python "$(uv python find 3.14)" /opt/ampere-venv \
     && uv pip install --python /opt/ampere-venv/bin/python --no-cache \
+    numpy==2.3.4 \
     boto3==1.40.18 \
     pandas==2.3.3 \
     pyarrow==26.0.0 \
     "pyspark[connect]==4.1.0" \
     zstandard==0.25.0
+
+# NumPy 2.4 wheels require x86-64-v2; keep the image runnable on the homelab's
+# older virtual CPU baseline while retaining Python 3.14 support.
+RUN /opt/ampere-venv/bin/python -c "import numpy, pyspark; assert numpy.__version__ == '2.3.4'; print('Spark Connect imports with NumPy', numpy.__version__)"
 
 ENV PATH="/opt/ampere-venv/bin:${PATH}"
 
