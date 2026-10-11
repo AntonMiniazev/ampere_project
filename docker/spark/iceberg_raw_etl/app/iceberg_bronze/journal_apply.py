@@ -83,9 +83,22 @@ def reserve_incremental_transfer() -> dict | None:
         if active_dataset and active_dataset[0] != state[1]:
             raise RuntimeError("Source dataset changed; run the explicit Bronze full-rebuild DAG")
         cursor.execute(
-            "SELECT transfer_id,dataset_id,first_batch_sequence,last_batch_sequence "
-            "FROM pipeline.bronze_transfers WHERE status='started' AND dataset_id=%s "
-            "ORDER BY first_batch_sequence LIMIT 1",
+            "SELECT 1 FROM pipeline.bronze_transfers bt "
+            "WHERE bt.status='started' AND bt.dataset_id=%s "
+            "AND NOT EXISTS (SELECT 1 FROM pipeline.raw_transfers rt "
+            "WHERE rt.transfer_id=bt.transfer_id) LIMIT 1",
+            (state[1],),
+        )
+        if cursor.fetchone():
+            raise RuntimeError(
+                "A Bronze full rebuild is in progress; finish or retry it before daily apply"
+            )
+        cursor.execute(
+            "SELECT bt.transfer_id,bt.dataset_id,bt.first_batch_sequence,bt.last_batch_sequence "
+            "FROM pipeline.bronze_transfers bt WHERE bt.status='started' AND bt.dataset_id=%s "
+            "AND EXISTS (SELECT 1 FROM pipeline.raw_transfers rt "
+            "WHERE rt.transfer_id=bt.transfer_id) "
+            "ORDER BY bt.first_batch_sequence LIMIT 1",
             (state[1],),
         )
         transfer = cursor.fetchone()
@@ -139,6 +152,56 @@ def reserve_full_rebuild() -> dict:
         if dataset_row is None:
             raise RuntimeError("No ready source dataset exists")
         dataset_id = dataset_row[0]
+        cursor.execute(
+            "SELECT 1 FROM pipeline.bronze_transfers bt "
+            "WHERE bt.status='started' AND bt.dataset_id=%s "
+            "AND EXISTS (SELECT 1 FROM pipeline.raw_transfers rt "
+            "WHERE rt.transfer_id=bt.transfer_id) LIMIT 1",
+            (dataset_id,),
+        )
+        if cursor.fetchone():
+            raise RuntimeError(
+                "A daily Bronze transfer is in progress; finish or retry it before full rebuild"
+            )
+        cursor.execute(
+            "SELECT transfer_id,first_batch_sequence,last_batch_sequence "
+            "FROM pipeline.bronze_transfers bt "
+            "WHERE bt.status='started' AND bt.dataset_id=%s "
+            "AND NOT EXISTS (SELECT 1 FROM pipeline.raw_transfers rt "
+            "WHERE rt.transfer_id=bt.transfer_id) "
+            "ORDER BY last_batch_sequence DESC LIMIT 1",
+            (dataset_id,),
+        )
+        in_progress = cursor.fetchone()
+        if in_progress is not None:
+            rebuild_id, first_sequence, last_sequence = in_progress
+            cursor.execute(
+                "SELECT transfer_id FROM pipeline.raw_transfers "
+                "WHERE dataset_id=%s AND status='completed' "
+                "AND first_batch_sequence >= %s AND last_batch_sequence <= %s "
+                "ORDER BY first_batch_sequence",
+                (dataset_id, first_sequence, last_sequence),
+            )
+            ids = [row[0] for row in cursor.fetchall()]
+            if not ids:
+                raise RuntimeError(
+                    f"Started Bronze rebuild {rebuild_id} has no accepted Raw transfers"
+                )
+            cursor.execute(
+                "SELECT source_table,SUM(row_count)::bigint FROM pipeline.raw_transfer_tables "
+                "WHERE transfer_id = ANY(%s) GROUP BY source_table",
+                (ids,),
+            )
+            expected_counts = {table: int(count) for table, count in cursor.fetchall()}
+            return {
+                "transfer_id": str(rebuild_id),
+                "dataset_id": str(dataset_id),
+                "first_sequence": int(first_sequence),
+                "last_sequence": int(last_sequence),
+                "transfer_ids": [str(value) for value in ids],
+                "expected_counts": expected_counts,
+                "rebuild": True,
+            }
         cursor.execute(
             "SELECT transfer_id,first_batch_sequence,last_batch_sequence "
             "FROM pipeline.raw_transfers WHERE dataset_id=%s AND status='completed' "
@@ -320,6 +383,8 @@ _SESSION: SparkSession
 def run(
     *,
     rebuild_all: bool,
+    tables: list[str],
+    complete_transfer: bool,
     warehouse: str,
     bronze_warehouse: str,
     uri: str,
@@ -327,6 +392,13 @@ def run(
     scope: str,
 ) -> None:
     global _SESSION
+    if not tables:
+        raise ValueError("At least one Bronze table must be selected")
+    unknown_tables = sorted(set(tables) - set(TABLES))
+    if unknown_tables:
+        raise ValueError(f"Unknown Raw-to-Bronze tables: {unknown_tables}")
+    if len(tables) != len(set(tables)):
+        raise ValueError("Raw-to-Bronze table selection contains duplicates")
     transfer = reserve_full_rebuild() if rebuild_all else reserve_incremental_transfer()
     if transfer is None:
         LOGGER.info("No complete Raw transfer is waiting for Bronze")
@@ -356,7 +428,13 @@ def run(
         client_secret=get_env("LAKEKEEPER_CLIENT_SECRET"),
         minio_endpoint=os.environ["MINIO_S3_ENDPOINT"],
     )
-    for table in TABLES:
+    LOGGER.info(
+        "BRONZE_GROUP_START tables=%s rebuild=%s finalize=%s",
+        ",".join(tables),
+        transfer["rebuild"],
+        complete_transfer,
+    )
+    for table in tables:
         with _pg_connect() as connection, connection.cursor() as cursor:
             cursor.execute(
                 "SELECT 1 FROM pipeline.bronze_transfer_tables "
@@ -386,11 +464,12 @@ def run(
         finally:
             raw.unpersist()
         LOGGER.info("BRONZE_TABLE_COMPLETE table=%s rebuild=%s", table, transfer["rebuild"])
-    _complete_transfer(transfer)
-    LOGGER.info(
-        "BRONZE_TRANSFER_COMPLETE transfer_id=%s dataset=%s boundary=%s",
-        transfer["transfer_id"], transfer["dataset_id"], transfer["last_sequence"],
-    )
+    if complete_transfer:
+        _complete_transfer(transfer)
+        LOGGER.info(
+            "BRONZE_TRANSFER_COMPLETE transfer_id=%s dataset=%s boundary=%s",
+            transfer["transfer_id"], transfer["dataset_id"], transfer["last_sequence"],
+        )
 
 
 def run_cli() -> None:
@@ -400,6 +479,8 @@ def run_cli() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rebuild-all", action="store_true")
+    parser.add_argument("--tables", nargs="+", required=True)
+    parser.add_argument("--complete-transfer", action="store_true")
     parser.add_argument("--warehouse", default="raw")
     parser.add_argument("--bronze-warehouse", default="bronze")
     parser.add_argument("--lakekeeper-uri", required=True)
@@ -418,6 +499,8 @@ def run_cli() -> None:
     try:
         run(
             rebuild_all=args.rebuild_all,
+            tables=args.tables,
+            complete_transfer=args.complete_transfer,
             warehouse=args.warehouse,
             bronze_warehouse=args.bronze_warehouse,
             uri=args.lakekeeper_uri,

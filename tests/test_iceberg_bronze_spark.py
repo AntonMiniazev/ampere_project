@@ -27,6 +27,8 @@ from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
 from iceberg_bronze.journal_apply import (  # noqa: E402
     _full_rebuild_transfer_id,
     _raw_source_column_for_bronze,
+    reserve_full_rebuild,
+    reserve_incremental_transfer,
 )
 from iceberg_bronze.main import (  # noqa: E402
     _candidate_runs,
@@ -37,10 +39,104 @@ from iceberg_bronze.main import (  # noqa: E402
 from iceberg_bronze.snapshots import apply_snapshot_batches  # noqa: E402
 from initialize_iceberg_catalog import _create_table  # noqa: E402
 from tools.contracts.ampere_contract import load_contract  # noqa: E402
+from dags.utils.stream_group_config import (  # noqa: E402
+    build_bronze_execution_groups,
+    build_bronze_stream_groups,
+)
+
+
+class BronzeExecutionGroupTests(unittest.TestCase):
+    """Keep the two Spark applications ordered and cover every source table."""
+
+    def test_snapshots_and_mutable_dims_precede_facts_and_events(self) -> None:
+        groups = build_bronze_execution_groups()
+        self.assertEqual(
+            [group["name"] for group in groups],
+            ["snapshots_mutable_dims", "facts_events"],
+        )
+        self.assertFalse(groups[0]["complete_transfer"])
+        self.assertTrue(groups[1]["complete_transfer"])
+        self.assertEqual(
+            set(groups[0]["tables"]),
+            set(build_bronze_stream_tables("snapshots", "mutable_dims")),
+        )
+        self.assertEqual(
+            set(groups[1]["tables"]),
+            set(build_bronze_stream_tables("facts", "events")),
+        )
+        all_tables = [table for group in groups for table in group["tables"]]
+        self.assertEqual(len(all_tables), len(set(all_tables)))
+        contract_tables = {table.name for table in load_contract().layer_tables("raw")}
+        self.assertEqual(set(all_tables), contract_tables)
+
+
+def build_bronze_stream_tables(*groups: str) -> list[str]:
+    configured = {
+        group["group"]: group["tables"]
+        for group in build_bronze_stream_groups()
+    }
+    return [table for group in groups for table in configured[group]]
 
 
 class IcebergRegistryTests(unittest.TestCase):
     """Keep failed historical batches visible after newer successes."""
+
+    def test_full_rebuild_retry_reuses_started_transfer_boundary(self) -> None:
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [
+            ("51e4343e-cf56-4181-9796-3f27865ebe2b",),
+            None,
+            ("rebuild-id", 1, 37),
+        ]
+        cursor.fetchall.side_effect = [
+            [("raw-transfer-1",), ("raw-transfer-2",)],
+            [("clients", 24)],
+        ]
+        with patch("iceberg_bronze.journal_apply._pg_connect", return_value=connection):
+            transfer = reserve_full_rebuild()
+
+        self.assertEqual(transfer["transfer_id"], "rebuild-id")
+        self.assertEqual(transfer["first_sequence"], 1)
+        self.assertEqual(transfer["last_sequence"], 37)
+        self.assertEqual(
+            transfer["transfer_ids"], ["raw-transfer-1", "raw-transfer-2"]
+        )
+        self.assertEqual(transfer["expected_counts"], {"clients": 24})
+        self.assertTrue(transfer["rebuild"])
+
+    def test_daily_apply_waits_for_started_full_rebuild(self) -> None:
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [
+            (True, "51e4343e-cf56-4181-9796-3f27865ebe2b", 37),
+            ("51e4343e-cf56-4181-9796-3f27865ebe2b",),
+            (1,),
+        ]
+        with (
+            patch("iceberg_bronze.journal_apply._pg_connect", return_value=connection),
+            self.assertRaisesRegex(RuntimeError, "full rebuild is in progress"),
+        ):
+            reserve_incremental_transfer()
+
+    def test_full_rebuild_waits_for_started_daily_transfer(self) -> None:
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        cursor = MagicMock()
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.fetchone.side_effect = [
+            ("51e4343e-cf56-4181-9796-3f27865ebe2b",),
+            (1,),
+        ]
+        with (
+            patch("iceberg_bronze.journal_apply._pg_connect", return_value=connection),
+            self.assertRaisesRegex(RuntimeError, "daily Bronze transfer is in progress"),
+        ):
+            reserve_full_rebuild()
 
     def test_bronze_lineage_columns_map_to_raw_journal_names(self) -> None:
         self.assertEqual(

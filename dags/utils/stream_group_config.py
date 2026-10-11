@@ -221,3 +221,48 @@ def build_bronze_stream_groups(
             }
         )
     return stream_groups
+
+
+BRONZE_EXECUTION_GROUPS = (
+    ("snapshots_mutable_dims", ("snapshots", "mutable_dims")),
+    ("facts_events", ("facts", "events")),
+)
+
+
+def build_bronze_execution_groups() -> list[dict]:
+    """Combine logical table groups into two ordered Bronze Spark applications."""
+    configured_groups = {
+        group["group"]: group["tables"] for group in build_bronze_stream_groups()
+    }
+    expected_groups = {name for _, names in BRONZE_EXECUTION_GROUPS for name in names}
+    if set(configured_groups) != expected_groups:
+        raise ValueError(
+            "Bronze Spark execution groups do not match configured source groups: "
+            f"expected {sorted(expected_groups)}, got {sorted(configured_groups)}"
+        )
+
+    result = []
+    seen_tables: set[str] = set()
+    for execution_group, source_groups in BRONZE_EXECUTION_GROUPS:
+        tables = [
+            table
+            for source_group in source_groups
+            for table in configured_groups[source_group]
+        ]
+        if (
+            not tables
+            or len(tables) != len(set(tables))
+            or seen_tables.intersection(tables)
+        ):
+            raise ValueError(f"Bronze table groups are empty or overlap: {execution_group}")
+        seen_tables.update(tables)
+        result.append(
+            {
+                "name": execution_group,
+                "tables": tables,
+                "complete_transfer": execution_group == "facts_events",
+            }
+        )
+    if len(seen_tables) != sum(len(tables) for tables in configured_groups.values()):
+        raise ValueError("Bronze execution groups do not cover every configured table")
+    return result

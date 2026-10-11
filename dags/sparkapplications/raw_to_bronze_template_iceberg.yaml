@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: raw-journal-to-bronze-{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y%m%dt%H%M%S') }}
+  name: raw-journal-to-bronze-{{ params.execution_group | replace('_', '-') }}-{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y%m%dt%H%M%S') }}
   namespace: {{ params.namespace }}
 spec:
   type: Python
@@ -24,7 +24,14 @@ spec:
     - --scope
     - {{ params.lakekeeper_scope }}
     - --app-name
-    - raw-journal-to-bronze-{{ params.rebuild_all | lower }}
+    - raw-journal-to-bronze-{{ params.execution_group }}
+    - --tables
+{% for table in params.tables %}
+    - {{ table }}
+{% endfor %}
+{% if params.complete_transfer %}
+    - --complete-transfer
+{% endif %}
 {% if params.rebuild_all %}
     - --rebuild-all
 {% endif %}
@@ -35,6 +42,9 @@ spec:
     spark.sql.shuffle.partitions: "{{ params.shuffle_partitions }}"
     spark.default.parallelism: "{{ params.shuffle_partitions }}"
     spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "{{ params.adaptive_coalesce }}"
+    spark.sql.files.maxPartitionBytes: "{{ params.files_max_partition_bytes }}"
+    spark.sql.files.openCostInBytes: "{{ params.files_open_cost_bytes }}"
     spark.redaction.regex: "(?i)secret|password|token|credential|access[.]?key"
     spark.kubernetes.driver.memoryOverhead: "{{ params.driver_memory_overhead }}"
     spark.kubernetes.executor.memoryOverhead: "{{ params.executor_memory_overhead }}"
