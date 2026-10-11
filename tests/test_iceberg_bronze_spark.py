@@ -28,6 +28,7 @@ from iceberg_bronze.journal_apply import (  # noqa: E402
     SOURCE_ROW_BUCKETS,
     _apply_batch_slices,
     _apply_full_rebuild,
+    _bronze_delete_rows,
     _full_rebuild_transfer_id,
     _raw_source_column_for_bronze,
     reserve_full_rebuild,
@@ -434,6 +435,26 @@ class IcebergRegistryTests(unittest.TestCase):
 
 
 class BoundedBronzeReplayTests(unittest.TestCase):
+    def test_delete_metadata_maps_raw_ordering_columns_to_bronze_names(self) -> None:
+        spark = SparkSession.builder.master("local[2]").appName("bronze-delete-lineage").getOrCreate()
+        spark.sparkContext.setLogLevel("ERROR")
+        try:
+            changes = spark.createDataFrame(
+                [("dataset", "entity-a", 17, 42, "D")],
+                ["_dataset_id", "_source_row_id", "_batch_sequence", "_change_id", "_op"],
+            )
+            deletes = _bronze_delete_rows(changes)
+            self.assertEqual(
+                deletes.columns,
+                ["_dataset_id", "_source_row_id", "_source_batch_sequence", "_source_change_id"],
+            )
+            self.assertEqual(
+                list(deletes.select("_source_batch_sequence", "_source_change_id").first()),
+                [17, 42],
+            )
+        finally:
+            spark.stop()
+
     def test_source_row_hash_buckets_keep_entity_events_together(self) -> None:
         spark = SparkSession.builder.master("local[2]").appName("bounded-bronze-buckets").getOrCreate()
         spark.sparkContext.setLogLevel("ERROR")

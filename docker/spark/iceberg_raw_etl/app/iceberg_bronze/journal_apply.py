@@ -321,6 +321,16 @@ def _latest_changes(raw: DataFrame) -> DataFrame:
     )
 
 
+def _bronze_delete_rows(latest: DataFrame) -> DataFrame:
+    """Project Raw ordering metadata under the names used by Bronze."""
+    return latest.filter(F.col("_op") == "D").select(
+        "_dataset_id",
+        "_source_row_id",
+        F.col("_batch_sequence").alias("_source_batch_sequence"),
+        F.col("_change_id").alias("_source_change_id"),
+    )
+
+
 def _raw_source_column_for_bronze(column: str) -> str:
     """Map Bronze lineage names to their corresponding Raw journal columns."""
     return {
@@ -381,9 +391,7 @@ def _merge_incremental(
                 "(s._source_batch_sequence=t._source_batch_sequence AND "
                 "s._source_change_id > t._source_change_id)"
             )
-            deletes = latest.filter(F.col("_op") == "D").select(
-                "_dataset_id", "_source_row_id", "_source_batch_sequence", "_source_change_id"
-            )
+            deletes = _bronze_delete_rows(latest)
             if not deletes.rdd.isEmpty():
                 deletes.createOrReplaceTempView("bronze_delete_source")
                 spark.sql(
