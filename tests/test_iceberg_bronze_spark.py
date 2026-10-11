@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from pyspark import StorageLevel
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
@@ -436,6 +437,19 @@ class IcebergRegistryTests(unittest.TestCase):
 
 
 class BoundedBronzeReplayTests(unittest.TestCase):
+    def test_merge_source_checkpoint_is_eager_and_disk_backed(self) -> None:
+        changes = MagicMock()
+        checkpointed = MagicMock()
+        changes.localCheckpoint.return_value = checkpointed
+
+        result = _checkpoint_merge_source(changes)
+
+        self.assertIs(result, checkpointed)
+        changes.localCheckpoint.assert_called_once_with(
+            eager=True,
+            storageLevel=StorageLevel.DISK_ONLY,
+        )
+
     def test_delete_metadata_maps_raw_ordering_columns_to_bronze_names(self) -> None:
         spark = SparkSession.builder.master("local[2]").appName("bronze-delete-lineage").getOrCreate()
         spark.sparkContext.setLogLevel("ERROR")

@@ -335,8 +335,8 @@ def _bronze_delete_rows(latest: DataFrame) -> DataFrame:
 
 
 def _checkpoint_merge_source(changes: DataFrame) -> DataFrame:
-    """Cut Iceberg V2 table references out of the bounded MERGE source plan."""
-    return changes.localCheckpoint(eager=False, storageLevel=StorageLevel.DISK_ONLY)
+    """Materialize a bounded merge source and cut Iceberg V2 refs from its plan."""
+    return changes.localCheckpoint(eager=True, storageLevel=StorageLevel.DISK_ONLY)
 
 
 def _raw_source_column_for_bronze(column: str) -> str:
