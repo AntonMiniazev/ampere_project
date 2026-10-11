@@ -331,6 +331,11 @@ def _bronze_delete_rows(latest: DataFrame) -> DataFrame:
     )
 
 
+def _checkpoint_merge_source(changes: DataFrame) -> DataFrame:
+    """Cut Iceberg V2 table references out of the bounded MERGE source plan."""
+    return changes.localCheckpoint(eager=False, storageLevel=StorageLevel.DISK_ONLY)
+
+
 def _raw_source_column_for_bronze(column: str) -> str:
     """Map Bronze lineage names to their corresponding Raw journal columns."""
     return {
@@ -393,23 +398,33 @@ def _merge_incremental(
             )
             deletes = _bronze_delete_rows(latest)
             if not deletes.rdd.isEmpty():
-                deletes.createOrReplaceTempView("bronze_delete_source")
-                spark.sql(
-                    f"MERGE INTO {target} t USING bronze_delete_source s ON {condition} "
-                    f"WHEN MATCHED AND ({version}) THEN DELETE"
-                )
+                deletes = _checkpoint_merge_source(deletes)
+                try:
+                    deletes.createOrReplaceTempView("bronze_delete_source")
+                    spark.sql(
+                        f"MERGE INTO {target} t USING bronze_delete_source s ON {condition} "
+                        f"WHEN MATCHED AND ({version}) THEN DELETE"
+                    )
+                finally:
+                    spark.catalog.dropTempView("bronze_delete_source")
+                    deletes.unpersist()
             upserts = _bronze_rows(table, latest.filter(F.col("_op") != "D"), transfer)
             if not upserts.rdd.isEmpty():
-                upserts.createOrReplaceTempView("bronze_upsert_source")
-                names = [column["name"] for column in CONTRACT.table("bronze", table).columns]
-                assignments = ", ".join(f"{quote_identifier(name)}=s.{quote_identifier(name)}" for name in names)
-                insert_names = ", ".join(quote_identifier(name) for name in names)
-                insert_values = ", ".join(f"s.{quote_identifier(name)}" for name in names)
-                spark.sql(
-                    f"MERGE INTO {target} t USING bronze_upsert_source s ON {condition} "
-                    f"WHEN MATCHED AND ({version}) THEN UPDATE SET {assignments} "
-                    f"WHEN NOT MATCHED THEN INSERT ({insert_names}) VALUES ({insert_values})"
-                )
+                upserts = _checkpoint_merge_source(upserts)
+                try:
+                    upserts.createOrReplaceTempView("bronze_upsert_source")
+                    names = [column["name"] for column in CONTRACT.table("bronze", table).columns]
+                    assignments = ", ".join(f"{quote_identifier(name)}=s.{quote_identifier(name)}" for name in names)
+                    insert_names = ", ".join(quote_identifier(name) for name in names)
+                    insert_values = ", ".join(f"s.{quote_identifier(name)}" for name in names)
+                    spark.sql(
+                        f"MERGE INTO {target} t USING bronze_upsert_source s ON {condition} "
+                        f"WHEN MATCHED AND ({version}) THEN UPDATE SET {assignments} "
+                        f"WHEN NOT MATCHED THEN INSERT ({insert_names}) VALUES ({insert_values})"
+                    )
+                finally:
+                    spark.catalog.dropTempView("bronze_upsert_source")
+                    upserts.unpersist()
         finally:
             latest.unpersist()
     finally:

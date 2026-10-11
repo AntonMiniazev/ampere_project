@@ -28,6 +28,7 @@ from iceberg_bronze.journal_apply import (  # noqa: E402
     SOURCE_ROW_BUCKETS,
     _apply_batch_slices,
     _apply_full_rebuild,
+    _checkpoint_merge_source,
     _bronze_delete_rows,
     _full_rebuild_transfer_id,
     _raw_source_column_for_bronze,
@@ -452,6 +453,15 @@ class BoundedBronzeReplayTests(unittest.TestCase):
                 list(deletes.select("_source_batch_sequence", "_source_change_id").first()),
                 [17, 42],
             )
+            checkpointed = _checkpoint_merge_source(deletes)
+            try:
+                self.assertEqual(checkpointed.collect(), deletes.collect())
+                self.assertNotIn(
+                    "TableReference",
+                    checkpointed._jdf.queryExecution().logical().toString(),
+                )
+            finally:
+                checkpointed.unpersist()
         finally:
             spark.stop()
 
