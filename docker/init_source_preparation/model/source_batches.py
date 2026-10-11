@@ -166,9 +166,13 @@ def initialize_source_dataset(
         source_tables=SOURCE_TABLES,
     )
     for table in SOURCE_TABLES:
-        result = connection.execution_options(stream_results=True).execute(
-            text(f"SELECT * FROM {_quote(source_schema)}.{_quote(table)} ORDER BY source_row_id")
-        ).mappings()
+        # Apply streaming to this SELECT only. Setting it on the Connection
+        # persists for subsequent statements and makes psycopg try to declare
+        # a server cursor for the UPDATE below (which PostgreSQL disallows).
+        statement = text(
+            f"SELECT * FROM {_quote(source_schema)}.{_quote(table)} ORDER BY source_row_id"
+        ).execution_options(stream_results=True)
+        result = connection.execute(statement).mappings()
         row_count = 0
         while rows := result.fetchmany(stager.chunk_rows):
             row_count += stager.append(table, pl.DataFrame([dict(row) for row in rows]), "B")

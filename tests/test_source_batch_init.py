@@ -28,12 +28,21 @@ class SourceBatchInitTests(unittest.TestCase):
             [{"id": 1, "source_row_id": "row-1"}], [],
             [],
         ]
-        connection.execution_options.return_value.execute.return_value = source_result
         stager = MagicMock()
         stager.chunk_rows = 50_000
         stager.append.return_value = 1
         statements = []
-        connection.execute.side_effect = lambda statement, *_args, **_kwargs: statements.append(str(statement)) or MagicMock()
+        select_statements = []
+
+        def execute(statement, *_args, **_kwargs):
+            sql = str(statement)
+            statements.append(sql)
+            if "SELECT * FROM" in sql:
+                select_statements.append(statement)
+                return source_result
+            return MagicMock()
+
+        connection.execute.side_effect = execute
 
         with (
             patch.object(source_batches, "SOURCE_TABLES", ("orders", "payments")),
@@ -51,6 +60,8 @@ class SourceBatchInitTests(unittest.TestCase):
 
         self.assertIs(result, stager)
         self.assertTrue(dataset_id)
+        connection.execution_options.assert_not_called()
+        self.assertTrue(select_statements[0]._execution_options["stream_results"])
         self.assertEqual(make_stager.call_args.kwargs["source_tables"], ("orders", "payments"))
         self.assertEqual(stager.append.call_count, 1)
         stager.prepare.assert_called_once_with()
