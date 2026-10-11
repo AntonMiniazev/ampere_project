@@ -334,9 +334,10 @@ def _bronze_delete_rows(latest: DataFrame) -> DataFrame:
     )
 
 
-def _checkpoint_merge_source(changes: DataFrame) -> DataFrame:
-    """Materialize a bounded merge source and cut Iceberg V2 refs from its plan."""
-    return changes.localCheckpoint(eager=True, storageLevel=StorageLevel.DISK_ONLY)
+def _materialize_bounded_merge_source(changes: DataFrame) -> DataFrame:
+    """Move one bounded hash slice to a LocalRelation for reliable Iceberg MERGE."""
+    rows = changes.collect()
+    return changes.sparkSession.createDataFrame(rows, schema=changes.schema)
 
 
 def _raw_source_column_for_bronze(column: str) -> str:
@@ -401,7 +402,7 @@ def _merge_incremental(
             )
             deletes = _bronze_delete_rows(latest)
             if not deletes.rdd.isEmpty():
-                deletes = _checkpoint_merge_source(deletes)
+                deletes = _materialize_bounded_merge_source(deletes)
                 try:
                     deletes.createOrReplaceTempView("bronze_delete_source")
                     spark.sql(
@@ -410,10 +411,9 @@ def _merge_incremental(
                     )
                 finally:
                     spark.catalog.dropTempView("bronze_delete_source")
-                    deletes.unpersist()
             upserts = _bronze_rows(table, latest.filter(F.col("_op") != "D"), transfer)
             if not upserts.rdd.isEmpty():
-                upserts = _checkpoint_merge_source(upserts)
+                upserts = _materialize_bounded_merge_source(upserts)
                 try:
                     upserts.createOrReplaceTempView("bronze_upsert_source")
                     names = [column["name"] for column in CONTRACT.table("bronze", table).columns]
@@ -427,7 +427,6 @@ def _merge_incremental(
                     )
                 finally:
                     spark.catalog.dropTempView("bronze_upsert_source")
-                    upserts.unpersist()
         finally:
             latest.unpersist()
     finally:

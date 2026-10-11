@@ -11,7 +11,6 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pyspark import StorageLevel
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
@@ -29,7 +28,7 @@ from iceberg_bronze.journal_apply import (  # noqa: E402
     SOURCE_ROW_BUCKETS,
     _apply_batch_slices,
     _apply_full_rebuild,
-    _checkpoint_merge_source,
+    _materialize_bounded_merge_source,
     _bronze_delete_rows,
     _full_rebuild_transfer_id,
     _raw_source_column_for_bronze,
@@ -437,18 +436,22 @@ class IcebergRegistryTests(unittest.TestCase):
 
 
 class BoundedBronzeReplayTests(unittest.TestCase):
-    def test_merge_source_checkpoint_is_eager_and_disk_backed(self) -> None:
+    def test_merge_source_materializes_only_the_bounded_frame(self) -> None:
         changes = MagicMock()
-        checkpointed = MagicMock()
-        changes.localCheckpoint.return_value = checkpointed
+        materialized = MagicMock()
+        rows = [MagicMock()]
+        schema = MagicMock()
+        session = MagicMock()
+        changes.collect.return_value = rows
+        changes.schema = schema
+        changes.sparkSession = session
+        session.createDataFrame.return_value = materialized
 
-        result = _checkpoint_merge_source(changes)
+        result = _materialize_bounded_merge_source(changes)
 
-        self.assertIs(result, checkpointed)
-        changes.localCheckpoint.assert_called_once_with(
-            eager=True,
-            storageLevel=StorageLevel.DISK_ONLY,
-        )
+        self.assertIs(result, materialized)
+        changes.collect.assert_called_once_with()
+        session.createDataFrame.assert_called_once_with(rows, schema=schema)
 
     def test_delete_metadata_maps_raw_ordering_columns_to_bronze_names(self) -> None:
         spark = SparkSession.builder.master("local[2]").appName("bronze-delete-lineage").getOrCreate()
@@ -467,15 +470,12 @@ class BoundedBronzeReplayTests(unittest.TestCase):
                 list(deletes.select("_source_batch_sequence", "_source_change_id").first()),
                 [17, 42],
             )
-            checkpointed = _checkpoint_merge_source(deletes)
-            try:
-                self.assertEqual(checkpointed.collect(), deletes.collect())
-                self.assertNotIn(
-                    "TableReference",
-                    checkpointed._jdf.queryExecution().logical().toString(),
-                )
-            finally:
-                checkpointed.unpersist()
+            materialized = _materialize_bounded_merge_source(deletes)
+            self.assertEqual(materialized.collect(), deletes.collect())
+            self.assertNotIn(
+                "TableReference",
+                materialized._jdf.queryExecution().logical().toString(),
+            )
         finally:
             spark.stop()
 
