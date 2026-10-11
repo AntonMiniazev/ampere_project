@@ -28,6 +28,7 @@ from init_source_preparation.generators.delivery_resource_gen_init import (
 from init_source_preparation.logging_utils import APP_NAME
 from init_source_preparation.db import get_engine
 from init_source_preparation.source_journal import (
+    drop_source_capture_triggers,
     initialize_dataset_journal,
     migrate_existing_source_journal,
 )
@@ -82,12 +83,7 @@ def initialize_data_sources() -> None:
                 # Reset is the only unjournaled source write path. Remove the
                 # capture trigger before truncating and bulk-loading the table;
                 # the new dataset's baseline is journaled after all loads finish.
-                connection.execute(
-                    text(
-                        f'DROP TRIGGER IF EXISTS capture_source_change ON '
-                        f'"{schema_init}"."{table_name}"'
-                    )
-                )
+                drop_source_capture_triggers(connection, schema_init, table_name)
                 logger.info("Truncating %s", table_name)
                 truncate_table(schema_init, table_name, connection=connection)
             else:

@@ -16,6 +16,22 @@ import source_journal  # noqa: E402
 
 
 class SourceJournalResetTests(unittest.TestCase):
+    def test_reset_drops_legacy_and_compact_capture_triggers(self) -> None:
+        connection = MagicMock()
+
+        source_journal.drop_source_capture_triggers(connection, "source", "clients")
+
+        statements = [str(call.args[0]) for call in connection.execute.call_args_list]
+        self.assertEqual(
+            statements,
+            [
+                'DROP TRIGGER IF EXISTS "capture_source_change" ON "source"."clients"',
+                'DROP TRIGGER IF EXISTS "capture_source_change_insert" ON "source"."clients"',
+                'DROP TRIGGER IF EXISTS "capture_source_change_update" ON "source"."clients"',
+                'DROP TRIGGER IF EXISTS "capture_source_change_delete" ON "source"."clients"',
+            ],
+        )
+
     def test_reset_clears_old_compact_metadata_before_writing_baseline(self) -> None:
         connection = MagicMock()
         with (

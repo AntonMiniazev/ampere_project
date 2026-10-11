@@ -41,6 +41,26 @@ def _quote(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+def drop_source_capture_triggers(connection, source_schema: str, table: str) -> None:
+    """Disable all journal capture triggers while reset bootstrap data is loaded.
+
+    ``capture_source_change`` is the legacy row-trigger name. The compact
+    journal uses three statement-level triggers, one per write operation.
+    Removing both generations prevents reset COPY statements from requiring
+    batch metadata before the new dataset baseline exists.
+    """
+    qualified = f"{_quote(source_schema)}.{_quote(table)}"
+    for trigger in (
+        "capture_source_change",
+        "capture_source_change_insert",
+        "capture_source_change_update",
+        "capture_source_change_delete",
+    ):
+        connection.execute(
+            text(f"DROP TRIGGER IF EXISTS {_quote(trigger)} ON {qualified}")
+        )
+
+
 def _source_columns(connection, source_schema: str, table: str) -> list[tuple[str, str]]:
     rows = connection.execute(
         text(

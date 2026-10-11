@@ -1,6 +1,6 @@
 # Ampere data platform
 
-Ampere generates operational data in PostgreSQL and publishes Iceberg tables on MinIO through Lakekeeper. Task 6's v4 source journal, Raw transfer, and Bronze current-state implementation is prepared in this checkout but is not released or deployed. The cluster remains on its previous runtime until the owner publishes the release and performs the dataset/catalog cutover.
+Ampere generates operational data in PostgreSQL and publishes Iceberg tables on MinIO through Lakekeeper. Task 6's compact source journal, Raw transfer, and Bronze current-state implementation is running from release `v1.0.35`. The reset flow needs the follow-up `v1.0.36` trigger-cleanup fix before the January rebuild sequence continues.
 
 The init DAG defaults to the existing destructive source reset/bootstrap. Trigger it with `{"source_init_mode":"journal_migrate"}` to install source identities, capture triggers, and a baseline on existing rows without truncating or reseeding them. This migration preserves current rows but treats them as one baseline; it cannot recreate historical daily changes that were not captured. New generation starts after the latest existing `orders.order_date` to prevent accidental replay of uncaptured dates.
 

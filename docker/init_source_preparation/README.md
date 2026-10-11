@@ -23,6 +23,8 @@ Airflow DAGs use this image with the same environment variable contract.
 ## Image tagging (GitHub Actions)
 
 Image version comes from the shared repo release tag `v*`.
+
+In reset mode, initialization removes both legacy and statement-level journal triggers before it truncates and seeds source tables. It reinstalls statement-level capture only after creating the new dataset baseline, within the same transaction.
 Branch pushes rebuild this image only when `docker/init_source_preparation/**` changes.
 Airflow selects the runtime tag through variable `ampere_release_version`.
 
