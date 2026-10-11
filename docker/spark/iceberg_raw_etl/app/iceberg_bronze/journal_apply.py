@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
 
 import psycopg
@@ -11,7 +12,14 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.window import Window
 
-from etl_utils import configure_s3, get_env, get_minio_connection_settings, get_postgres_connection_settings
+from etl_utils import (
+    configure_s3,
+    get_env,
+    get_minio_connection_settings,
+    get_postgres_connection_settings,
+    set_spark_log_level,
+    setup_logging,
+)
 from iceberg_bronze.catalog import CONTRACT, configure_lakekeeper_catalog
 from tools.contracts.spark_conformance import quote_identifier, validate_spark_table
 
@@ -429,7 +437,12 @@ def run(
         minio_endpoint=os.environ["MINIO_S3_ENDPOINT"],
     )
     LOGGER.info(
-        "BRONZE_GROUP_START tables=%s rebuild=%s finalize=%s",
+        "BRONZE_GROUP_START transfer_id=%s dataset=%s boundary=%s batches=%s "
+        "tables=%s rebuild=%s finalize=%s",
+        transfer["transfer_id"],
+        transfer["dataset_id"],
+        transfer["last_sequence"],
+        len(transfer["transfer_ids"]),
         ",".join(tables),
         transfer["rebuild"],
         complete_transfer,
@@ -442,7 +455,20 @@ def run(
                 (transfer["transfer_id"], table),
             )
             if cursor.fetchone():
+                LOGGER.info(
+                    "BRONZE_TABLE_SKIP table=%s reason=already_completed transfer_id=%s",
+                    table,
+                    transfer["transfer_id"],
+                )
                 continue
+        table_started = time.monotonic()
+        expected_count = transfer["expected_counts"].get(table, 0)
+        LOGGER.info(
+            "BRONZE_TABLE_START table=%s mode=%s expected_raw_rows=%s",
+            table,
+            "full_rebuild" if transfer["rebuild"] else "incremental",
+            expected_count,
+        )
         raw = spark.table(f"iceberg_raw.raw.{quote_identifier(table)}").filter(
             (F.col("_dataset_id") == transfer["dataset_id"])
             & F.col("_transfer_id").isin(transfer["transfer_ids"])
@@ -450,7 +476,12 @@ def run(
         target = f"iceberg_bronze.bronze.{quote_identifier(table)}"
         try:
             actual_count = raw.count()
-            expected_count = transfer["expected_counts"].get(table, 0)
+            LOGGER.info(
+                "BRONZE_TABLE_SOURCE_VALIDATED table=%s raw_rows=%s expected_rows=%s",
+                table,
+                actual_count,
+                expected_count,
+            )
             if actual_count != expected_count:
                 raise RuntimeError(
                     f"Raw table count mismatch for {table}: "
@@ -461,15 +492,33 @@ def run(
             else:
                 _merge_incremental(spark, target, table, raw, transfer)
             _mark_table_complete(transfer["transfer_id"], table)
+        except Exception:
+            LOGGER.exception("BRONZE_TABLE_FAILED table=%s", table)
+            raise
         finally:
             raw.unpersist()
-        LOGGER.info("BRONZE_TABLE_COMPLETE table=%s rebuild=%s", table, transfer["rebuild"])
+        LOGGER.info(
+            "BRONZE_TABLE_COMPLETE table=%s rebuild=%s raw_rows=%s elapsed_seconds=%.1f",
+            table,
+            transfer["rebuild"],
+            actual_count,
+            time.monotonic() - table_started,
+        )
     if complete_transfer:
         _complete_transfer(transfer)
         LOGGER.info(
-            "BRONZE_TRANSFER_COMPLETE transfer_id=%s dataset=%s boundary=%s",
-            transfer["transfer_id"], transfer["dataset_id"], transfer["last_sequence"],
+            "BRONZE_TRANSFER_COMPLETE transfer_id=%s dataset=%s boundary=%s tables=%s",
+            transfer["transfer_id"],
+            transfer["dataset_id"],
+            transfer["last_sequence"],
+            len(TABLES),
         )
+    LOGGER.info(
+        "BRONZE_GROUP_COMPLETE transfer_id=%s tables=%s finalized=%s",
+        transfer["transfer_id"],
+        len(tables),
+        complete_transfer,
+    )
 
 
 def run_cli() -> None:
@@ -487,13 +536,21 @@ def run_cli() -> None:
     parser.add_argument("--oauth-uri", required=True)
     parser.add_argument("--scope", required=True)
     parser.add_argument("--app-name", default="ampere-raw-to-bronze")
+    setup_logging()
     args = parser.parse_args()
+    LOGGER.info(
+        "BRONZE_JOB_START mode=%s tables=%s complete_transfer=%s",
+        "full_rebuild" if args.rebuild_all else "incremental",
+        ",".join(args.tables),
+        args.complete_transfer,
+    )
     spark = (
         SparkSession.builder.appName(args.app_name)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .getOrCreate()
     )
+    set_spark_log_level(spark)
     global _SESSION
     _SESSION = spark
     try:

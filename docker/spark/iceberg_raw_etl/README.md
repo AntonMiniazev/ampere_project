@@ -57,7 +57,9 @@ writer that corrects lineage values, run the full-rebuild DAG once to replace
 rows written with null lineage; a new deterministic rebuild identity ensures
 old per-table acknowledgments do not skip the repair, while retries of the
 corrected rebuild remain idempotent. The daily version guard cannot repair
-those rows.
+those rows. The journal writer configures timestamped Python INFO logs and
+Spark WARN logs, with per-table start, source-row validation, completion,
+failure, retry-skip, and elapsed-time messages in the Spark driver output.
 
 Bronze's v4 schema adds dataset ID, stable source-row ID, source batch sequence,
 and source change ID to its prior business and operational columns. Catalog init
