@@ -8,8 +8,8 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml /app/pyproject.toml
-COPY model /app/model
+COPY docker/init_source_preparation/pyproject.toml /app/pyproject.toml
+COPY docker/init_source_preparation/model /app/model
 COPY tools/__init__.py tools/source_batch_staging.py /app/tools/
 COPY tools/contracts/ampere_tables.json /app/tools/contracts/ampere_tables.json
 
