@@ -8,7 +8,7 @@ For a January 2026 dataset, initialize the PostgreSQL source with this Airflow t
 }
 ```
 
-The init DAG truncates and repopulates the `source` tables. The date anchors the initial client registrations; it does not generate orders. Run init only when resetting the source dataset is intended. After init succeeds, run the backfill below.
+The init DAG truncates and repopulates the `source` tables. The date anchors the initial client registrations; it does not generate orders. Run init only when resetting the source dataset is intended. After init succeeds, check the init task's rendered fields in Airflow and confirm `PROJECT_START_DATE` is `2026-01-01`; then run the backfill below.
 
 The manual Airflow DAG `ampere__pre_raw__generators__backfill` runs the existing generator for an inclusive date range. It starts one Kubernetes pod on `ampere-k8s-node4`; that process generates each day sequentially and commits each day in its own PostgreSQL transaction. A retry skips dates already present in `source.orders` and continues from the next date. Gaps are rejected.
 

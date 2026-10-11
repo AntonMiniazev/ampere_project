@@ -47,7 +47,7 @@ with DAG(
     env_vars = {
         # Allow a one-off historical source timeline while preserving the
         # current-date default for ordinary initialization runs.
-        "PROJECT_START_DATE": "{{ dag_run.conf.get('project_start_date') or (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+        "PROJECT_START_DATE": "{{ dag_run.conf['project_start_date'] if dag_run.conf and 'project_start_date' in dag_run.conf else (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
     }
     init_client_num = get_optional_variable("init_client_num")
     if init_client_num is not None:

@@ -16,6 +16,7 @@ flowchart TD
     D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD["iceberg<br/>gold<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY["iceberg<br/>silver<br/>dbt_duckdb<br/>daily<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD["iceberg<br/>silver<br/>dbt_duckdb<br/>full_rebuild<br/>schedule: manual / triggered"]
+    D_AMPERE__PRE_RAW__GENERATORS__BACKFILL["pre_raw<br/>generators<br/>backfill<br/>schedule: manual / triggered"]
     D_AMPERE__PRE_RAW__GENERATORS__DAILY["pre_raw<br/>generators<br/>daily<br/>schedule: 15 4 * * *"]
     D_AMPERE__PRE_RAW__GENERATORS__INIT["pre_raw<br/>generators<br/>init<br/>schedule: manual / triggered"]
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY["raw_landing<br/>postgres_to_landing<br/>daily<br/>schedule: manual / triggered"]
@@ -52,6 +53,7 @@ flowchart TD
 | `ampere__iceberg__gold__dbt_duckdb__full_rebuild` | manual / triggered | layer:gold, format:iceberg, system:dbt, mode:full_rebuild | `dags/my_dags/ampere__iceberg__gold__dbt_duckdb__full_rebuild.py` |
 | `ampere__iceberg__silver__dbt_duckdb__daily` | manual / triggered | layer:silver, format:iceberg, system:dbt, mode:daily | `dags/my_dags/ampere__iceberg__silver__dbt_duckdb__daily.py` |
 | `ampere__iceberg__silver__dbt_duckdb__full_rebuild` | manual / triggered | layer:silver, format:iceberg, system:dbt, mode:full_rebuild | `dags/my_dags/ampere__iceberg__silver__dbt_duckdb__full_rebuild.py` |
+| `ampere__pre_raw__generators__backfill` | manual / triggered | layer:pre_raw, system:postgres, mode:backfill | `dags/my_dags/ampere__pre_raw__generators__backfill.py` |
 | `ampere__pre_raw__generators__daily` | 15 4 * * * | layer:pre_raw, system:postgres, mode:daily | `dags/my_dags/ampere__pre_raw__generators__daily.py` |
 | `ampere__pre_raw__generators__init` | manual / triggered | layer:pre_raw, system:postgres, mode:init | `dags/my_dags/ampere__pre_raw__generators__init.py` |
 | `ampere__raw_landing__postgres_to_landing__daily` | manual / triggered | layer:raw_landing, system:postgres, system:spark, system:minio, mode:daily | `dags/my_dags/ampere__raw_landing__postgres_to_landing__daily.py` |
