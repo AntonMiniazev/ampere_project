@@ -38,6 +38,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_iceberg_dbt_catalog.py -v
           python -m unittest discover -s tests -p test_iceberg_publish.py -v
+          python -m unittest discover -s tests -p test_silver_history_batching.py -v
           python tools/contracts/ampere_contract.py
 
   build-and-push:

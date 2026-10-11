@@ -1,9 +1,15 @@
-{{ config(materialized='table') }}
+{% set full_history_batches = ampere_order_status_history_batch_count() | int %}
+{{ config(materialized='ampere_batched_table') }}
 
 with source_data as (
     select *
-    from {{ source('bronze', 'order_status_history') }}
-    where {{ ampere_silver_related_order_predicate('order_id') }}
+    from {{ ref('stg_order_status_history_source') }}
+    {% if ampere_silver_run_mode() == 'full_history' %}
+    where coalesce(
+        hash(cast(order_id as integer)) % {{ full_history_batches }},
+        0
+    ) = cast({{ ampere_order_status_history_batch_placeholder() }} as integer)
+    {% endif %}
 ),
 deduped as (
     select

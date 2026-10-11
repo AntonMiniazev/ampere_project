@@ -40,6 +40,15 @@ two use three. Each range is its own Iceberg commit; a retry converges by
 merging each range again. Catalog initialization must run first; the publisher
 does not create or replace target tables.
 
+The full-history `stg_order_status_history` model first copies only its required
+Bronze columns to the disk-backed DuckDB workspace, then deduplicates four
+deterministic `hash(order_id)` buckets sequentially. Rows for an order remain
+in one bucket, so the `(order_id, status_datetime)` window partition and its
+latest-apply selection produce the same result as a single full-history query.
+The daily path keeps the related-order filter and single-pass deduplication.
+This bounds the window operation's working set at the cost of four local scans;
+it does not truncate or calendar-batch history.
+
 The Silver/Gold write layout follows DuckDB Iceberg 1.5 capabilities. These
 tables have no sort order because DuckDB mutations reject sorted tables. Silver
 facts use only supported partition transforms; the monthly fact tables use

@@ -176,6 +176,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                             "stg_orders",
                             "stg_order_product",
                             "stg_payments",
+                            "stg_order_status_history_source",
                             "stg_order_status_history",
                             "stg_delivery_tracking",
                             "marketing_sales_budget_monthly_store",
@@ -221,6 +222,19 @@ class DuckDBCatalogTests(unittest.TestCase):
                             target_path / "compiled/ampere_iceberg_project/models/staging/"
                             f"{table}.sql"
                         ).read_text(encoding="utf-8").lower()
+                        if table == "stg_order_status_history":
+                            source_sql = (
+                                target_path
+                                / "compiled/ampere_iceberg_project/models/staging/"
+                                "stg_order_status_history_source.sql"
+                            ).read_text(encoding="utf-8").lower()
+                            if mode == "full_history":
+                                self.assertIn("where true", source_sql)
+                                self.assertNotIn("in (select order_id from", source_sql)
+                                self.assertIn("hash(cast(order_id as integer))", event_sql)
+                            else:
+                                self.assertIn("in (select order_id from", source_sql)
+                            continue
                         if mode == "full_history":
                             self.assertIn("where true", event_sql)
                             self.assertNotIn("in (select order_id from", event_sql)

@@ -2,6 +2,14 @@
   {{ return(var('silver_run_mode', env_var('SILVER_RUN_MODE', 'daily_refresh'))) }}
 {%- endmacro %}
 
+{% macro ampere_order_status_history_batch_count() -%}
+  {{ return(4) }}
+{%- endmacro %}
+
+{% macro ampere_order_status_history_batch_placeholder() -%}
+  {{ return("'__AMPERE_ORDER_STATUS_BATCH__'") }}
+{%- endmacro %}
+
 {% macro ampere_silver_logical_date() -%}
   {{ return(var('silver_logical_date', env_var('LOGICAL_DATE', run_started_at.strftime('%Y-%m-%d')))) }}
 {%- endmacro %}
