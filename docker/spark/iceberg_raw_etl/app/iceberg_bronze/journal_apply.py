@@ -334,10 +334,42 @@ def _bronze_delete_rows(latest: DataFrame) -> DataFrame:
     )
 
 
-def _materialize_bounded_merge_source(changes: DataFrame) -> DataFrame:
-    """Move one bounded hash slice to a LocalRelation for reliable Iceberg MERGE."""
-    rows = changes.collect()
-    return changes.sparkSession.createDataFrame(rows, schema=changes.schema)
+def _materialize_bounded_merge_source(changes: DataFrame, staging_path: str) -> DataFrame:
+    """Materialize one bounded hash slice in shared storage for Iceberg MERGE."""
+    try:
+        changes.write.mode("errorifexists").parquet(staging_path)
+        return changes.sparkSession.read.schema(changes.schema).parquet(staging_path)
+    except Exception:
+        _delete_merge_source_path(changes.sparkSession, staging_path)
+        raise
+
+
+def _merge_scratch_root(transfer: dict) -> str:
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-raw")
+    return f"s3a://{bucket}/_spark_scratch/bronze_merge/{transfer['transfer_id']}"
+
+
+def _merge_source_path(transfer: dict, table: str, source_slice: str, operation: str) -> str:
+    """Create a unique temporary MinIO path for one bounded merge source."""
+    return (
+        f"{_merge_scratch_root(transfer)}/{table}/{source_slice}/"
+        f"{operation}-{uuid.uuid4().hex}"
+    )
+
+
+def _delete_merge_source_path(spark: SparkSession, staging_path: str) -> None:
+    """Remove a temporary merge source from MinIO, logging cleanup failures."""
+    try:
+        path = spark._jvm.org.apache.hadoop.fs.Path(staging_path)
+        filesystem = path.getFileSystem(spark._jsc.hadoopConfiguration())
+        if filesystem.exists(path) and not filesystem.delete(path, True):
+            LOGGER.warning("BRONZE_MERGE_SOURCE_CLEANUP_FAILED path=%s", staging_path)
+    except Exception:
+        LOGGER.warning(
+            "BRONZE_MERGE_SOURCE_CLEANUP_FAILED path=%s",
+            staging_path,
+            exc_info=True,
+        )
 
 
 def _source_bucket_count(source_rows: int) -> int:
@@ -393,7 +425,12 @@ def _bronze_rows(table: str, changes: DataFrame, transfer: dict) -> DataFrame:
 
 
 def _merge_incremental(
-    spark: SparkSession, target: str, table: str, changes: DataFrame, transfer: dict
+    spark: SparkSession,
+    target: str,
+    table: str,
+    changes: DataFrame,
+    transfer: dict,
+    source_slice: str,
 ) -> None:
     changes = changes.persist(StorageLevel.DISK_ONLY)
     try:
@@ -410,7 +447,8 @@ def _merge_incremental(
             )
             deletes = _bronze_delete_rows(latest)
             if not deletes.rdd.isEmpty():
-                deletes = _materialize_bounded_merge_source(deletes)
+                delete_path = _merge_source_path(transfer, table, source_slice, "delete")
+                deletes = _materialize_bounded_merge_source(deletes, delete_path)
                 try:
                     deletes.createOrReplaceTempView("bronze_delete_source")
                     spark.sql(
@@ -418,10 +456,14 @@ def _merge_incremental(
                         f"WHEN MATCHED AND ({version}) THEN DELETE"
                     )
                 finally:
-                    spark.catalog.dropTempView("bronze_delete_source")
+                    try:
+                        spark.catalog.dropTempView("bronze_delete_source")
+                    finally:
+                        _delete_merge_source_path(spark, delete_path)
             upserts = _bronze_rows(table, latest.filter(F.col("_op") != "D"), transfer)
             if not upserts.rdd.isEmpty():
-                upserts = _materialize_bounded_merge_source(upserts)
+                upsert_path = _merge_source_path(transfer, table, source_slice, "upsert")
+                upserts = _materialize_bounded_merge_source(upserts, upsert_path)
                 try:
                     upserts.createOrReplaceTempView("bronze_upsert_source")
                     names = [column["name"] for column in CONTRACT.table("bronze", table).columns]
@@ -434,7 +476,10 @@ def _merge_incremental(
                         f"WHEN NOT MATCHED THEN INSERT ({insert_names}) VALUES ({insert_values})"
                     )
                 finally:
-                    spark.catalog.dropTempView("bronze_upsert_source")
+                    try:
+                        spark.catalog.dropTempView("bronze_upsert_source")
+                    finally:
+                        _delete_merge_source_path(spark, upsert_path)
         finally:
             latest.unpersist(blocking=True)
     finally:
@@ -471,7 +516,8 @@ def _apply_batch_slices(
         buckets = [int(row[0]) for row in raw_batch.select(bucket_expr.alias("bucket")).distinct().collect()]
         for bucket in sorted(buckets):
             changes = raw_batch.filter(bucket_expr == F.lit(bucket))
-            _merge_incremental(spark, target, table, changes, transfer)
+            source_slice = f"batch-{batch['batch_sequence']}-bucket-{bucket}"
+            _merge_incremental(spark, target, table, changes, transfer, source_slice)
             LOGGER.info(
                 "BRONZE_BATCH_CHUNK_COMPLETE table=%s batch=%s bucket=%s/%s rows_in_batch=%s",
                 table, batch["batch_sequence"], bucket, bucket_count, actual,
@@ -589,6 +635,7 @@ def run(
         client_secret=get_env("LAKEKEEPER_CLIENT_SECRET"),
         minio_endpoint=os.environ["MINIO_S3_ENDPOINT"],
     )
+    _delete_merge_source_path(spark, _merge_scratch_root(transfer))
     configure_lakekeeper_catalog(
         spark,
         catalog="iceberg_bronze",

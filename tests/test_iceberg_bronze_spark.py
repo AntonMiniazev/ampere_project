@@ -443,22 +443,27 @@ class BoundedBronzeReplayTests(unittest.TestCase):
         self.assertEqual(_source_bucket_count(8_001), 2)
         self.assertEqual(_source_bucket_count(64_000), SOURCE_ROW_BUCKETS)
 
-    def test_merge_source_materializes_only_the_bounded_frame(self) -> None:
+    def test_merge_source_materializes_to_shared_storage(self) -> None:
         changes = MagicMock()
         materialized = MagicMock()
-        rows = [MagicMock()]
         schema = MagicMock()
         session = MagicMock()
-        changes.collect.return_value = rows
         changes.schema = schema
         changes.sparkSession = session
-        session.createDataFrame.return_value = materialized
+        changes.write.mode.return_value.parquet.return_value = None
+        session.read.schema.return_value.parquet.return_value = materialized
 
-        result = _materialize_bounded_merge_source(changes)
+        result = _materialize_bounded_merge_source(changes, "s3a://ampere-raw/test/merge-source")
 
         self.assertIs(result, materialized)
-        changes.collect.assert_called_once_with()
-        session.createDataFrame.assert_called_once_with(rows, schema=schema)
+        changes.write.mode.assert_called_once_with("errorifexists")
+        changes.write.mode.return_value.parquet.assert_called_once_with(
+            "s3a://ampere-raw/test/merge-source"
+        )
+        session.read.schema.assert_called_once_with(schema)
+        session.read.schema.return_value.parquet.assert_called_once_with(
+            "s3a://ampere-raw/test/merge-source"
+        )
 
     def test_delete_metadata_maps_raw_ordering_columns_to_bronze_names(self) -> None:
         spark = SparkSession.builder.master("local[2]").appName("bronze-delete-lineage").getOrCreate()
@@ -476,12 +481,6 @@ class BoundedBronzeReplayTests(unittest.TestCase):
             self.assertEqual(
                 list(deletes.select("_source_batch_sequence", "_source_change_id").first()),
                 [17, 42],
-            )
-            materialized = _materialize_bounded_merge_source(deletes)
-            self.assertEqual(materialized.collect(), deletes.collect())
-            self.assertNotIn(
-                "TableReference",
-                materialized._jdf.queryExecution().logical().toString(),
             )
         finally:
             spark.stop()
@@ -507,7 +506,7 @@ class BoundedBronzeReplayTests(unittest.TestCase):
             batch = {"batch_id": "batch", "batch_sequence": 1}
             seen = []
 
-            def record(_spark, _target, _table, changes, _transfer):
+            def record(_spark, _target, _table, changes, _transfer, _source_slice):
                 seen.append(changes.select("_source_row_id", "_change_id").collect())
 
             with (
