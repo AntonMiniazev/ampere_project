@@ -6,7 +6,7 @@ from datetime import datetime
 
 from order_data_generator.config import apply_overrides, load_config
 from order_data_generator.logging_utils import APP_NAME, setup_logging
-from order_data_generator.main import run_generation, set_seed
+from order_data_generator.main import run_generation, run_generation_range, set_seed
 
 
 def _parse_date(value: str):
@@ -30,6 +30,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run daily source data generator")
     # Sets "today" for generation; affects order_date, statuses, and payments.
     parser.add_argument("--run-date", type=_parse_date, help="YYYY-MM-DD")
+    parser.add_argument("--start-date", type=_parse_date, help="Inclusive range start, YYYY-MM-DD")
+    parser.add_argument("--end-date", type=_parse_date, help="Inclusive range end, YYYY-MM-DD")
     # Fixes RNG to make output deterministic for the same inputs.
     parser.add_argument("--seed", type=int, help="Random seed for deterministic output")
     # Overrides average weekly orders per client (daily rate is avg/7).
@@ -61,7 +63,12 @@ def parse_args():
     # Override churn rate upper bound.
     parser.add_argument("--churn-rate-max", type=float)
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if (args.start_date is None) != (args.end_date is None):
+        parser.error("--start-date and --end-date must be provided together")
+    if args.run_date is not None and args.start_date is not None:
+        parser.error("use --run-date or --start-date/--end-date, not both")
+    return args
 
 
 def main() -> None:
@@ -133,9 +140,22 @@ def main() -> None:
         set_seed(args.seed)
         logger.info("Using random seed=%s", args.seed)
 
-    run_date = args.run_date or datetime.utcnow().date()
-    logger.info("Running generator for date=%s", run_date)
-    run_generation(run_date, config)
+    if args.start_date is not None:
+        logger.info(
+            "Running inclusive generator range %s..%s",
+            args.start_date,
+            args.end_date,
+        )
+        run_generation_range(
+            args.start_date,
+            args.end_date,
+            config,
+            seed=args.seed,
+        )
+    else:
+        run_date = args.run_date or datetime.utcnow().date()
+        logger.info("Running generator for date=%s", run_date)
+        run_generation(run_date, config)
     logger.info("Order data generator completed")
 
 

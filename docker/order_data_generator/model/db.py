@@ -107,32 +107,35 @@ def get_engine():
     )
 
 
-def read_sql(query: str, params: dict | None = None) -> pl.DataFrame:
+def read_sql(query: str, params: dict | None = None, *, connection=None) -> pl.DataFrame:
     """Execute a SQL query and return the result as a Polars DataFrame.
 
     Generator modules read the current source state before deciding what to
     mutate next. Returning Polars keeps the in-memory transformation style
     consistent with the rest of the generator code.
     """
-    engine = get_engine()
-    with engine.begin() as conn:
-        result = conn.execute(text(query), params or {})
+    if connection is not None:
+        result = connection.execute(text(query), params or {})
         rows = result.fetchall()
         if not rows:
             return pl.DataFrame(schema=list(result.keys()))
         return pl.DataFrame(rows, schema=list(result.keys()))
+    with get_engine().begin() as conn:
+        return read_sql(query, params, connection=conn)
 
 
-def exec_sql(query: str, params: dict | None = None) -> None:
+def exec_sql(query: str, params: dict | None = None, *, connection=None) -> None:
     """Execute a SQL statement that mutates source-side state.
 
     This helper is used for actions such as marking clients as churned or
     clearing temporary rows. Separating it from `read_sql` makes the intent of
     each call site easier to understand during code review.
     """
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.execute(text(query), params or {})
+    if connection is not None:
+        connection.execute(text(query), params or {})
+        return
+    with get_engine().begin() as conn:
+        exec_sql(query, params, connection=conn)
 
 
 def table_exists(schema: str, table: str) -> bool:
@@ -153,6 +156,8 @@ def upload_new_data(
     schema: str,
     yesterday: str | None = None,
     delivered_status_id: int = 3,
+    *,
+    connection=None,
 ) -> None:
     """Bulk-insert generated rows into a source table, with one special cleanup rule.
 
@@ -163,6 +168,18 @@ def upload_new_data(
     """
     if table.height == 0:
         logger.info("No data to upload to %s.", target_table)
+        return
+
+    if connection is None:
+        with get_engine().begin() as conn:
+            upload_new_data(
+                table,
+                target_table,
+                schema,
+                yesterday=yesterday,
+                delivered_status_id=delivered_status_id,
+                connection=conn,
+            )
         return
 
     if target_table == "delivery_tracking":
@@ -179,6 +196,7 @@ def upload_new_data(
               )
             ''',
             {"yesterday": yesterday, "delivered_status_id": delivered_status_id},
+            connection=connection,
         )
 
     columns = table.columns
@@ -191,17 +209,15 @@ def upload_new_data(
         target_table,
         table.height,
     )
-    engine = get_engine()
     logger.info("Opening COPY connection for %s.%s", schema, target_table)
-    raw_conn = engine.raw_connection()
-    try:
-        cur = raw_conn.cursor()
+    # SQLAlchemy's psycopg connection is the same transaction used by ordinary
+    # SELECT/INSERT/UPDATE helpers. COPY therefore commits or rolls back with
+    # the complete generated business date.
+    raw_conn = connection.connection.driver_connection
+    with raw_conn.cursor() as cur:
         with cur.copy(copy_sql) as copy:
             for row in table.iter_rows():
                 copy.write_row(row)
-        raw_conn.commit()
-    finally:
-        raw_conn.close()
     logger.info(
         "Bulk insert completed: %s records into %s.%s",
         table.height,
@@ -210,7 +226,7 @@ def upload_new_data(
     )
 
 
-def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:
+def insert_orders_returning_ids(orders: list[dict], schema: str, *, connection=None) -> list[int]:
     """Insert orders and return the database-generated order IDs.
 
     Orders are created first and then referenced by order lines, status history,
@@ -225,6 +241,10 @@ def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:
     orders_table = Table("orders", metadata, autoload_with=engine)
     stmt = orders_table.insert().returning(orders_table.c.id)
 
+    if connection is not None:
+        result = connection.execute(stmt, orders)
+        return [row[0] for row in result.fetchall()]
+
     with engine.begin() as conn:
         result = conn.execute(stmt, orders)
         ids = [row[0] for row in result.fetchall()]
@@ -232,25 +252,25 @@ def insert_orders_returning_ids(orders: list[dict], schema: str) -> list[int]:
     return ids
 
 
-def fetch_delivery_type_ids(schema: str) -> list[int]:
+def fetch_delivery_type_ids(schema: str, *, connection=None) -> list[int]:
     """Load delivery type IDs from the source dictionary table.
 
     The generator uses these IDs when assigning a delivery mode to each order.
     Reading them from the database keeps the daily generator aligned with the
     actual dictionary data seeded during bootstrap.
     """
-    df = read_sql(f'SELECT id FROM "{schema}"."delivery_type" ORDER BY id')
+    df = read_sql(f'SELECT id FROM "{schema}"."delivery_type" ORDER BY id', connection=connection)
     return df.get_column("id").to_list() if df.height else []
 
 
-def fetch_order_status_map(schema: str) -> dict[str, int]:
+def fetch_order_status_map(schema: str, *, connection=None) -> dict[str, int]:
     """Load a status-name to status-ID mapping from the source dictionary table.
 
     Status IDs are referenced throughout order-status generation, so the mapping
     is resolved once up front instead of hardcoding integer assumptions in the
     generator. This makes the code easier to read and safer to extend.
     """
-    df = read_sql(f'SELECT id, order_status FROM "{schema}"."order_statuses"')
+    df = read_sql(f'SELECT id, order_status FROM "{schema}"."order_statuses"', connection=connection)
     status_map = {}
     for row in df.iter_rows(named=True):
         status_map[str(row["order_status"]).strip().lower()] = int(row["id"])

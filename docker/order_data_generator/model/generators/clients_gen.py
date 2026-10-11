@@ -15,7 +15,7 @@ fake = Faker()
 logger = logging.getLogger(APP_NAME)
 
 
-def update_churned(ids: list[int], schema: str, today: date) -> None:
+def update_churned(ids: list[int], schema: str, today: date, *, connection=None) -> None:
     """Mark a selected set of clients as churned in the source database.
 
     Churn is one of the daily mutations that makes the source system evolve over
@@ -34,7 +34,7 @@ def update_churned(ids: list[int], schema: str, today: date) -> None:
             updated_at = '{today.isoformat()}'
         WHERE id IN ({id_list_str})
     '''
-    exec_sql(query)
+    exec_sql(query, connection=connection)
     logger.info("Updated %s clients (churned = TRUE)", len(ids))
 
 
@@ -62,7 +62,7 @@ def generate_clients(n: int, store_id: int, today: date) -> list[dict]:
 
 
 def prepare_clients_update_and_generation(
-    today: date, config: GeneratorConfig
+    today: date, config: GeneratorConfig, *, connection=None
 ) -> tuple[list[int], list[dict]]:
     """Decide which active clients churn today and how many new ones to create.
 
@@ -76,8 +76,8 @@ def prepare_clients_update_and_generation(
         FROM "{config.schema}"."clients"
     '''
     # Read current clients and keep only active ones for churn/new sampling.
-    clients_df = read_sql(client_query)
-    active_clients = clients_df.filter(pl.col("churned") == False)
+    clients_df = read_sql(client_query, connection=connection)
+    active_clients = clients_df.filter(pl.col("churned").not_())
 
     to_churn_ids: list[int] = []
     clients_for_upload: list[dict] = []

@@ -480,6 +480,8 @@ def generate_payments(
     schema: str,
     delivered_status_id: int,
     config: GeneratorConfig,
+    *,
+    connection=None,
 ) -> pl.DataFrame:
     """Generate payment facts based on order state and payment timing rules.
 
@@ -519,8 +521,8 @@ def generate_payments(
         WHERE payment_date >= :yesterday AND payment_status = 'unpaid'
     '''
 
-    payments_input = read_sql(payments_query, {"yesterday": yesterday})
-    exec_sql(delete_unpaid_payments, {"yesterday": yesterday})
+    payments_input = read_sql(payments_query, {"yesterday": yesterday}, connection=connection)
+    exec_sql(delete_unpaid_payments, {"yesterday": yesterday}, connection=connection)
 
     records: list[dict] = []
 
@@ -613,7 +615,11 @@ def generate_delivery_tracking(
 
 
 def prepare_raw_data(
-    yesterday: date, config: GeneratorConfig, delivered_status_id: int
+    yesterday: date,
+    config: GeneratorConfig,
+    delivered_status_id: int,
+    *,
+    connection=None,
 ) -> tuple[pl.DataFrame, int, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Load all source-side inputs needed to generate today's operational rows.
 
@@ -674,14 +680,15 @@ def prepare_raw_data(
         WHERE o.order_date = :yesterday AND ls.order_status_id < :delivered_status_id
     '''
 
-    clients_df = read_sql(client_query)
-    store_count_df = read_sql(store_query)
+    clients_df = read_sql(client_query, connection=connection)
+    store_count_df = read_sql(store_query, connection=connection)
     n_stores = int(store_count_df[0, 0]) if store_count_df.height else 0
-    couriers_df = read_sql(couriers_query)
-    assortment_df = read_sql(assortment_query)
+    couriers_df = read_sql(couriers_query, connection=connection)
+    assortment_df = read_sql(assortment_query, connection=connection)
     yesterday_orders_df = read_sql(
         yesterday_orders,
         {"yesterday": yesterday, "delivered_status_id": delivered_status_id},
+        connection=connection,
     )
 
     return (
@@ -694,7 +701,11 @@ def prepare_raw_data(
 
 
 def prepare_orders_statuses(
-    today: date, yesterday: date, config: GeneratorConfig
+    today: date,
+    yesterday: date,
+    config: GeneratorConfig,
+    *,
+    connection=None,
 ) -> None:
     """Run the order-side generation pipeline and write all derived source tables.
 
@@ -705,13 +716,13 @@ def prepare_orders_statuses(
     """
     logger.info(
         "Preparing order pipeline for today=%s yesterday=%s", today, yesterday)
-    status_map = fetch_order_status_map(config.schema)
+    status_map = fetch_order_status_map(config.schema, connection=connection)
     for status_name in ("created", "packing", "delivered"):
         if status_name not in status_map:
             raise ValueError(
                 f"Missing {status_name} in order_statuses dictionary")
 
-    delivery_type_ids = fetch_delivery_type_ids(config.schema)
+    delivery_type_ids = fetch_delivery_type_ids(config.schema, connection=connection)
     if len(delivery_type_ids) < 3:
         raise ValueError("Expected at least 3 delivery types in dictionary")
 
@@ -725,7 +736,9 @@ def prepare_orders_statuses(
         couriers_df,
         assortment_df,
         yesterday_orders_df,
-    ) = prepare_raw_data(yesterday, config, delivered_status_id)
+    ) = prepare_raw_data(
+        yesterday, config, delivered_status_id, connection=connection
+    )
     logger.info(
         "Loaded raw data: clients=%s stores=%s couriers=%s assortment=%s yesterday_open=%s",
         clients_df.height,
@@ -791,7 +804,9 @@ def prepare_orders_statuses(
 
         # Insert orders to get DB ids and map them back to order_key.
         order_rows = orders_upload.drop("order_key").to_dicts()
-        inserted_ids = insert_orders_returning_ids(order_rows, config.schema)
+        inserted_ids = insert_orders_returning_ids(
+            order_rows, config.schema, connection=connection
+        )
 
         order_key_series = orders_upload.get_column("order_key")
         order_id_map = pl.DataFrame(
@@ -804,7 +819,10 @@ def prepare_orders_statuses(
         orders_product_upload = order_product.rename({"price": "sales_price"}).select(
             ["order_id", "order_date", "product_id", "quantity", "sales_price"]
         )
-        upload_new_data(orders_product_upload, "order_product", config.schema)
+        upload_new_data(
+            orders_product_upload, "order_product", config.schema,
+            connection=connection,
+        )
 
         # Step 2: add initial delivery_tracking and status history input.
         # The tracking rows are placeholders; status history drives updates later.
@@ -817,6 +835,7 @@ def prepare_orders_statuses(
             config.schema,
             yesterday=yesterday.isoformat(),
             delivered_status_id=delivered_status_id,
+            connection=connection,
         )
 
         order_status_history_frames.append(
@@ -855,6 +874,7 @@ def prepare_orders_statuses(
             config.schema,
             yesterday=yesterday.isoformat(),
             delivered_status_id=delivered_status_id,
+            connection=connection,
         )
 
         delivered = order_status_history.filter(
@@ -895,6 +915,7 @@ def prepare_orders_statuses(
                 config.schema,
                 yesterday=yesterday.isoformat(),
                 delivered_status_id=delivered_status_id,
+                connection=connection,
             )
         logger.info(
             "Generated delivery tracking rows=%s",
@@ -903,8 +924,11 @@ def prepare_orders_statuses(
 
     # Step 5: generate and upload payments.
     payments_upload = generate_payments(
-        today, yesterday, config.schema, delivered_status_id, config
+        today, yesterday, config.schema, delivered_status_id, config,
+        connection=connection,
     )
     if payments_upload.height:
-        upload_new_data(payments_upload, "payments", config.schema)
+        upload_new_data(
+            payments_upload, "payments", config.schema, connection=connection
+        )
     logger.info("Generated payments rows=%s", payments_upload.height)
