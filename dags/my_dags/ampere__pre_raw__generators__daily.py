@@ -48,7 +48,14 @@ with DAG(
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
         secrets=[pg_user, pg_pass],
-        env_vars={"PGOPTIONS": f"-c work_mem={DAG_CONFIG.pg_work_mem}"},
+        env_vars={
+            "PGOPTIONS": f"-c work_mem={DAG_CONFIG.pg_work_mem}",
+            "AMPERE_SOURCE_CODE_VERSION": DAG_CONFIG.image,
+            "POLARS_MAX_THREADS": "3",
+            "OPENBLAS_NUM_THREADS": "1",
+            "OMP_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
+        },
         cmds=["python", "-m", "order_data_generator"],
         # Use Airflow's logical date as the business date for synthetic data.
         # Manual runs still work because `run_after` is used as a fallback.
@@ -57,7 +64,7 @@ with DAG(
             "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
         ],
         container_resources=V1ResourceRequirements(
-            requests={"cpu": "1500m", "memory": "1536Mi"},
+            requests={"cpu": "3", "memory": "4Gi"},
             limits={"cpu": "4", "memory": "6Gi"},
         ),
         get_logs=True,

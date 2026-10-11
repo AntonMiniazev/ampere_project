@@ -1,14 +1,8 @@
-"""Airflow DAG: rebuild Silver from all available Bronze history, then trigger Gold."""
+"""Airflow DAG: rebuild Silver from all available Bronze history."""
 
 from utils.iceberg_dbt_layer import build_layer_dag
 
 DAG_ID = "ampere__iceberg__silver__dbt_duckdb__full_rebuild"
 SCHEDULE = None
 TAGS = ["layer:silver", "format:iceberg", "system:dbt", "mode:full_rebuild"]
-TRIGGER_TASK_ID = "trigger__iceberg__gold__dbt_duckdb__full_rebuild"
-TRIGGER_DAG_ID = "ampere__iceberg__gold__dbt_duckdb__full_rebuild"
-TRIGGER_WAIT_FOR_COMPLETION = False
-
-dag = build_layer_dag(
-    "silver", full_rebuild=True, wait_for_completion=TRIGGER_WAIT_FOR_COMPLETION
-)
+dag = build_layer_dag("silver", full_rebuild=True)

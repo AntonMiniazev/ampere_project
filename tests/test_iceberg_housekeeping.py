@@ -1,4 +1,4 @@
-"""Check that housekeeping resolves scope and thresholds from contract v3."""
+"""Check that housekeeping resolves scope and thresholds from contract v4."""
 
 from __future__ import annotations
 
@@ -19,15 +19,19 @@ SPEC.loader.exec_module(housekeeping)
 
 
 class HousekeepingContractTests(unittest.TestCase):
-    def test_contract_drives_all_42_housekeeping_targets(self) -> None:
-        self.assertEqual(len(housekeeping.CONTRACT.tables), 42)
+    def test_contract_drives_all_58_housekeeping_targets(self) -> None:
+        self.assertEqual(len(housekeeping.CONTRACT.tables), 58)
         self.assertEqual(
-            {layer: len(housekeeping.CONTRACT.layer_tables(layer)) for layer in ("bronze", "silver", "gold")},
-            {"bronze": 17, "silver": 17, "gold": 8},
+            {layer: len(housekeeping.CONTRACT.layer_tables(layer)) for layer in ("raw", "bronze", "silver", "gold")},
+            {"raw": 16, "bronze": 17, "silver": 17, "gold": 8},
         )
         self.assertEqual(
             housekeeping._contract_table("iceberg_bronze", "ops", "bronze_apply_registry").profile_name,
             "bronze_ops_registry",
+        )
+        self.assertEqual(
+            housekeeping._contract_table("iceberg_raw", "raw", "orders").profile_name,
+            "raw_change_history_large",
         )
 
     def test_housekeeping_cutoffs_and_compaction_use_table_profile(self) -> None:

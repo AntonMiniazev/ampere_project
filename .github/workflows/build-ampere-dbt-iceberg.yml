@@ -3,7 +3,7 @@ name: Build ampere-dbt-iceberg image
 on:
   workflow_dispatch:
   push:
-    branches: [migration/iceberg, main]
+    branches: [main]
     paths:
       - dbt_iceberg/**
       - docker/dbt_iceberg/**
@@ -58,7 +58,6 @@ jobs:
           images: ghcr.io/antonminiazev/ampere-dbt-iceberg
           tags: |
             type=sha,format=long,prefix=sha-
-            type=raw,value=migration-latest,enable=${{ github.ref == 'refs/heads/migration/iceberg' }}
       - uses: docker/build-push-action@v6
         with:
           context: .

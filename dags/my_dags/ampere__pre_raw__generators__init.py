@@ -45,9 +45,18 @@ with DAG(
     tags=["layer:pre_raw", "system:postgres", "mode:init"],
 ) as dag:
     env_vars = {
+        # Default remains the established destructive bootstrap/reset path.
+        # Set source_init_mode=journal_migrate to install capture on existing
+        # rows without truncating or reseeding them.
+        "SOURCE_INIT_MODE": "{{ dag_run.conf.get('source_init_mode', 'reset') if dag_run.conf else 'reset' }}",
         # Allow a one-off historical source timeline while preserving the
         # current-date default for ordinary initialization runs.
         "PROJECT_START_DATE": "{{ dag_run.conf['project_start_date'] if dag_run.conf and 'project_start_date' in dag_run.conf else (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+        "POLARS_MAX_THREADS": "2",
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "AMPERE_SOURCE_CODE_VERSION": DAG_CONFIG.image,
     }
     init_client_num = get_optional_variable("init_client_num")
     if init_client_num is not None:
@@ -56,9 +65,9 @@ with DAG(
     if init_delivery_resource is not None:
         env_vars["N_DELIVERY_RESOURCE"] = init_delivery_resource
 
-    # The init pod creates the source schema, dictionary tables, starter client
-    # base, courier pool, and assortment. It is the one-time setup step that
-    # makes the daily generator and downstream Spark DAGs possible.
+    # Default mode creates/resets the source schema and seeds a new dataset.
+    # `source_init_mode=journal_migrate` installs a baseline and capture
+    # triggers on existing source data without truncating it.
     init_data_task = KubernetesPodOperator(
         task_id="run__pre_raw__init",
         name="init-source-preparation",
@@ -71,8 +80,8 @@ with DAG(
         secrets=[pg_user, pg_pass],
         env_vars=env_vars,
         container_resources=V1ResourceRequirements(
-            requests={"cpu": "200m", "memory": "512Mi"},
-            limits={"cpu": "1", "memory": "1Gi"},
+            requests={"cpu": "1", "memory": "2Gi"},
+            limits={"cpu": "2", "memory": "4Gi"},
         ),
         get_logs=True,
         is_delete_operator_pod=True,

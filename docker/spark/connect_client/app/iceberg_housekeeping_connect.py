@@ -1,4 +1,4 @@
-"""Maintain contract v3 Iceberg tables through the shared Spark Connect service."""
+"""Maintain contract v4 Iceberg tables through the shared Spark Connect service."""
 
 from __future__ import annotations
 
@@ -10,13 +10,18 @@ from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
 
 from pyspark.sql import SparkSession
-from tools.contracts.ampere_contract import AmpereContract, ResolvedTable, load_contract
+from tools.contracts.ampere_contract import ResolvedTable, load_contract
 from tools.contracts.spark_conformance import quote_identifier, validate_spark_table
 
 
 LOGGER = logging.getLogger("iceberg-housekeeping")
 SAFE_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-CATALOGS = {"bronze": "iceberg_bronze", "silver": "iceberg_silver", "gold": "iceberg_gold"}
+CATALOGS = {
+    "raw": "iceberg_raw",
+    "bronze": "iceberg_bronze",
+    "silver": "iceberg_silver",
+    "gold": "iceberg_gold",
+}
 CONTRACT = load_contract()
 
 
@@ -294,7 +299,10 @@ def run_housekeeping(spark: SparkSession, *, as_of: datetime, dry_run: bool = Fa
                 compacted += _compact_table(spark, catalog, schema, table_name, dry_run=dry_run, spec=spec)
                 _maybe_rewrite_manifests(spark, catalog, schema, table_name, spec, dry_run=dry_run)
                 expire_sql, orphan_sql = _procedure_sql(catalog, schema, table_name, as_of, dry_run=dry_run, spec=spec)
-                if expire_sql:
+                # Raw is immutable logical history. Until the transfer registry can
+                # pin snapshots referenced by unacknowledged work/readers, preserve
+                # its snapshots and only clean files Iceberg proves are orphaned.
+                if expire_sql and spec.layer != "raw":
                     result = spark.sql(expire_sql).collect()
                     LOGGER.info("Expired snapshots for %s: %s", name, result[0].asDict() if result else {})
                 orphan_count = sum(1 for _ in spark.sql(orphan_sql).toLocalIterator())

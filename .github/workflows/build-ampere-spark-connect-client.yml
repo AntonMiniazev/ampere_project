@@ -3,7 +3,7 @@ name: Build ampere-spark-connect-client image
 on:
   workflow_dispatch:
   push:
-    branches: [migration/iceberg, main]
+    branches: [main]
     paths:
       - docker/spark/connect_client/**
       - tools/__init__.py
@@ -31,7 +31,6 @@ jobs:
           images: ghcr.io/antonminiazev/ampere-spark-connect-client
           tags: |
             type=sha,format=long,prefix=sha-
-            type=raw,value=migration-latest,enable=${{ github.ref == 'refs/heads/migration/iceberg' }}
       - uses: docker/build-push-action@v6
         with:
           context: .

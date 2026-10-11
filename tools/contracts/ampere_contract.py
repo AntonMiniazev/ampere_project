@@ -1,4 +1,4 @@
-"""Load and resolve Ampere's canonical Iceberg contract v3."""
+"""Load and resolve Ampere's canonical Iceberg contract v4."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 
-CONTRACT_VERSION = 3
+CONTRACT_VERSION = 4
+LAYERS = ("raw", "bronze", "silver", "gold")
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ampere_tables.json")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _TYPE = re.compile(
@@ -29,7 +30,7 @@ _SOURCE_COMPLETENESS = {"partial", "full_snapshot"}
 
 
 class ContractError(ValueError):
-    """Raised when contract v3 is malformed or unsupported."""
+    """Raised when the canonical contract is malformed or unsupported."""
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class ResolvedTable:
     write: dict[str, Any]
     maintenance: dict[str, Any]
     publication: dict[str, Any]
+    ingestion: dict[str, Any] | None
 
     @property
     def column_names(self) -> tuple[str, ...]:
@@ -56,6 +58,7 @@ class AmpereContract:
     version: int
     catalog_namespace: str
     profiles: dict[str, dict[str, Any]]
+    layer_inventory: dict[str, int]
     tables: dict[tuple[str, str], ResolvedTable]
 
     def table(self, layer: str, name: str) -> ResolvedTable:
@@ -181,6 +184,135 @@ def _validate_publication(layer: str, table_path: str, raw: Any, columns: set[st
     return {"merge_keys": tuple(keys), "source_completeness": dict(completeness)}
 
 
+def _validate_ingestion(table_path: str, raw: Any, columns: dict[str, str]) -> dict[str, Any]:
+    """Validate Raw change-history semantics without discarding contract fields."""
+    ingestion = _object(raw, f"{table_path}.ingestion")
+    if ingestion.get("kind") != "transactional_change_log":
+        _fail(f"{table_path}.ingestion.kind", "must be transactional_change_log")
+
+    def names(key: str, *, required: bool = True) -> tuple[str, ...]:
+        value = ingestion.get(key)
+        if not isinstance(value, list) or (required and not value):
+            _fail(f"{table_path}.ingestion.{key}", "must be a non-empty ordered list")
+        result = tuple(_identifier(item, f"{table_path}.ingestion.{key}") for item in value)
+        if len(set(result)) != len(result):
+            _fail(f"{table_path}.ingestion.{key}", "must not contain duplicates")
+        missing = set(result) - columns.keys()
+        if missing:
+            _fail(f"{table_path}.ingestion.{key}", f"unknown contracted columns {sorted(missing)}")
+        return result
+
+    for key in ("source_schema", "source_table"):
+        _identifier(ingestion.get(key), f"{table_path}.ingestion.{key}")
+    change_keys = names("change_keys")
+    entity_keys = names("entity_keys")
+    source_order = names("source_order")
+    business_columns = names("business_columns", required=False)
+    required_metadata = names("required_metadata")
+    if not business_columns:
+        _fail(f"{table_path}.ingestion.business_columns", "must identify the typed source payload")
+
+    before_images = _object(
+        ingestion.get("before_image_columns"),
+        f"{table_path}.ingestion.before_image_columns",
+    )
+    if set(before_images) != set(business_columns):
+        _fail(
+            f"{table_path}.ingestion.before_image_columns",
+            "must map every business column and no other columns",
+        )
+    for business_name, before_name in before_images.items():
+        before_name = _identifier(before_name, f"{table_path}.ingestion.before_image_columns.{business_name}")
+        if before_name not in columns:
+            _fail(f"{table_path}.ingestion.before_image_columns.{business_name}", f"unknown column {before_name!r}")
+        if columns[business_name] != columns[before_name]:
+            _fail(
+                f"{table_path}.ingestion.before_image_columns.{business_name}",
+                f"before-image type {columns[before_name]!r} differs from source type {columns[business_name]!r}",
+            )
+
+    metadata_required = {
+        "_dataset_id", "_batch_id", "_batch_sequence", "_change_id",
+        "_source_row_id", "_op", "_business_date", "_captured_at",
+        "_transfer_id", "_ingest_run_id", "_ingest_ts", "_source_system",
+        "_source_table", "_contract_version",
+    }
+    if not metadata_required.issubset(required_metadata):
+        _fail(
+            f"{table_path}.ingestion.required_metadata",
+            f"must include {sorted(metadata_required)}",
+        )
+    for column in required_metadata:
+        if column not in columns:
+            _fail(f"{table_path}.ingestion.required_metadata", f"unknown contracted column {column!r}")
+
+    operation_column = _identifier(ingestion.get("operation_column"), f"{table_path}.ingestion.operation_column")
+    business_date_column = _identifier(ingestion.get("business_date_column"), f"{table_path}.ingestion.business_date_column")
+    transfer_column = _identifier(ingestion.get("transfer_column"), f"{table_path}.ingestion.transfer_column")
+    for key, value in (("operation_column", operation_column), ("business_date_column", business_date_column), ("transfer_column", transfer_column)):
+        if value not in columns:
+            _fail(f"{table_path}.ingestion.{key}", f"unknown contracted column {value!r}")
+    operations = ingestion.get("operations")
+    if (
+        not isinstance(operations, list)
+        or any(not isinstance(operation, str) for operation in operations)
+        or set(operations) != {"I", "U", "D", "B"}
+        or len(operations) != 4
+    ):
+        _fail(f"{table_path}.ingestion.operations", "must contain I, U, D, and B exactly once")
+    if operation_column != "_op" or business_date_column != "_business_date" or transfer_column != "_transfer_id":
+        _fail(f"{table_path}.ingestion", "operation, business-date, and transfer columns must use the canonical Raw envelope")
+    if columns.get(business_date_column) != "date":
+        _fail(f"{table_path}.ingestion.business_date_column", "must have type date")
+    if not {"_dataset_id", "_batch_id", "_change_id"}.issubset(change_keys):
+        _fail(f"{table_path}.ingestion.change_keys", "must identify dataset, batch, and change")
+    if not {"_dataset_id", "_source_row_id"}.issubset(entity_keys):
+        _fail(f"{table_path}.ingestion.entity_keys", "must identify dataset and stable source row")
+    if not {"_batch_sequence", "_change_id"}.issubset(source_order):
+        _fail(f"{table_path}.ingestion.source_order", "must order by batch sequence and change id")
+    if ingestion.get("history_policy") != "retain_until_explicit_dataset_retirement":
+        _fail(f"{table_path}.ingestion.history_policy", "unsupported Raw history policy")
+    if ingestion.get("batch_visibility") != "completed_source_batch_and_acknowledged_raw_transfer":
+        _fail(f"{table_path}.ingestion.batch_visibility", "unsupported Raw batch visibility policy")
+    if ingestion["source_table"] != table_path.rsplit(".", 1)[-1]:
+        _fail(f"{table_path}.ingestion.source_table", "must match the Raw table name")
+
+    metadata_types = {
+        "_dataset_id": {"string"},
+        "_batch_id": {"string"},
+        "_batch_sequence": {"bigint"},
+        "_change_id": {"bigint"},
+        "_source_row_id": {"string"},
+        "_op": {"string"},
+        "_business_date": {"date"},
+        "_captured_at": {"timestamp", "timestamp_ntz"},
+        "_transfer_id": {"string"},
+        "_ingest_run_id": {"string"},
+        "_ingest_ts": {"timestamp", "timestamp_ntz"},
+        "_source_system": {"string"},
+        "_source_table": {"string"},
+        "_contract_version": {"int"},
+    }
+    for column, allowed_types in metadata_types.items():
+        if columns.get(column) not in allowed_types:
+            _fail(
+                f"{table_path}.ingestion.required_metadata",
+                f"{column} must have one of {sorted(allowed_types)}",
+            )
+
+    result = dict(ingestion)
+    result.update(
+        change_keys=change_keys,
+        entity_keys=entity_keys,
+        source_order=source_order,
+        operations=tuple(operations),
+        business_columns=business_columns,
+        before_image_columns=dict(before_images),
+        required_metadata=required_metadata,
+    )
+    return result
+
+
 def _validate_profile(name: str, raw: Any) -> dict[str, Any]:
     path = f"physical_profiles.{name}"
     profile = _object(raw, path)
@@ -197,12 +329,12 @@ def _validate_profile(name: str, raw: Any) -> dict[str, Any]:
     if target_size is not None and (not isinstance(target_size, int) or target_size <= 0):
         _fail(f"{path}.write.target_file_size_bytes", "must be a positive integer")
 
-    maintenance = _validate_maintenance(path, profile.get("maintenance", {}))
+    _validate_maintenance(path, profile.get("maintenance", {}))
     return profile
 
 
 def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
-    """Read, validate, and resolve contract v3 defaults for all table specs."""
+    """Read, validate, and resolve v4 defaults for all declared table specs."""
     contract_path = Path(path)
     try:
         raw = json.loads(contract_path.read_text(encoding="utf-8"))
@@ -214,8 +346,18 @@ def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
     catalog = _object(root.get("catalog"), "catalog")
     ampere = _object(catalog.get("ampere"), "catalog.ampere")
     layers = _object(ampere.get("layers"), "catalog.ampere.layers")
-    if set(layers) != {"bronze", "silver", "gold"}:
-        _fail("catalog.ampere.layers", "must declare bronze, silver, and gold")
+    if set(layers) != set(LAYERS):
+        _fail("catalog.ampere.layers", f"must declare {', '.join(LAYERS)}")
+    inventory_raw = _object(ampere.get("table_inventory"), "catalog.ampere.table_inventory")
+    if set(inventory_raw) != {*LAYERS, "total"}:
+        _fail("catalog.ampere.table_inventory", f"must declare counts for {', '.join(LAYERS)} and total")
+    inventory: dict[str, int] = {}
+    for name, value in inventory_raw.items():
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            _fail(f"catalog.ampere.table_inventory.{name}", "must be a positive integer")
+        inventory[name] = value
+    if inventory["total"] != sum(inventory[layer] for layer in LAYERS):
+        _fail("catalog.ampere.table_inventory.total", "must equal the sum of declared layer counts")
     profile_raw = _object(ampere.get("physical_profiles"), "catalog.ampere.physical_profiles")
     profiles = {
         _identifier(name, f"physical_profiles.{name}"): _validate_profile(name, value)
@@ -223,7 +365,7 @@ def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
     }
 
     resolved: dict[tuple[str, str], ResolvedTable] = {}
-    for layer in ("bronze", "silver", "gold"):
+    for layer in LAYERS:
         layer_tables = _object(layers[layer], f"layers.{layer}")
         for raw_name, raw_table in layer_tables.items():
             name = _identifier(raw_name, f"layers.{layer}.{raw_name}")
@@ -279,6 +421,12 @@ def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
                     _fail(f"{item_path}.direction", "must be asc or desc")
             write = _merge(profile.get("write", {}), table_profile.get("write", {}))
             publication = _validate_publication(layer, table_path, table.get("publication"), names)
+            ingestion = _validate_ingestion(
+                table_path, table.get("ingestion"),
+                {column["name"]: column["type_text"] for column in columns},
+            ) if layer == "raw" else None
+            if layer != "raw" and table.get("ingestion") is not None:
+                _fail(f"{table_path}.ingestion", "is supported only for Raw tables")
             if layer in {"silver", "gold"}:
                 if write.get("distribution", "none") != "none":
                     _fail(
@@ -311,10 +459,21 @@ def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
                     _merge(profile.get("maintenance", {}), table_profile.get("maintenance", {})),
                 ),
                 publication=publication,
+                ingestion=ingestion,
             )
-    if len(resolved) != 42:
-        _fail("catalog.ampere.layers", f"expected 42 tables including the ops registry, found {len(resolved)}")
-    return AmpereContract(CONTRACT_VERSION, "ampere", profiles, resolved)
+    observed_inventory = {
+        layer: sum(1 for table_layer, _ in resolved if table_layer == layer)
+        for layer in LAYERS
+    }
+    for layer in LAYERS:
+        if observed_inventory[layer] != inventory[layer]:
+            _fail(
+                f"catalog.ampere.table_inventory.{layer}",
+                f"declares {inventory[layer]} tables, found {observed_inventory[layer]}",
+            )
+    if len(resolved) != inventory["total"]:
+        _fail("catalog.ampere.table_inventory.total", f"declares {inventory['total']} tables, found {len(resolved)}")
+    return AmpereContract(CONTRACT_VERSION, "ampere", profiles, inventory, resolved)
 
 
 def validate_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
@@ -322,7 +481,7 @@ def validate_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContrac
     contract = load_contract(path)
     print(
         f"Validated contract v{contract.version}: "
-        + ", ".join(f"{layer}={len(contract.layer_tables(layer))}" for layer in ("bronze", "silver", "gold"))
+        + ", ".join(f"{layer}={len(contract.layer_tables(layer))}" for layer in LAYERS)
         + f"; total={len(contract.tables)}"
     )
     return contract

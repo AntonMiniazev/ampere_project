@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
@@ -41,6 +42,42 @@ class CatalogInitTests(unittest.TestCase):
             "WRITE ORDERED BY `status_datetime` ASC",
             statements,
         )
+
+    def test_existing_bronze_table_adds_only_missing_lineage_columns(self) -> None:
+        contract = initialize_catalog.load_contract()
+        table = contract.table("bronze", "delivery_tracking")
+        spark = MagicMock()
+        spark.table.return_value.schema.fields = [
+            SimpleNamespace(name="id", dataType=SimpleNamespace(simpleString=lambda: "int")),
+            SimpleNamespace(name="order_id", dataType=SimpleNamespace(simpleString=lambda: "int")),
+        ]
+
+        initialize_catalog._evolve_bronze_lineage_columns(
+            spark, "`iceberg_bronze`.`bronze`.`delivery_tracking`", table
+        )
+
+        statement = spark.sql.call_args.args[0]
+        self.assertIn("ADD COLUMNS", statement)
+        self.assertIn("`_dataset_id` string", statement)
+        self.assertIn("`_source_row_id` string", statement)
+        self.assertIn("`_source_batch_sequence` bigint", statement)
+        self.assertIn("`_source_change_id` bigint", statement)
+
+    def test_bronze_lineage_migration_rejects_wrong_existing_type(self) -> None:
+        contract = initialize_catalog.load_contract()
+        table = contract.table("bronze", "delivery_tracking")
+        spark = MagicMock()
+        spark.table.return_value.schema.fields = [
+            SimpleNamespace(
+                name="_dataset_id",
+                dataType=SimpleNamespace(simpleString=lambda: "int"),
+            )
+        ]
+
+        with self.assertRaisesRegex(ValueError, "lineage column _dataset_id has type int"):
+            initialize_catalog._evolve_bronze_lineage_columns(
+                spark, "`iceberg_bronze`.`bronze`.`delivery_tracking`", table
+            )
 
     def test_initialize_uses_existing_spark_connect_session(self) -> None:
         session = MagicMock()

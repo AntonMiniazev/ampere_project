@@ -1,42 +1,44 @@
 # Ampere data platform
 
-Ampere generates operational data in PostgreSQL and turns it into Iceberg tables on MinIO. Airflow coordinates the daily path, Spark extracts and applies Raw batches, dbt with DuckDB builds Silver and Gold, and Lakekeeper catalogs the Iceberg tables. Curie refreshes its cache after Gold publication succeeds.
+Ampere generates operational data in PostgreSQL and publishes Iceberg tables on MinIO through Lakekeeper. Task 6's v4 source journal, Raw transfer, and Bronze current-state implementation is prepared in this checkout but is not released or deployed. The cluster remains on its previous runtime until the owner publishes the release and performs the dataset/catalog cutover.
+
+The init DAG defaults to the existing destructive source reset/bootstrap. Trigger it with `{"source_init_mode":"journal_migrate"}` to install source identities, capture triggers, and a baseline on existing rows without truncating or reseeding them. This migration preserves current rows but treats them as one baseline; it cannot recreate historical daily changes that were not captured. New generation starts after the latest existing `orders.order_date` to prevent accidental replay of uncaptured dates.
 
 ## Daily pipeline
 
 ```mermaid
 flowchart LR
-    G[Python generators] --> P[PostgreSQL source]
-    P --> R[Raw Parquet batches in MinIO]
-    R --> B[Bronze Iceberg in Lakekeeper]
-    B --> S[Silver Iceberg via dbt and DuckDB]
-    S --> O[Gold Iceberg marts]
-    O --> C[Curie cache refresh]
+    G[Python generators] --> P[PostgreSQL source and change journal]
+    P --> R[Raw Iceberg change history]
+    R --> B[Bronze Iceberg current state]
+    B -. automatic trigger paused .-> S[Silver Iceberg via dbt and DuckDB]
+    S -. automatic trigger paused .-> O[Gold Iceberg marts]
+    O -. automatic trigger paused .-> C[Curie cache refresh]
 ```
 
-The `ampere__pre_raw__generators__daily` DAG starts the daily chain on cron `15 4 * * *` (04:15 in the Airflow DAG timezone). It triggers Raw, Bronze daily, Silver daily, Gold daily, and Curie's cache refresh in sequence. Each parent finishes after dispatching its downstream DAG with the same logical date; downstream runs continue independently and report their own outcomes. A successful Sunday Curie refresh triggers `ampere__housekeeping__iceberg_metadata__weekly`. The full rebuild uses separate Bronze, Silver, and Gold DAGs; catalog initialization is its own manual DAG. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
+The scheduled generator runs at `15 4 * * *` (04:15 in the Airflow DAG timezone), journals each source date atomically, and triggers Raw. Raw transfers a fixed completed-batch boundary and then triggers Bronze. The chain stops at Bronze; automatic Silver, Gold, and Curie handoffs remain disabled until the owner authorizes their restoration. The manual backfill runs an inclusive range of up to 31 dates in one generator pod, one transaction per date, and does not trigger downstream work. The Bronze full-rebuild DAG reduces accepted Raw history at one boundary. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
 
-The canonical [contract v3](tools/contracts/ampere_tables.json) defines schemas, physical layouts, write profiles, and maintenance policies for all 42 Iceberg tables. Run `ampere__iceberg__catalog__init` after the owner's catalog cleanup; its lightweight Spark Connect client image uses the persistent Spark service to create empty namespaces and tables and refuses schema/layout conflicts. Contract validation reads Iceberg metadata as bytes so it supports Lakekeeper's gzip-compressed metadata files. Raw writes Parquet files, manifests, success markers, and extraction state. Bronze applies validated batches and records them in its contract-defined apply registry. Snapshot tables retain one latest complete Raw retry for every `snapshot_date`; a superseded retry does not replace a different date or block that date from replay. Silver and Gold run in separate short-lived dbt/DuckDB pods, each staging and testing one layer before publishing. Silver daily `fact_delivery_tracking` and `fact_order_product` publishes use three keyed `order_id` ranges and preserve older target rows outside each partial input. Facts use keyed updates and inserts; complete dimensions and budgets also remove keys absent from their staged source. The Bronze full rebuild replays all validated Raw history; Silver and Gold full rebuilds follow it.
+The canonical [contract v4](tools/contracts/ampere_tables.json) defines 58 tables across Raw, Bronze, Silver, and Gold. Raw stores typed baseline and INSERT/UPDATE/DELETE history. Bronze stores current source state with dataset and stable row lineage, source-order version guards, and delete application. Catalog initialization creates contract tables and refuses schema/layout conflicts; it does not migrate or drop existing tables automatically. Silver and Gold dbt/DuckDB models and manual rebuild DAGs remain available but isolated from automatic triggers during Task 6 validation.
 
-Weekly housekeeping uses a lightweight Spark Connect client image to submit contract-driven data-file compaction, manifest rewrite, snapshot expiration, and orphan cleanup to the existing Spark service. Policies are resolved per table from contract v3. The job checks table schema, partitioning, and properties before maintenance and keeps a 14-day snapshot/orphan retention window.
+Weekly housekeeping uses the Spark Connect client to submit contract-driven compaction, manifest rewrite, snapshot expiration, and orphan cleanup. It checks table schema, partitioning, and properties before maintenance.
 
 ## Repository layout
 
 - `dags/`: Airflow DAGs, table-group configuration, and SparkApplication templates.
-- `docker/spark/iceberg_raw_etl/`: the full Spark image for Raw extraction and Iceberg Bronze application.
-- `docker/spark/connect_client/`: the Python-only Spark Connect client image for catalog initialization and housekeeping.
-- `docker/dbt_iceberg/` and `dbt_iceberg/`: the dbt v2 runtime, SQL models, tests, and Iceberg publisher.
-- `docker/init_source_preparation/` and `docker/order_data_generator/`: source generators.
-- `tools/contracts/`: canonical Iceberg contract and shared resolver packaged in Spark, Spark Connect client, and dbt images.
+- `docker/spark/iceberg_raw_etl/`: Spark applications for PostgreSQL journal-to-Raw and Raw-to-Bronze.
+- `docker/spark/connect_client/`: Spark Connect client for catalog initialization and housekeeping.
+- `docker/dbt_iceberg/` and `dbt_iceberg/`: dbt v2 runtime, SQL models, tests, and Iceberg publisher.
+- `docker/init_source_preparation/` and `docker/order_data_generator/`: source initialization and synthetic generation.
+- `tools/contracts/`: canonical Iceberg contract and shared resolver.
 - `tools/budget_generation/`: tracked budget input and daily budget generation.
 - `docs/`: generated dataflow diagrams and operational documentation.
-- `tests/`: checks for the active Spark and dbt paths.
+- `tests/`: checks for the Spark and dbt paths.
 
 ## Images and releases
 
-A numeric `vX.Y.Z` tag runs [release-images.yml](.github/workflows/release-images.yml). It builds images whose source changed since the previous published tag and retags unchanged images to the new version. The release publishes `ampere-spark-iceberg`, `ampere-dbt-iceberg`, `init-source-preparation`, and `order-data-generator`. Airflow's `ampere_release_version` selects the default tag. `iceberg_spark_image` and `iceberg_dbt_image` are optional Airflow Variables that override individual images; the Spark override applies to both Raw and Bronze. These values are managed in Airflow, not in the common deployment environment.
+A numeric `vX.Y.Z` tag runs [release-images.yml](.github/workflows/release-images.yml). It publishes `ampere-spark-iceberg`, `ampere-dbt-iceberg`, `init-source-preparation`, and `order-data-generator`. Airflow's `ampere_release_version` selects the default tag. `iceberg_spark_image` and `iceberg_dbt_image` can override images; the Spark override applies to both Raw and Bronze. These values are managed in Airflow, not in the common deployment environment.
 
-The Iceberg Spark and dbt workflows build `sha-<commit>` on relevant pushes to `migration/iceberg` and `main`; migration branch pushes also update `migration-latest`. The release workflow uses `GHCR_TOKEN` when present and otherwise `GITHUB_TOKEN` for GHCR access.
+The Iceberg Spark and dbt workflows build `sha-<commit>` on relevant pushes to `main`; release tags publish coordinated image versions. The release workflow uses `GHCR_TOKEN` when present and otherwise `GITHUB_TOKEN` for GHCR access.
 
 ## Documentation
 
@@ -46,4 +48,4 @@ The Iceberg Spark and dbt workflows build `sha-<commit>` on relevant pushes to `
 uv run python tools/docs/generate_dataflow_docs.py
 ```
 
-See [the platform overview](docs/README.md), [Bronze runtime](docker/spark/iceberg_raw_etl/README.md), and [Silver/Gold runtime](dbt_iceberg/README.md) for further details.
+See [the platform overview](docs/README.md), [Spark runtime](docker/spark/iceberg_raw_etl/README.md), and [Silver/Gold runtime](dbt_iceberg/README.md) for details.

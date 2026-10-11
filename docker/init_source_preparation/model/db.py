@@ -2,7 +2,6 @@ import logging
 import os
 from functools import lru_cache
 
-import psycopg
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
@@ -111,7 +110,7 @@ def get_engine():
     )
 
 
-def _copy_dataframe(table, target_table: str, schema: str) -> None:
+def _copy_dataframe(table, target_table: str, schema: str, *, connection=None) -> None:
     """Bulk-load a Polars DataFrame into Postgres using COPY.
 
     COPY is much faster than row-by-row INSERTs, which matters even during
@@ -123,77 +122,73 @@ def _copy_dataframe(table, target_table: str, schema: str) -> None:
     column_list = ", ".join(f'"{col}"' for col in columns)
     copy_sql = f'COPY "{schema}"."{target_table}" ({column_list}) FROM STDIN'
 
-    user, password, host, port, database = _get_db_params()
-    logger.info(
-        "Opening COPY connection host=%s port=%s db=%s user=%s",
-        host,
-        port,
-        database,
-        user,
-    )
-    with psycopg.connect(
-        user=user,
-        password=password,
-        host=host,
-        port=port,
-        dbname=database,
-        application_name=APP_NAME,
-    ) as conn:
-        with conn.cursor() as cur:
-            with cur.copy(copy_sql) as copy:
-                for row in table.iter_rows():
-                    copy.write_row(row)
+    if connection is None:
+        with get_engine().begin() as conn:
+            _copy_dataframe(table, target_table, schema, connection=conn)
+        return
+
+    logger.info("Opening COPY on the initialization transaction for %s.%s", schema, target_table)
+    raw_connection = connection.connection.driver_connection
+    with raw_connection.cursor() as cur:
+        with cur.copy(copy_sql) as copy:
+            for row in table.iter_rows():
+                copy.write_row(row)
 
 
-def ensure_schema(schema: str) -> None:
+def ensure_schema(schema: str, *, connection=None) -> None:
     """Create the target Postgres schema when it does not exist yet.
 
     The bootstrap pipeline always starts by ensuring the source schema exists so
     every later CREATE TABLE or COPY target has a valid namespace. This is the
     first database-side action in the one-time initialization flow.
     """
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+    if connection is not None:
+        connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+        return
+    with get_engine().begin() as conn:
+        ensure_schema(schema, connection=conn)
 
 
-def exec_sql(query: str) -> None:
+def exec_sql(query: str, *, connection=None) -> None:
     """Execute a single SQL statement or SQL block inside a transaction.
 
     This is used for DDL tasks such as CREATE TABLE, TRUNCATE, and CREATE INDEX.
     Keeping it as a helper makes the orchestration code read more like a story
     of pipeline steps instead of a repeated database-connection ceremony.
     """
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.execute(text(query))
+    if connection is not None:
+        connection.execute(text(query))
+        return
+    with get_engine().begin() as conn:
+        exec_sql(query, connection=conn)
 
 
-def table_exists(schema: str, table: str) -> bool:
+def table_exists(schema: str, table: str, *, connection=None) -> bool:
     """Check whether a table already exists in the target schema.
 
     The bootstrap workflow uses this to decide between create-vs-truncate logic.
     That distinction is important because re-running the init DAG should reset
     data tables without failing on already-created structures.
     """
-    engine = get_engine()
-    inspector = inspect(engine)
+    inspector = inspect(connection or get_engine())
     return inspector.has_table(table, schema=schema)
 
 
-def truncate_table(schema: str, table: str) -> None:
+def truncate_table(schema: str, table: str, *, connection=None) -> None:
     """Remove all rows from an existing bootstrap table.
 
     Truncation keeps the table structure intact while clearing old synthetic
     data. In practice this makes the init DAG idempotent enough for safe manual
     reruns during development.
     """
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.execute(text(f'TRUNCATE TABLE "{schema}"."{table}"'))
+    if connection is not None:
+        connection.execute(text(f'TRUNCATE TABLE "{schema}"."{table}"'))
+        return
+    with get_engine().begin() as conn:
+        truncate_table(schema, table, connection=conn)
 
 
-def upload_new_data(table, target_table: str, schema: str) -> None:
+def upload_new_data(table, target_table: str, schema: str, *, connection=None) -> None:
     """Write a DataFrame into a bootstrap target table when rows are present.
 
     This is the common write helper used by dictionary loaders and generator
@@ -210,7 +205,7 @@ def upload_new_data(table, target_table: str, schema: str) -> None:
         target_table,
         table.height,
     )
-    _copy_dataframe(table, target_table, schema)
+    _copy_dataframe(table, target_table, schema, connection=connection)
     logger.info(
         "Bulk insert completed: %s records into %s.%s",
         table.height,

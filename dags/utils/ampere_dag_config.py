@@ -14,6 +14,16 @@ DEFAULT_RELEASE_VERSION = "latest"
 DEFAULT_SPARK_SERVICE_ACCOUNT = "spark-operator-spark"
 DEFAULT_MINIO_ENDPOINT = "http://minio.ampere.svc.cluster.local:9000"
 DEFAULT_ETL_NODE = "ampere-k8s-node4"
+
+
+def _required_etl_node(variable_name: str) -> str:
+    """Honor only node4 for the Task 6 generator and Raw/Bronze Spark work."""
+    configured = Variable.get(variable_name, default=DEFAULT_ETL_NODE)
+    if configured != DEFAULT_ETL_NODE:
+        raise ValueError(
+            f"{variable_name} must remain {DEFAULT_ETL_NODE} for this pipeline phase"
+        )
+    return DEFAULT_ETL_NODE
 ICEBERG_MUTATION_POOL = "iceberg_pipeline_mutation"
 
 
@@ -156,8 +166,11 @@ class RawLandingDagConfig:
     schema: str
     source_system: str
     minio_endpoint: str
-    minio_bucket: str
-    output_prefix: str
+    warehouse: str
+    lakekeeper_uri: str
+    lakekeeper_oauth_uri: str
+    lakekeeper_scope: str
+    node_selector: str
     driver_cores: int
     driver_core_request: str
     driver_memory: str
@@ -191,8 +204,8 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - schema: Source PostgreSQL schema to extract from. Default `source`.
     - source_system: Source-system id written into raw metadata and paths. Default `postgres-pre-raw`.
     - minio_endpoint: MinIO/S3 endpoint used by Spark S3A IO. Default `http://minio.ampere.svc.cluster.local:9000`.
-    - minio_bucket: Raw landing bucket name. Default `ampere-raw`.
-    - output_prefix: Prefix under the raw bucket where extracts are written. Default `postgres-pre-raw`.
+    - warehouse: Lakekeeper Raw warehouse. Default `raw`.
+    - node_selector: Required placement for Spark drivers and executors. Default node4.
     - driver_cores: Spark driver CPU core count. Default `1`.
     - driver_core_request: Kubernetes CPU request for the Spark driver. Default `250m`.
     - driver_memory: Spark driver memory setting. Default `2500m`.
@@ -227,8 +240,20 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         schema=Variable.get("pg_schema", default="source"),
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
         minio_endpoint=minio_endpoint,
-        minio_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
-        output_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
+        warehouse=Variable.get("iceberg_raw_warehouse", default="raw"),
+        lakekeeper_uri=Variable.get(
+            "iceberg_lakekeeper_uri",
+            default="http://lakekeeper.ampere.svc.cluster.local:8181/catalog",
+        ),
+        lakekeeper_oauth_uri=Variable.get(
+            "iceberg_lakekeeper_oauth_uri",
+            default="https://login.microsoftonline.com/2ffd8fbf-1421-46ed-9e6b-021c955dbe34/oauth2/v2.0/token",
+        ),
+        lakekeeper_scope=Variable.get(
+            "iceberg_lakekeeper_scope",
+            default="api://4120baf5-d479-464e-8c83-a96b5d475fdf/.default",
+        ),
+        node_selector=DEFAULT_ETL_NODE,
         driver_cores=int(Variable.get("spark_driver_cores", default="1")),
         driver_core_request=Variable.get("spark_driver_core_request", default="400m"),
         driver_memory=Variable.get("spark_driver_memory", default="2500m"),
@@ -274,6 +299,9 @@ class BronzeDagConfig:
     spark_namespace: str
     service_account: str
     minio_endpoint: str
+    pg_host: str
+    pg_port: str
+    pg_database: str
     schema: str
     raw_bucket: str
     raw_prefix: str
@@ -314,6 +342,9 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "spark_service_account", default=DEFAULT_SPARK_SERVICE_ACCOUNT
         ),
         minio_endpoint=resolve_minio_endpoint(minio_conn_id),
+        pg_host=Variable.get("pg_host", default="postgres-service"),
+        pg_port=Variable.get("pg_port", default="5432"),
+        pg_database=Variable.get("pg_database", default="ampere_db"),
         schema=Variable.get("pg_schema", default="source"),
         raw_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
         raw_prefix=Variable.get("raw_output_prefix", default="postgres-pre-raw"),
@@ -324,9 +355,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         driver_memory_overhead=Variable.get(
             "spark_bronze_driver_memory_overhead", default="512"
         ),
-        driver_node_selector=Variable.get(
-            "spark_bronze_driver_node_selector", default="ampere-k8s-node4"
-        ),
+        driver_node_selector=_required_etl_node("spark_bronze_driver_node_selector"),
         executor_cores=int(Variable.get("spark_executor_cores", default="1")),
         executor_core_request=Variable.get(
             "spark_executor_core_request", default="750m"
@@ -357,9 +386,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
         executor_memory_overhead_facts_events=Variable.get(
             "spark_executor_memory_overhead_facts_events", default="768m"
         ),
-        executor_node_selector=Variable.get(
-            "spark_executor_node_selector", default="ampere-k8s-node4"
-        ),
+        executor_node_selector=_required_etl_node("spark_executor_node_selector"),
         shuffle_partitions=int(
             Variable.get("spark_sql_shuffle_partitions", default="2")
         ),

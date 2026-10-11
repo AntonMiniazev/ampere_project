@@ -3,7 +3,7 @@ name: Build ampere-spark-iceberg image
 on:
   workflow_dispatch:
   push:
-    branches: [migration/iceberg, main]
+    branches: [main]
     paths:
       - docker/spark/iceberg_raw_etl/**
       - tools/contracts/**
@@ -35,7 +35,6 @@ jobs:
           images: ghcr.io/antonminiazev/ampere-spark-iceberg
           tags: |
             type=sha,format=long,prefix=sha-
-            type=raw,value=migration-latest,enable=${{ github.ref == 'refs/heads/migration/iceberg' }}
       - uses: docker/build-push-action@v6
         with:
           context: .

@@ -13,6 +13,7 @@ RUN uv python install 3.14 \
     && uv venv --python "$(uv python find 3.14)" /opt/ampere-venv \
     && uv pip install --python /opt/ampere-venv/bin/python --no-cache \
     boto3==1.40.18 \
+    'psycopg[binary]>=3.3.2' \
     pyspark==4.1.0
 
 RUN /opt/ampere-venv/bin/python -c \
@@ -33,11 +34,12 @@ WORKDIR /opt/spark/app
 COPY docker/spark/iceberg_raw_etl/app/etl_parser.py \
     docker/spark/iceberg_raw_etl/app/etl_utils.py /opt/spark/app/
 COPY docker/spark/iceberg_raw_etl/app/source_to_raw_etl.py \
-    docker/spark/iceberg_raw_etl/app/raw_to_bronze_etl_iceberg.py /opt/spark/app/
+    docker/spark/iceberg_raw_etl/app/raw_to_bronze_etl_iceberg.py \
+    docker/spark/iceberg_raw_etl/app/journal_to_raw.py /opt/spark/app/
 COPY docker/spark/iceberg_raw_etl/app/raw/ /opt/spark/app/raw/
 COPY docker/spark/iceberg_raw_etl/app/iceberg_bronze/ /opt/spark/app/iceberg_bronze/
 COPY tools/__init__.py /opt/spark/app/tools/__init__.py
 COPY tools/contracts/ /opt/spark/app/tools/contracts/
 RUN /opt/ampere-venv/bin/python -B -c \
-    "import raw.main, iceberg_bronze.main, source_to_raw_etl, raw_to_bronze_etl_iceberg; print('Raw and Bronze applications import successfully')"
+    "import raw.main, iceberg_bronze.main, source_to_raw_etl, raw_to_bronze_etl_iceberg, journal_to_raw; print('Raw and Bronze applications import successfully')"
 USER 185

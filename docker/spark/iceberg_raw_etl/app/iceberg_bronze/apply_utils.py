@@ -30,7 +30,7 @@ from tools.contracts.ampere_contract import load_contract
 
 
 def load_registry_schema() -> StructType:
-    """Build the Bronze apply-registry schema from canonical contract v3."""
+    """Build the Bronze apply-registry schema from canonical contract v4."""
     type_map = {
         "string": StringType(),
         "boolean": BooleanType(),

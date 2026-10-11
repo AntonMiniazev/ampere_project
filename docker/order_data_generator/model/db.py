@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import timedelta
 from functools import lru_cache
 
 import polars as pl
@@ -275,4 +276,128 @@ def fetch_order_status_map(schema: str, *, connection=None) -> dict[str, int]:
     for row in df.iter_rows(named=True):
         status_map[str(row["order_status"]).strip().lower()] = int(row["id"])
     return status_map
+
+
+def start_generation_batch(
+    connection,
+    business_date,
+    *,
+    scenario_seed: int | None,
+    config_fingerprint: str,
+    source_code_version: str,
+) -> dict | None:
+    """Start a dataset-scoped source batch inside the caller's transaction.
+
+    Completed dates are idempotently skipped. A new date must continue directly
+    after the last completed generation date; the first generated date equals
+    the dataset's bootstrap date. The active batch identity is installed as
+    transaction-local PostgreSQL settings consumed by row triggers.
+    """
+    from sqlalchemy import text
+
+    dataset = connection.execute(
+        text(
+            "SELECT dataset_id, project_start_date FROM pipeline.datasets "
+            "WHERE status = 'ready'"
+        )
+    ).mappings().one_or_none()
+    if dataset is None:
+        raise RuntimeError(
+            "No ready source dataset exists; run the init DAG before generation"
+        )
+    dataset_id = dataset["dataset_id"]
+
+    existing = connection.execute(
+        text(
+            "SELECT batch_id, status FROM pipeline.batches "
+            "WHERE dataset_id=:dataset AND business_date=:business_date "
+            "AND batch_kind='generation'"
+        ),
+        {"dataset": dataset_id, "business_date": business_date},
+    ).mappings().one_or_none()
+    if existing is not None:
+        if existing["status"] == "completed":
+            logger.info("Skipping completed generation batch %s for %s", existing["batch_id"], business_date)
+            return None
+        raise RuntimeError(f"Generation batch for {business_date} is unexpectedly still started")
+
+    latest_date = connection.execute(
+        text(
+            "SELECT MAX(business_date) FROM pipeline.batches "
+            "WHERE dataset_id=:dataset AND batch_kind='generation' AND status='completed'"
+        ),
+        {"dataset": dataset_id},
+    ).scalar_one()
+    expected_date = latest_date + timedelta(days=1) if latest_date else dataset["project_start_date"]
+    if business_date != expected_date:
+        raise ValueError(
+            f"Generation must follow the dataset timeline: next date is "
+            f"{expected_date}, requested {business_date}"
+        )
+
+    from uuid import uuid4
+
+    batch_id = uuid4()
+    batch_sequence = connection.execute(
+        text(
+            "INSERT INTO pipeline.batches "
+            "(batch_id, dataset_id, business_date, batch_kind, status, scenario_seed, "
+            "config_fingerprint, source_code_version) "
+            "VALUES (:batch, :dataset, :business_date, 'generation', 'started', :seed, "
+            ":fingerprint, :source_code_version) RETURNING batch_sequence"
+        ),
+        {
+            "batch": batch_id,
+            "dataset": dataset_id,
+            "business_date": business_date,
+            "seed": scenario_seed,
+            "fingerprint": config_fingerprint,
+            "source_code_version": source_code_version,
+        },
+    ).scalar_one()
+    connection.execute(
+        text(
+            "INSERT INTO pipeline.batch_table_counts "
+            "(dataset_id, batch_id, batch_sequence, source_table, change_count) "
+            "SELECT :dataset, :batch, :sequence, source_table, 0 "
+            "FROM pipeline.source_tables WHERE enabled"
+        ),
+        {"dataset": dataset_id, "batch": batch_id, "sequence": batch_sequence},
+    )
+    for setting, value in (
+        ("ampere.dataset_id", str(dataset_id)),
+        ("ampere.batch_id", str(batch_id)),
+        ("ampere.batch_sequence", str(batch_sequence)),
+        ("ampere.business_date", business_date.isoformat()),
+    ):
+        connection.execute(
+            text("SELECT set_config(:setting, :value, true)"),
+            {"setting": setting, "value": value},
+        )
+    return {"dataset_id": dataset_id, "batch_id": batch_id, "batch_sequence": batch_sequence}
+
+
+def complete_generation_batch(connection, batch: dict) -> dict[str, int]:
+    """Commit the in-transaction batch marker after business generation succeeds."""
+    from sqlalchemy import text
+
+    result = connection.execute(
+        text(
+            "UPDATE pipeline.batches SET status='completed', completed_at=clock_timestamp() "
+            "WHERE dataset_id=:dataset AND batch_id=:batch AND status='started'"
+        ),
+        {"dataset": batch["dataset_id"], "batch": batch["batch_id"]},
+    )
+    if result.rowcount != 1:
+        raise RuntimeError(f"Could not complete source batch {batch['batch_id']}")
+    return {
+        str(row.source_table): int(row.change_count)
+        for row in connection.execute(
+            text(
+                "SELECT source_table, change_count FROM pipeline.batch_table_counts "
+                "WHERE dataset_id=:dataset AND batch_id=:batch"
+            ),
+            {"dataset": batch["dataset_id"], "batch": batch["batch_id"]},
+        )
+    }
 

@@ -5,8 +5,8 @@ This flowchart shows the high-level layer transitions, the main logic inside eac
 ```mermaid
 flowchart LR
     L_SOURCE["Python generator + PostgreSQL<br/>Logic: Synthetic transactions and mutable source rows.<br/>Python, PostgreSQL<br/>PostgreSQL"]
-    L_RAW["Raw landing<br/>Logic: Immutable Parquet batches with manifest, success marker, and extract state.<br/>Spark<br/>MinIO, Parquet"]
-    L_BRONZE["Bronze<br/>Logic: Replace snapshot partitions, merge mutable dimensions and events, and append or merge facts.<br/>Spark, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
+    L_RAW["Raw Iceberg change history<br/>Logic: Typed INSERT, UPDATE, DELETE, and baseline changes ordered by dataset batch and change sequence.<br/>Spark<br/>MinIO, Iceberg<br/>Lakekeeper"]
+    L_BRONZE["Bronze<br/>Logic: Reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.<br/>Spark, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_SILVER["Silver<br/>Logic: Clean types, join entities, test relationships, and publish reusable Iceberg tables.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_GOLD["Gold<br/>Logic: Preserve month and store keys, additive measures, and domain-specific report fields.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_SERVING["Serving / BI<br/>Logic: Curie refreshes its Iceberg cache after a successful Gold publish.<br/>Curie<br/>Cache"]

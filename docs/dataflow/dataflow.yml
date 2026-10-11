@@ -10,19 +10,21 @@ layers:
     storage: [PostgreSQL]
 
   raw:
-    title: Raw landing
+    title: Raw Iceberg change history
     status: implemented
-    responsibility: Extract immutable Parquet batches with manifests, success markers, and extraction state.
-    diagram_note: Immutable Parquet batches with manifest, success marker, and extract state.
+    responsibility: Transfer completed PostgreSQL change batches into typed Raw Iceberg tables with a durable per-table acknowledgment registry.
+    diagram_note: Typed INSERT, UPDATE, DELETE, and baseline changes ordered by dataset batch and change sequence.
     engine: [Spark]
-    storage: [MinIO, Parquet]
-    controls: [_manifest.json, _SUCCESS, _state_<table>.json]
+    storage: [MinIO, Iceberg]
+    catalog: Lakekeeper
+    catalog_schema: raw warehouse / raw namespace
+    controls: [PostgreSQL dataset and batch registry, PostgreSQL Raw transfer registry]
 
   bronze:
     title: Bronze
     status: implemented
-    responsibility: Apply Raw batches to Iceberg tables and track processed batches in an Iceberg registry.
-    diagram_note: Replace snapshot partitions, merge mutable dimensions and events, and append or merge facts.
+    responsibility: Reconstruct and incrementally maintain current source state from accepted Raw changes, with dataset-scoped row identity and checkpoints.
+    diagram_note: Reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.
     engine: [Spark, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -60,14 +62,14 @@ flows:
   - from: source
     to: raw
     engine: Spark
-    artifact: Raw Parquet batches
-    description: Extract PostgreSQL source tables into validated Raw batches.
+    artifact: Accepted Raw Iceberg change history
+    description: Freeze completed source batches and idempotently merge their typed journal rows into Raw Iceberg.
 
   - from: raw
     to: bronze
     engine: Spark + Iceberg
     artifact: Bronze Iceberg tables
-    description: Apply complete Raw batches through the Lakekeeper catalog.
+    description: Apply the next complete Raw transfer, or reduce retained history once for a controlled full rebuild.
 
   - from: bronze
     to: silver

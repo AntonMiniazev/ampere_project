@@ -14,7 +14,7 @@ import polars as pl
 from .env import load_project_env, require_env
 
 
-LAYERS = ("bronze", "silver", "gold")
+LAYERS = ("raw", "bronze", "silver", "gold")
 BUILD_COLUMNS = {"silver": "_silver_build_ts", "gold": "_gold_build_ts"}
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 

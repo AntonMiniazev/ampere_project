@@ -509,9 +509,9 @@ def write_airflow_dag_orchestration() -> None:
     md_lines = [
         "# Airflow DAG orchestration",
         "",
-        "This page is generated from `dags/my_dags/*.py`. It shows the normal daily chain, manual recovery entrypoints, and the trigger conditions that matter operationally.",
+        "This page is generated from `dags/my_dags/*.py`. During the Raw/Bronze migration, automatic handoffs stop at Bronze; Silver, Gold, and Curie remain manual recovery entrypoints.",
         "",
-        "The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs, and isolated dbt pods build and publish Silver, then Gold. Each parent finishes after dispatching its downstream DAG; child runs report their own outcomes. Catalog initialization and the Bronze-to-Gold full rebuild are manually run entrypoints.",
+        "The scheduled generator starts the daily chain through Raw and Bronze. Automatic Bronze-to-Silver, Silver-to-Gold, and Gold-to-Curie handoffs are disabled while Raw/Bronze history is migrated and validated. Silver, Gold, and Curie DAGs remain available for manual runs after explicit owner approval. Catalog initialization is a manual entrypoint.",
         "",
         "```mermaid",
         mermaid.rstrip(),

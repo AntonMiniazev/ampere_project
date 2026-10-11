@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
+import os
 import random
+from dataclasses import asdict
 from datetime import date, timedelta
 
 import numpy as np
@@ -10,7 +14,12 @@ from faker import Faker
 from sqlalchemy import text
 
 from order_data_generator.config import GeneratorConfig
-from order_data_generator.db import get_engine, upload_new_data
+from order_data_generator.db import (
+    complete_generation_batch,
+    get_engine,
+    start_generation_batch,
+    upload_new_data,
+)
 from order_data_generator.generators.clients_gen import (
     prepare_clients_update_and_generation,
     update_churned,
@@ -34,7 +43,9 @@ def set_seed(seed: int) -> None:
     Faker.seed(seed)
 
 
-def run_generation(run_date: date, config: GeneratorConfig) -> bool:
+def run_generation(
+    run_date: date, config: GeneratorConfig, *, scenario_seed: int | None = None
+) -> bool:
     """Execute the full daily source-side generation workflow for one logical date.
 
     The function first updates the customer base, then inserts new clients, and
@@ -43,6 +54,10 @@ def run_generation(run_date: date, config: GeneratorConfig) -> bool:
     and bronze jobs meaningful instead of repeatedly reading static data.
     """
     yesterday = run_date - timedelta(days=1)
+    fingerprint = hashlib.sha256(
+        json.dumps(asdict(config), sort_keys=True, default=list).encode("utf-8")
+    ).hexdigest()
+    code_version = os.getenv("AMPERE_SOURCE_CODE_VERSION", "unknown")
 
     logger.info("Starting atomic generation workflow for %s", run_date)
     # Serialize source progression across init/daily/backfill callers. The
@@ -52,34 +67,15 @@ def run_generation(run_date: date, config: GeneratorConfig) -> bool:
             text("SELECT pg_advisory_xact_lock(:lock_key)"),
             {"lock_key": 724614902631},
         )
-        latest_generated = connection.execute(
-            text(f'SELECT MAX(order_date) FROM "{config.schema}"."orders"')
-        ).scalar_one_or_none()
-        if latest_generated is not None:
-            if run_date <= latest_generated:
-                logger.info(
-                    "Skipping already-generated date %s (source is complete through %s)",
-                    run_date,
-                    latest_generated,
-                )
-                return False
-            expected_date = latest_generated + timedelta(days=1)
-            if run_date != expected_date:
-                raise ValueError(
-                    f"Generation must be chronological: source is complete through "
-                    f"{latest_generated}, next date is {expected_date}, requested {run_date}"
-                )
-        else:
-            latest_registration = connection.execute(
-                text(
-                    f'SELECT MAX(registration_date) FROM "{config.schema}"."clients"'
-                )
-            ).scalar_one_or_none()
-            if latest_registration is not None and run_date < latest_registration:
-                raise ValueError(
-                    f"Generation date {run_date} precedes the latest initialized client "
-                    f"registration date {latest_registration}"
-                )
+        batch = start_generation_batch(
+            connection,
+            run_date,
+            scenario_seed=scenario_seed,
+            config_fingerprint=fingerprint,
+            source_code_version=code_version,
+        )
+        if batch is None:
+            return False
         logger.info("Preparing client churn and new client generation")
         to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
             run_date, config, connection=connection
@@ -101,6 +97,16 @@ def run_generation(run_date: date, config: GeneratorConfig) -> bool:
             raise RuntimeError(
                 f"Generation for {run_date} committed no orders; refusing to advance"
             )
+        change_counts = complete_generation_batch(connection, batch)
+        changed_tables = sum(count > 0 for count in change_counts.values())
+        logger.info(
+            "Completed source batch dataset=%s batch=%s sequence=%s tables_changed=%s rows_changed=%s",
+            batch["dataset_id"],
+            batch["batch_id"],
+            batch["batch_sequence"],
+            changed_tables,
+            sum(change_counts.values()),
+        )
     logger.info("Daily generation workflow completed for %s", run_date)
     return True
 
@@ -134,9 +140,12 @@ def run_generation_range(
         if seed is not None:
             # Do not use Python's randomized hash(); the same date always gets
             # the same RNG state across containers and process restarts.
-            set_seed((seed + run_date.toordinal()) % (2**32))
+            day_seed = (seed + run_date.toordinal()) % (2**32)
+            set_seed(day_seed)
+        else:
+            day_seed = None
         logger.info("Backfill day %s/%s: %s", total, day_count, run_date)
-        if run_generation(run_date, config):
+        if run_generation(run_date, config, scenario_seed=day_seed):
             completed += 1
         run_date += timedelta(days=1)
 

@@ -1,7 +1,7 @@
-"""Start the isolated Raw-to-Iceberg Bronze Spark application."""
+"""Start the accepted Raw change journal to Bronze state application."""
 
-from iceberg_bronze.main import main
+from iceberg_bronze.journal_apply import run_cli
 
 
 if __name__ == "__main__":
-    main()
+    run_cli()

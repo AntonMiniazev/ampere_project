@@ -1,4 +1,4 @@
-"""Create all empty Ampere Iceberg tables from the canonical v3 contract."""
+"""Create all empty Ampere Iceberg tables from the canonical v4 contract."""
 
 from __future__ import annotations
 
@@ -8,7 +8,11 @@ import os
 from pyspark.sql import SparkSession
 
 from tools.contracts.ampere_contract import AmpereContract, ResolvedTable, load_contract
-from tools.contracts.spark_conformance import quote_identifier, validate_spark_table
+from tools.contracts.spark_conformance import (
+    quote_identifier,
+    spark_type,
+    validate_spark_table,
+)
 
 
 def _sql_literal(value: str) -> str:
@@ -23,6 +27,58 @@ def _partition_expression(spec: dict[str, str]) -> str:
     source = quote_identifier(spec["source"])
     transform = spec["transform"]
     return source if transform == "identity" else f"{transform}({source})"
+
+
+def _evolve_bronze_lineage_columns(
+    spark: SparkSession, target: str, table: ResolvedTable
+) -> None:
+    """Add the v4 lineage columns to existing v3 Bronze tables in place.
+
+    Iceberg permits adding nullable columns without rewriting existing files.
+    Limit this migration to the four known v4 lineage fields; all other schema
+    drift remains a hard validation failure.
+    """
+    if table.layer != "bronze":
+        return
+
+    lineage_names = {
+        "_dataset_id", "_source_row_id", "_source_batch_sequence", "_source_change_id"
+    }
+    expected = [
+        column for column in table.columns if column["name"] in lineage_names
+    ]
+    if not expected:
+        return
+
+    observed_schema = spark.table(target).schema
+    observed = {
+        field.name: spark_type(field.dataType.simpleString())
+        for field in observed_schema.fields
+    }
+    missing = []
+    for column in expected:
+        name = column["name"]
+        expected_type = spark_type(column["type_text"])
+        if name in observed:
+            if observed[name] != expected_type:
+                raise ValueError(
+                    f"Cannot evolve {target}: lineage column {name} has type "
+                    f"{observed[name]}, expected {expected_type}"
+                )
+        else:
+            missing.append(column)
+
+    if missing:
+        additions = ", ".join(
+            f"{quote_identifier(column['name'])} {column['type_text']}"
+            for column in missing
+        )
+        spark.sql(f"ALTER TABLE {target} ADD COLUMNS ({additions})")
+        logging.info(
+            "Added nullable v4 lineage columns to %s: %s",
+            target,
+            ", ".join(column["name"] for column in missing),
+        )
 
 
 def _create_table(spark: SparkSession, contract: AmpereContract, table: ResolvedTable) -> None:
@@ -56,6 +112,7 @@ def _create_table(spark: SparkSession, contract: AmpereContract, table: Resolved
         f"CREATE TABLE IF NOT EXISTS {target} ({columns}) USING iceberg"
         f"{partitions} TBLPROPERTIES ({properties_sql})"
     )
+    _evolve_bronze_lineage_columns(spark, target, table)
     if table.sort_order:
         ordering = ", ".join(
             f"{quote_identifier(item['source'])} {item.get('direction', 'asc').upper()}"
@@ -87,7 +144,7 @@ def initialize(spark_remote: str | None = None) -> None:
     ).getOrCreate()
     try:
         logger.info("Using existing Spark Connect session at %s", spark_remote)
-        for layer in ("bronze", "silver", "gold"):
+        for layer in ("raw", "bronze", "silver", "gold"):
             for table in contract.layer_tables(layer):
                 _create_table(spark, contract, table)
         logger.info("Initialized and validated all %s contract tables", len(contract.tables))

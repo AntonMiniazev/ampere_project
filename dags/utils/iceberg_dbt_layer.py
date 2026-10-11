@@ -7,7 +7,6 @@ from datetime import datetime
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
-from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.sdk import Variable
 from kubernetes.client import (
     V1ConfigMapVolumeSource,
@@ -32,10 +31,13 @@ def _secret(key: str, deployment: str, env_name: str) -> Secret:
     return Secret(deploy_type="env", deploy_target=env_name, secret=deployment, key=key)
 
 
-def build_layer_dag(
-    layer: str, *, full_rebuild: bool, wait_for_completion: bool = False
-) -> DAG:
-    """Create one serialized dbt layer DAG and its successful downstream handoff."""
+def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
+    """Create one serialized dbt layer DAG without an automatic next-layer handoff.
+
+    Silver-to-Gold and Gold-to-Curie handoffs remain disabled while historical
+    Raw/Bronze data is being migrated and validated. Restore them only after
+    explicit owner approval.
+    """
     if layer not in {"silver", "gold"}:
         raise ValueError("Layer must be silver or gold")
     mode = "full_history" if full_rebuild else "daily_refresh"
@@ -141,7 +143,7 @@ def build_layer_dag(
         catchup=False,
         max_active_runs=1,
     ) as dag:
-        build = KubernetesPodOperator(
+        KubernetesPodOperator(
             task_id=f"run__{layer}__dbt_{run_name}",
             name=f"ampere-dbt-iceberg-{layer}-{run_name}",
             namespace=config.namespace,
@@ -186,18 +188,5 @@ def build_layer_dag(
             get_logs=True,
             is_delete_operator_pod=True,
         )
-        if layer == "silver":
-            next_dag = f"ampere__iceberg__gold__dbt_duckdb__{run_name}"
-            next_task = f"trigger__iceberg__gold__dbt_duckdb__{run_name}"
-        else:
-            next_dag = "ampere__curie__cache_refresh__post_iceberg_gold"
-            next_task = "trigger__curie__cache_refresh__post_iceberg_gold"
-        handoff = TriggerDagRunOperator(
-            task_id=next_task,
-            trigger_dag_id=next_dag,
-            logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
-            reset_dag_run=True,
-            wait_for_completion=wait_for_completion,
-        )
-        build >> handoff
+        # No downstream DAG is triggered during the Raw/Bronze migration.
     return dag

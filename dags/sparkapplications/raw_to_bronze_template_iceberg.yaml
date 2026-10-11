@@ -1,7 +1,7 @@
 apiVersion: sparkoperator.k8s.io/v1beta2
 kind: SparkApplication
 metadata:
-  name: raw-to-iceberg-{{ params.stream }}-{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y%m%dt%H%M%S') }}
+  name: raw-journal-to-bronze-{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y%m%dt%H%M%S') }}
   namespace: {{ params.namespace }}
 spec:
   type: Python
@@ -13,34 +13,18 @@ spec:
     - ghcr-pull
   mainApplicationFile: local:///opt/spark/app/raw_to_bronze_etl_iceberg.py
   arguments:
-    - --groups-config
-    - '{{ params.groups_config | tojson }}'
-    - --schema
-    - {{ params.schema }}
-    - --run-date
-    - "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}"
-    - --raw-bucket
-    - {{ params.raw_bucket }}
-    - --raw-prefix
-    - {{ params.raw_prefix }}
-    - --source-system
-    - {{ params.source_system }}
-    - --iceberg-catalog
-    - iceberg_bronze
-    - --iceberg-bronze-schema
-    - bronze
-    - --iceberg-ops-schema
-    - ops
-    - --lakekeeper-warehouse
-    - {{ params.lakekeeper_warehouse }}
+    - --warehouse
+    - {{ params.raw_warehouse }}
+    - --bronze-warehouse
+    - {{ params.bronze_warehouse }}
     - --lakekeeper-uri
     - {{ params.lakekeeper_uri }}
-    - --lakekeeper-oauth-uri
+    - --oauth-uri
     - {{ params.lakekeeper_oauth_uri }}
-    - --lakekeeper-scope
+    - --scope
     - {{ params.lakekeeper_scope }}
     - --app-name
-    - {{ params.app_name }}
+    - raw-journal-to-bronze-{{ params.rebuild_all | lower }}
 {% if params.rebuild_all %}
     - --rebuild-all
 {% endif %}
@@ -51,7 +35,6 @@ spec:
     spark.sql.shuffle.partitions: "{{ params.shuffle_partitions }}"
     spark.default.parallelism: "{{ params.shuffle_partitions }}"
     spark.sql.adaptive.enabled: "true"
-    spark.sql.adaptive.coalescePartitions.enabled: "true"
     spark.redaction.regex: "(?i)secret|password|token|credential|access[.]?key"
     spark.kubernetes.driver.memoryOverhead: "{{ params.driver_memory_overhead }}"
     spark.kubernetes.executor.memoryOverhead: "{{ params.executor_memory_overhead }}"
@@ -60,21 +43,33 @@ spec:
     spark.hadoop.fs.s3a.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
     spark.hadoop.fs.s3a.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
     spark.hadoop.fs.s3a.aws.credentials.provider: "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
-    spark.hadoop.fs.s3.endpoint: "{{ params.minio_endpoint }}"
-    spark.hadoop.fs.s3.path.style.access: "true"
-    spark.hadoop.fs.s3.connection.ssl.enabled: "{{ params.minio_ssl_enabled }}"
-    spark.hadoop.fs.s3.impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
-    spark.hadoop.fs.AbstractFileSystem.s3.impl: "org.apache.hadoop.fs.s3a.S3A"
   restartPolicy:
     type: Never
   driver:
     cores: {{ params.driver_cores }}
     coreRequest: "{{ params.driver_core_request }}"
     memory: "{{ params.driver_memory }}"
+    memoryOverhead: "{{ params.driver_memory_overhead }}"
     serviceAccount: {{ params.service_account }}
     nodeSelector:
       kubernetes.io/hostname: {{ params.driver_node_selector }}
-    env:
+    env: &commonEnv
+      - name: PGHOST
+        value: "{{ params.pg_host }}"
+      - name: PGPORT
+        value: "{{ params.pg_port }}"
+      - name: PGDATABASE
+        value: "{{ params.pg_database }}"
+      - name: PGUSER
+        valueFrom:
+          secretKeyRef:
+            name: pguser
+            key: pguser
+      - name: PGPASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: pgpass
+            key: pgpass
       - name: MINIO_S3_ENDPOINT
         value: "{{ params.minio_endpoint }}"
       - name: MINIO_ACCESS_KEY
@@ -102,20 +97,7 @@ spec:
     cores: {{ params.executor_cores }}
     coreRequest: "{{ params.executor_core_request }}"
     memory: "{{ params.executor_memory }}"
-{% if params.get('executor_node_selector') %}
+    memoryOverhead: "{{ params.executor_memory_overhead }}"
     nodeSelector:
       kubernetes.io/hostname: {{ params.executor_node_selector }}
-{% endif %}
-    env:
-      - name: MINIO_S3_ENDPOINT
-        value: "{{ params.minio_endpoint }}"
-      - name: MINIO_ACCESS_KEY
-        valueFrom:
-          secretKeyRef:
-            name: minio-creds
-            key: MINIO_ACCESS_KEY
-      - name: MINIO_SECRET_KEY
-        valueFrom:
-          secretKeyRef:
-            name: minio-creds
-            key: MINIO_SECRET_KEY
+    env: *commonEnv

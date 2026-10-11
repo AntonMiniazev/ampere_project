@@ -1,4 +1,4 @@
-"""Validate contract v3 table resolution and Bronze physical layouts."""
+"""Validate contract v4 layer resolution and key physical layouts."""
 
 from __future__ import annotations
 
@@ -18,11 +18,25 @@ ROOT = Path(__file__).resolve().parents[1]
 class IcebergContractTests(unittest.TestCase):
     def test_resolves_all_tables_profiles_columns_and_layouts(self) -> None:
         contract = load_contract(ROOT / "tools/contracts/ampere_tables.json")
-        self.assertEqual(contract.version, 3)
+        self.assertEqual(contract.version, 4)
         self.assertEqual(
-            {layer: len(contract.layer_tables(layer)) for layer in ("bronze", "silver", "gold")},
-            {"bronze": 17, "silver": 17, "gold": 8},
+            {layer: len(contract.layer_tables(layer)) for layer in ("raw", "bronze", "silver", "gold")},
+            {"raw": 16, "bronze": 17, "silver": 17, "gold": 8},
         )
+        self.assertEqual(contract.layer_inventory["total"], 58)
+        orders = contract.table("raw", "orders")
+        self.assertEqual(orders.namespace, "raw")
+        self.assertEqual(orders.ingestion["kind"], "transactional_change_log")
+        self.assertEqual(orders.ingestion["entity_keys"], ("_dataset_id", "_source_row_id"))
+        self.assertEqual(orders.ingestion["source_order"], ("_batch_sequence", "_change_id"))
+        self.assertEqual(orders.ingestion["before_image_columns"]["order_date"], "_before_order_date")
+        for table in contract.layer_tables("raw"):
+            bronze = contract.table("bronze", table.name)
+            bronze_columns = {column["name"]: column["type_text"] for column in bronze.columns}
+            self.assertEqual(bronze_columns["_dataset_id"], "string")
+            self.assertEqual(bronze_columns["_source_row_id"], "string")
+            self.assertEqual(bronze_columns["_source_batch_sequence"], "bigint")
+            self.assertEqual(bronze_columns["_source_change_id"], "bigint")
         self.assertEqual(contract.table("bronze", "bronze_apply_registry").namespace, "ops")
         self.assertEqual(
             contract.table("bronze", "order_product").partition_spec,
@@ -77,6 +91,32 @@ class IcebergContractTests(unittest.TestCase):
             "s3a://warehouse/assortment/metadata/00000-test.gz.metadata.json"
         )
         spark.read.format.return_value.load.return_value.select.assert_called_once_with("content")
+
+    def test_raw_sort_order_is_read_from_active_iceberg_metadata(self) -> None:
+        from tools.contracts.spark_conformance import _active_sort_order
+
+        metadata_uri = "s3://warehouse/orders/metadata/00000-test.metadata.json"
+        metadata = {
+            "default-sort-order-id": 1,
+            "sort-orders": [{"order-id": 1, "fields": [
+                {"source-id": 2, "transform": "identity", "direction": "asc", "null-order": "nulls-first"},
+                {"source-id": 3, "transform": "identity", "direction": "asc", "null-order": "nulls-first"},
+            ]}],
+            "current-schema-id": 0,
+            "schemas": [{"schema-id": 0, "fields": [
+                {"id": 2, "name": "_batch_sequence"},
+                {"id": 3, "name": "_change_id"},
+            ]}],
+        }
+        spark = MagicMock()
+        spark.sql.return_value.collect.return_value = [{"file": metadata_uri}]
+        spark.read.format.return_value.load.return_value.select.return_value.first.return_value = {
+            "content": json.dumps(metadata).encode("utf-8")
+        }
+
+        observed = _active_sort_order(spark, "iceberg_raw.raw.orders")
+
+        self.assertEqual(observed, [("_batch_sequence", "asc"), ("_change_id", "asc")])
 
 
 if __name__ == "__main__":

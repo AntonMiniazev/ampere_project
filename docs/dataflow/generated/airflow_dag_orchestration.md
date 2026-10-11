@@ -1,8 +1,8 @@
 # Airflow DAG orchestration
 
-This page is generated from `dags/my_dags/*.py`. It shows the normal daily chain, manual recovery entrypoints, and the trigger conditions that matter operationally.
+This page is generated from `dags/my_dags/*.py`. During the Raw/Bronze migration, automatic handoffs stop at Bronze; Silver, Gold, and Curie remain manual recovery entrypoints.
 
-The scheduled generator starts the daily chain. Raw and Bronze run as Spark jobs, and isolated dbt pods build and publish Silver, then Gold. Each parent finishes after dispatching its downstream DAG; child runs report their own outcomes. Catalog initialization and the Bronze-to-Gold full rebuild are manually run entrypoints.
+The scheduled generator starts the daily chain through Raw and Bronze. Automatic Bronze-to-Silver, Silver-to-Gold, and Gold-to-Curie handoffs are disabled while Raw/Bronze history is migrated and validated. Silver, Gold, and Curie DAGs remain available for manual runs after explicit owner approval. Catalog initialization is a manual entrypoint.
 
 ```mermaid
 flowchart TD
@@ -23,12 +23,6 @@ flowchart TD
 
     START --> D_AMPERE__PRE_RAW__GENERATORS__DAILY
     D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD -->|"upstream success; does not wait"| D_AMPERE__HOUSEKEEPING__ICEBERG_METADATA__WEEKLY
-    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY
-    D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__FULL_REBUILD -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD
-    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__DAILY -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
-    D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; does not wait"| D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD
-    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__DAILY
-    D_AMPERE__ICEBERG__SILVER__DBT_DUCKDB__FULL_REBUILD -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__GOLD__DBT_DUCKDB__FULL_REBUILD
     D_AMPERE__PRE_RAW__GENERATORS__DAILY -->|"upstream success; does not wait"| D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY
     D_AMPERE__RAW_LANDING__POSTGRES_TO_LANDING__DAILY -->|"upstream success; does not wait"| D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY
 
@@ -56,18 +50,12 @@ flowchart TD
 | `ampere__pre_raw__generators__backfill` | manual / triggered | layer:pre_raw, system:postgres, mode:backfill | `dags/my_dags/ampere__pre_raw__generators__backfill.py` |
 | `ampere__pre_raw__generators__daily` | 15 4 * * * | layer:pre_raw, system:postgres, mode:daily | `dags/my_dags/ampere__pre_raw__generators__daily.py` |
 | `ampere__pre_raw__generators__init` | manual / triggered | layer:pre_raw, system:postgres, mode:init | `dags/my_dags/ampere__pre_raw__generators__init.py` |
-| `ampere__raw_landing__postgres_to_landing__daily` | manual / triggered | layer:raw_landing, system:postgres, system:spark, system:minio, mode:daily | `dags/my_dags/ampere__raw_landing__postgres_to_landing__daily.py` |
+| `ampere__raw_landing__postgres_to_landing__daily` | manual / triggered | layer:raw, system:postgres, system:spark, system:lakekeeper | `dags/my_dags/ampere__raw_landing__postgres_to_landing__daily.py` |
 
 ## Cross-DAG Triggers
 
 | Source DAG | Target DAG | Task | Condition |
 |---|---|---|---|
 | `ampere__curie__cache_refresh__post_iceberg_gold` | `ampere__housekeeping__iceberg_metadata__weekly` | `trigger__iceberg__housekeeping__weekly` | upstream success; does not wait |
-| `ampere__iceberg__bronze__raw_to_iceberg__daily` | `ampere__iceberg__silver__dbt_duckdb__daily` | `trigger__iceberg__silver__dbt_duckdb__daily` | upstream success; does not wait |
-| `ampere__iceberg__bronze__raw_to_iceberg__full_rebuild` | `ampere__iceberg__silver__dbt_duckdb__full_rebuild` | `trigger__iceberg__silver__dbt_duckdb__full_rebuild` | upstream success; does not wait |
-| `ampere__iceberg__gold__dbt_duckdb__daily` | `ampere__curie__cache_refresh__post_iceberg_gold` | `trigger__curie__cache_refresh__post_iceberg_gold` | upstream success; does not wait |
-| `ampere__iceberg__gold__dbt_duckdb__full_rebuild` | `ampere__curie__cache_refresh__post_iceberg_gold` | `trigger__curie__cache_refresh__post_iceberg_gold` | upstream success; does not wait |
-| `ampere__iceberg__silver__dbt_duckdb__daily` | `ampere__iceberg__gold__dbt_duckdb__daily` | `trigger__iceberg__gold__dbt_duckdb__daily` | upstream success; does not wait |
-| `ampere__iceberg__silver__dbt_duckdb__full_rebuild` | `ampere__iceberg__gold__dbt_duckdb__full_rebuild` | `trigger__iceberg__gold__dbt_duckdb__full_rebuild` | upstream success; does not wait |
 | `ampere__pre_raw__generators__daily` | `ampere__raw_landing__postgres_to_landing__daily` | `trigger__raw_landing__postgres_to_landing__daily` | upstream success; does not wait |
 | `ampere__raw_landing__postgres_to_landing__daily` | `ampere__iceberg__bronze__raw_to_iceberg__daily` | `trigger__iceberg__bronze__raw_to_iceberg__daily` | upstream success; does not wait |

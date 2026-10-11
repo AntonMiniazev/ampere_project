@@ -6,6 +6,7 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from dataclasses import replace
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -17,9 +18,14 @@ package.__path__ = [str(GENERATOR_DIR)]
 sys.modules["order_data_generator"] = package
 
 from order_data_generator import main  # noqa: E402
+from order_data_generator.config import load_config  # noqa: E402
 
 
 class GeneratorTransactionTests(unittest.TestCase):
+    @staticmethod
+    def _config():
+        return replace(load_config(), schema="source")
+
     @staticmethod
     def _result(value):
         result = MagicMock()
@@ -34,23 +40,27 @@ class GeneratorTransactionTests(unittest.TestCase):
         engine.begin.return_value = transaction
         connection.execute.side_effect = [
             MagicMock(),
-            self._result(date(2026, 10, 9)),
             self._result(date(2026, 10, 10)),
         ]
+        batch = {"dataset_id": "dataset", "batch_id": "batch", "batch_sequence": 2}
 
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(main, "prepare_clients_update_and_generation", return_value=([], [])) as prepare_clients,
             patch.object(main, "update_churned") as update_churned,
             patch.object(main, "prepare_orders_statuses") as prepare_orders,
+            patch.object(main, "start_generation_batch", return_value=batch) as start_batch,
+            patch.object(main, "complete_generation_batch", return_value={"orders": 1}) as complete_batch,
         ):
             generated = main.run_generation(
-                date(2026, 10, 10), SimpleNamespace(schema="source")
+                date(2026, 10, 10), self._config()
             )
 
         self.assertTrue(generated)
         engine.begin.assert_called_once_with()
-        self.assertEqual(connection.execute.call_count, 3)
+        self.assertEqual(connection.execute.call_count, 2)
+        self.assertEqual(start_batch.call_args.args[0], connection)
+        self.assertEqual(complete_batch.call_args.args, (connection, batch))
         self.assertEqual(prepare_clients.call_args.kwargs["connection"], connection)
         self.assertEqual(update_churned.call_args.kwargs["connection"], connection)
         self.assertEqual(prepare_orders.call_args.kwargs["connection"], connection)
@@ -62,22 +72,19 @@ class GeneratorTransactionTests(unittest.TestCase):
         transaction.__enter__.return_value = connection
         engine = MagicMock()
         engine.begin.return_value = transaction
-        connection.execute.side_effect = [
-            MagicMock(),
-            self._result(date(2026, 10, 10)),
-        ]
-
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(main, "prepare_clients_update_and_generation") as prepare,
+            patch.object(main, "start_generation_batch", return_value=None) as start_batch,
         ):
             generated = main.run_generation(
-                date(2026, 10, 10), SimpleNamespace(schema="source")
+                date(2026, 10, 10), self._config()
             )
 
         self.assertFalse(generated)
         prepare.assert_not_called()
-        self.assertEqual(connection.execute.call_count, 2)
+        self.assertEqual(connection.execute.call_count, 1)
+        start_batch.assert_called_once()
 
     def test_generation_rejects_a_gap_in_the_source_dates(self) -> None:
         connection = MagicMock()
@@ -85,17 +92,17 @@ class GeneratorTransactionTests(unittest.TestCase):
         transaction.__enter__.return_value = connection
         engine = MagicMock()
         engine.begin.return_value = transaction
-        connection.execute.side_effect = [
-            MagicMock(),
-            self._result(date(2026, 10, 9)),
-        ]
-
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(main, "prepare_clients_update_and_generation") as prepare,
+            patch.object(
+                main,
+                "start_generation_batch",
+                side_effect=ValueError("Generation must be chronological"),
+            ),
             self.assertRaisesRegex(ValueError, "must be chronological"),
         ):
-            main.run_generation(date(2026, 10, 11), SimpleNamespace(schema="source"))
+            main.run_generation(date(2026, 10, 11), self._config())
 
         prepare.assert_not_called()
 
