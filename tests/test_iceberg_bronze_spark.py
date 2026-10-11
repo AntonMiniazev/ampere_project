@@ -156,7 +156,7 @@ class IcebergRegistryTests(unittest.TestCase):
         rebuilt = _full_rebuild_transfer_id(dataset_id, 37)
         prior = uuid.uuid5(
             uuid.NAMESPACE_URL,
-            f"ampere-bronze-rebuild:{dataset_id}:37:contract-v4",
+            f"ampere-bronze-rebuild:{dataset_id}:37:contract-v5",
         )
 
         self.assertEqual(rebuilt, _full_rebuild_transfer_id(dataset_id, 37))

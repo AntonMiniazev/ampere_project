@@ -1,4 +1,4 @@
-"""Check that housekeeping resolves scope and thresholds from contract v4."""
+"""Check that housekeeping resolves scope and thresholds from contract v5."""
 
 from __future__ import annotations
 

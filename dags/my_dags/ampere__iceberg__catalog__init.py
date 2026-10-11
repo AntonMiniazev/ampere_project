@@ -30,7 +30,7 @@ with DAG(
     max_active_runs=1,
 ) as dag:
     initialize = KubernetesPodOperator(
-        task_id="initialize__iceberg__catalog_from_contract_v4",
+        task_id="initialize__iceberg__catalog_from_contract_v5",
         name="ampere-iceberg-catalog-init",
         namespace=CONFIG.namespace,
         image=resolve_spark_connect_client_image(),

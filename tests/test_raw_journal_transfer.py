@@ -20,6 +20,17 @@ def _transfer(size: int, first_sequence: int = 1) -> dict:
 
 
 class RawJournalTransferTests(unittest.TestCase):
+    def test_raw_query_joins_compact_keys_to_source_after_images(self) -> None:
+        spec = journal_to_raw.CONTRACT.table("raw", "order_product")
+        sql = journal_to_raw._change_slice_query(spec, "transfer-1")
+
+        self.assertIn('FROM source_changes."order_product" j', sql)
+        self.assertIn('LEFT JOIN "source"."order_product" s', sql)
+        self.assertIn('s."order_date" AS "order_date"', sql)
+        self.assertIn("j.source_row_id", sql)
+        self.assertIn("pb.batch_sequence", sql)
+        self.assertNotIn("_before_", sql)
+
     def test_requested_backlog_is_processed_in_groups_no_larger_than_96(self) -> None:
         transfers = [_transfer(96, 1), _transfer(96, 97), _transfer(96, 193), _transfer(17, 289)]
         with (

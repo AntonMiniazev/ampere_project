@@ -269,7 +269,7 @@ def _full_rebuild_transfer_id(dataset_id: str, last_sequence: int) -> uuid.UUID:
     """Give corrected rebuilds a fresh checkpoint identity while keeping retries stable."""
     return uuid.uuid5(
         uuid.NAMESPACE_URL,
-        f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v4:{BRONZE_REBUILD_GENERATION}",
+        f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v5:{BRONZE_REBUILD_GENERATION}",
     )
 
 

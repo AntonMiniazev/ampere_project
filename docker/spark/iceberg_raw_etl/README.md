@@ -77,7 +77,7 @@ share the one-slot `iceberg_pipeline_mutation` Airflow pool.
 
 This implementation is prepared locally and has not been released or deployed.
 Deployment requires the Lakekeeper `raw` warehouse backed by MinIO storage,
-contract v4 catalog tables, the existing PostgreSQL/MinIO/Lakekeeper secrets,
+contract v5 catalog tables, compact PostgreSQL source-change metadata, and the existing MinIO/Lakekeeper secrets,
 and the Airflow mutation pool. The init DAG defaults to a destructive source
 reset; `source_init_mode=journal_migrate` installs the journal on existing rows
 without truncation, using them as one baseline if the dataset is new. New

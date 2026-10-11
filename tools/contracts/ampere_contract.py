@@ -1,4 +1,4 @@
-"""Load and resolve Ampere's canonical Iceberg contract v4."""
+"""Load and resolve Ampere's canonical Iceberg contract v5."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-CONTRACT_VERSION = 4
+CONTRACT_VERSION = 5
 LAYERS = ("raw", "bronze", "silver", "gold")
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ampere_tables.json")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -187,8 +187,8 @@ def _validate_publication(layer: str, table_path: str, raw: Any, columns: set[st
 def _validate_ingestion(table_path: str, raw: Any, columns: dict[str, str]) -> dict[str, Any]:
     """Validate Raw change-history semantics without discarding contract fields."""
     ingestion = _object(raw, f"{table_path}.ingestion")
-    if ingestion.get("kind") != "transactional_change_log":
-        _fail(f"{table_path}.ingestion.kind", "must be transactional_change_log")
+    if ingestion.get("kind") != "compact_source_change_metadata":
+        _fail(f"{table_path}.ingestion.kind", "must be compact_source_change_metadata")
 
     def names(key: str, *, required: bool = True) -> tuple[str, ...]:
         value = ingestion.get(key)
@@ -211,25 +211,6 @@ def _validate_ingestion(table_path: str, raw: Any, columns: dict[str, str]) -> d
     required_metadata = names("required_metadata")
     if not business_columns:
         _fail(f"{table_path}.ingestion.business_columns", "must identify the typed source payload")
-
-    before_images = _object(
-        ingestion.get("before_image_columns"),
-        f"{table_path}.ingestion.before_image_columns",
-    )
-    if set(before_images) != set(business_columns):
-        _fail(
-            f"{table_path}.ingestion.before_image_columns",
-            "must map every business column and no other columns",
-        )
-    for business_name, before_name in before_images.items():
-        before_name = _identifier(before_name, f"{table_path}.ingestion.before_image_columns.{business_name}")
-        if before_name not in columns:
-            _fail(f"{table_path}.ingestion.before_image_columns.{business_name}", f"unknown column {before_name!r}")
-        if columns[business_name] != columns[before_name]:
-            _fail(
-                f"{table_path}.ingestion.before_image_columns.{business_name}",
-                f"before-image type {columns[before_name]!r} differs from source type {columns[business_name]!r}",
-            )
 
     metadata_required = {
         "_dataset_id", "_batch_id", "_batch_sequence", "_change_id",
@@ -307,7 +288,6 @@ def _validate_ingestion(table_path: str, raw: Any, columns: dict[str, str]) -> d
         source_order=source_order,
         operations=tuple(operations),
         business_columns=business_columns,
-        before_image_columns=dict(before_images),
         required_metadata=required_metadata,
     )
     return result

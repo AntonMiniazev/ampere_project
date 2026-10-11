@@ -16,13 +16,13 @@ import source_journal  # noqa: E402
 
 
 class SourceJournalResetTests(unittest.TestCase):
-    def test_reset_clears_old_payload_before_writing_new_baseline(self) -> None:
+    def test_reset_clears_old_compact_metadata_before_writing_baseline(self) -> None:
         connection = MagicMock()
         with (
             patch.object(source_journal, "SOURCE_TABLES", ("orders", "payments")),
             patch.object(source_journal, "_ensure_control_schema"),
             patch.object(source_journal, "_ensure_source_row_identity"),
-            patch.object(source_journal, "_create_typed_journal_table"),
+            patch.object(source_journal, "_create_compact_journal_table"),
             patch.object(source_journal, "_install_triggers"),
             patch.object(source_journal, "_create_batch", return_value=("batch-id", 1)),
             patch.object(source_journal, "_source_columns", return_value=[("id", "integer")]),

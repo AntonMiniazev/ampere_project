@@ -64,6 +64,9 @@ class SourceJournalBulkCaptureTests(unittest.TestCase):
         self.assertIn("GET DIAGNOSTICS v_change_count = ROW_COUNT", function_sql)
         self.assertIn("change_count = change_count + v_change_count", function_sql)
         self.assertIn("JOIN old_rows o USING (source_row_id)", function_sql)
+        self.assertIn("source_row_id", function_sql)
+        self.assertNotIn("_before_", function_sql)
+        self.assertNotIn("v_source_targets", function_sql)
         self.assertNotIn("FOR v_column", function_sql)
         self.assertNotIn("information_schema.columns", function_sql)
 

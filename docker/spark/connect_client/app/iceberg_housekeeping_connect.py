@@ -1,4 +1,4 @@
-"""Maintain contract v4 Iceberg tables through the shared Spark Connect service."""
+"""Maintain contract v5 Iceberg tables through the shared Spark Connect service."""
 
 from __future__ import annotations
 

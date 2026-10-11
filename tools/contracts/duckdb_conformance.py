@@ -1,4 +1,4 @@
-"""Validate DuckDB-visible Iceberg tables against contract v4."""
+"""Validate DuckDB-visible Iceberg tables against contract v5."""
 
 from __future__ import annotations
 

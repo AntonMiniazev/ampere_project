@@ -1,4 +1,4 @@
-"""Transfer a frozen set of completed PostgreSQL change batches to Raw Iceberg."""
+"""Transfer compact change metadata plus source after-images to Raw Iceberg."""
 
 from __future__ import annotations
 
@@ -130,7 +130,7 @@ def reserve_transfer(max_batches: int = 32) -> dict | None:
             last_sequence = int(batches[-1][1])
             transfer_id = uuid.uuid5(
                 uuid.NAMESPACE_URL,
-                f"ampere-raw:{dataset_id}:{first_sequence}:{last_sequence}:contract-v4",
+                f"ampere-raw:{dataset_id}:{first_sequence}:{last_sequence}:contract-v5",
             )
             cursor.execute(
                 "INSERT INTO pipeline.raw_transfers "
@@ -178,30 +178,59 @@ def _raw_table_name(table: str) -> str:
     return ".".join(quote_identifier(part) for part in name.split("."))
 
 
+def _change_slice_query(spec, transfer_id: str) -> str:
+    """Build a JDBC slice from compact keys and source after-images."""
+    columns = [column["name"] for column in spec.columns]
+    business_columns = set(spec.ingestion["business_columns"])
+    table = _pg_quote(spec.ingestion["source_table"])
+    source_schema = _pg_quote(spec.ingestion["source_schema"])
+    metadata = {
+        "_dataset_id": "pb.dataset_id::text",
+        "_batch_id": "j.batch_id::text",
+        "_batch_sequence": "pb.batch_sequence",
+        "_change_id": "j.change_id",
+        "_source_row_id": "j.source_row_id::text",
+        "_op": "j.op",
+        "_business_date": "pb.business_date",
+        "_captured_at": "pb.completed_at",
+        "_transfer_id": f"'{transfer_id}'::text",
+        "_ingest_run_id": "'ampere-raw-transfer'::text",
+        "_ingest_ts": "clock_timestamp()",
+        "_source_system": "'postgres-pre-raw'::text",
+        "_source_table": f"'{spec.ingestion['source_table']}'::text",
+        "_contract_version": "5::integer",
+    }
+    projection = []
+    for column in columns:
+        if column in business_columns:
+            expression = f"s.{_pg_quote(column)}"
+        else:
+            expression = metadata[column]
+        projection.append(f"{expression} AS {_pg_quote(column)}")
+    return (
+        "(SELECT " + ", ".join(projection) +
+        f" FROM source_changes.{table} j "
+        "JOIN pipeline.raw_transfer_batches rtb ON rtb.batch_id=j.batch_id "
+        "JOIN pipeline.batches pb "
+        "ON pb.dataset_id=rtb.dataset_id AND pb.batch_id=rtb.batch_id "
+        f"LEFT JOIN {source_schema}.{table} s "
+        "ON s.source_row_id=j.source_row_id "
+        f"WHERE rtb.transfer_id='{transfer_id}') AS change_slice"
+    )
+
+
 _SPARK: SparkSession
 
 
 def _merge_source_changes(spark: SparkSession, transfer: dict, table: str) -> int:
-    """Idempotently merge one typed table slice using its immutable change key."""
+    """Join key-only change metadata to source after-images, then merge into Raw."""
     expected_count = transfer["counts"][table]
     if expected_count == 0:
         return 0
 
     spec = CONTRACT.table("raw", table)
     columns = [column["name"] for column in spec.columns]
-    projection = []
-    for column in columns:
-        if column == "_transfer_id":
-            projection.append(f"'{transfer['transfer_id']}'::text AS _transfer_id")
-        else:
-            projection.append(f"j.{_pg_quote(column)}")
-    query = (
-        "(SELECT " + ", ".join(projection) +
-        f" FROM source_changes.{_pg_quote(table)} j "
-        "JOIN pipeline.raw_transfer_batches b "
-        "ON b.dataset_id=j._dataset_id::uuid AND b.batch_id=j._batch_id::uuid "
-        f"WHERE b.transfer_id='{transfer['transfer_id']}') AS change_slice"
-    )
+    query = _change_slice_query(spec, transfer["transfer_id"])
     pg = get_postgres_connection_settings()
     source = (
         spark.read.format("jdbc")

@@ -12,8 +12,8 @@ layers:
   raw:
     title: Raw Iceberg change history
     status: implemented
-    responsibility: Transfer completed PostgreSQL change batches into typed Raw Iceberg tables with a durable per-table acknowledgment registry.
-    diagram_note: Typed INSERT, UPDATE, DELETE, and baseline changes ordered by dataset batch and change sequence.
+    responsibility: Join compact PostgreSQL change keys to source after-images and merge typed change rows into Raw Iceberg with durable per-table acknowledgments.
+    diagram_note: Compact source-change keys joined to typed after-images, ordered by dataset batch and change sequence.
     engine: [Spark]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -23,7 +23,7 @@ layers:
   bronze:
     title: Bronze
     status: implemented
-    responsibility: Reconstruct and incrementally maintain current source state from accepted Raw changes, with dataset-scoped row identity and checkpoints.
+    responsibility: Reconstruct and incrementally maintain current source state from accepted Raw change rows, with dataset-scoped row identity and checkpoints.
     diagram_note: Reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.
     engine: [Spark, Iceberg]
     storage: [MinIO, Iceberg]
@@ -63,7 +63,7 @@ flows:
     to: raw
     engine: Spark
     artifact: Accepted Raw Iceberg change history
-    description: Freeze completed source batches and idempotently merge their typed journal rows into Raw Iceberg.
+    description: Freeze completed source batches, join compact change keys to source rows, and idempotently merge typed rows into Raw Iceberg.
 
   - from: raw
     to: bronze

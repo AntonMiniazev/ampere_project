@@ -1,4 +1,4 @@
-"""PostgreSQL dataset, generation-batch, and typed source-change journal DDL."""
+"""PostgreSQL dataset, generation-batch, and compact source-change metadata DDL."""
 
 from __future__ import annotations
 
@@ -30,20 +30,10 @@ SOURCE_TABLES = (
 )
 
 _METADATA_COLUMNS = {
-    "_dataset_id": "text NOT NULL",
-    "_batch_id": "text NOT NULL",
-    "_batch_sequence": "bigint NOT NULL",
-    "_change_id": "bigint NOT NULL",
-    "_source_row_id": "text NOT NULL",
-    "_op": "char(1) NOT NULL",
-    "_business_date": "date NOT NULL",
-    "_captured_at": "timestamptz NOT NULL",
-    "_transfer_id": "text",
-    "_ingest_run_id": "text NOT NULL",
-    "_ingest_ts": "timestamptz NOT NULL",
-    "_source_system": "text NOT NULL",
-    "_source_table": "text NOT NULL",
-    "_contract_version": "integer NOT NULL",
+    "batch_id": "uuid NOT NULL",
+    "change_id": "bigint NOT NULL",
+    "source_row_id": "uuid NOT NULL",
+    "op": "char(1) NOT NULL",
 }
 
 
@@ -261,24 +251,50 @@ def _ensure_control_schema(connection) -> None:
     )
 
 
-def _create_typed_journal_table(connection, source_schema: str, table: str) -> list[str]:
+def _create_compact_journal_table(connection, source_schema: str, table: str) -> list[str]:
+    """Create a key-only journal, migrating wide legacy rows when necessary.
+
+    The source tables remain the sole owner of business values. Journal records
+    retain only entity identity, operation, and batch ordering so Raw can fetch
+    after-images by indexed source_row_id when it transfers a completed batch.
+    """
     source_columns = _source_columns(connection, source_schema, table)
-    before_columns = [(f"_before_{name}", sql_type) for name, sql_type in source_columns]
-    declarations = [f"{_quote(name)} {sql_type}" for name, sql_type in source_columns]
-    declarations += [f"{_quote(name)} {sql_type}" for name, sql_type in before_columns]
-    declarations += [f"{_quote(name)} {sql_type}" for name, sql_type in _METADATA_COLUMNS.items()]
-    declarations.append("PRIMARY KEY (_dataset_id, _batch_id, _change_id)")
-    connection.execute(
+    journal = f"source_changes.{_quote(table)}"
+    existing = connection.execute(
         text(
-            f"CREATE TABLE IF NOT EXISTS source_changes.{_quote(table)} "
-            f"({', '.join(declarations)})"
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='source_changes' AND table_name=:table"
+        ),
+        {"table": table},
+    ).scalars().all()
+    if not existing:
+        declarations = [f"{_quote(name)} {sql_type}" for name, sql_type in _METADATA_COLUMNS.items()]
+        declarations.append("PRIMARY KEY (batch_id, change_id)")
+        connection.execute(text(f"CREATE TABLE {journal} ({', '.join(declarations)})"))
+    elif set(existing) != set(_METADATA_COLUMNS):
+        # Migrate v4 full-payload rows to four compact fields while preserving
+        # operation order and keys for any accepted but untransferred batches.
+        compact = f"source_changes.{_quote(f'compact_{table}')}"
+        connection.execute(text(f"DROP TABLE IF EXISTS {compact}"))
+        declarations = [f"{_quote(name)} {sql_type}" for name, sql_type in _METADATA_COLUMNS.items()]
+        declarations.append("PRIMARY KEY (batch_id, change_id)")
+        connection.execute(text(f"CREATE TABLE {compact} ({', '.join(declarations)})"))
+        connection.execute(
+            text(
+                f"INSERT INTO {compact} (batch_id,change_id,source_row_id,op) "
+                f"SELECT _batch_id::uuid,_change_id,_source_row_id::uuid,_op "
+                f"FROM {journal}"
+            )
         )
-    )
+        connection.execute(text(f"DROP TABLE {journal}"))
+        connection.execute(
+            text(f"ALTER TABLE {compact} RENAME TO {_quote(table)}")
+        )
     connection.execute(
         text(
             f"CREATE INDEX IF NOT EXISTS {_quote(f'ix_change_{table}_batch')} "
             f"ON source_changes.{_quote(table)} "
-            "(_dataset_id, _batch_sequence, _change_id)"
+            "(batch_id, change_id)"
         )
     )
     return [name for name, _ in source_columns]
@@ -297,14 +313,6 @@ def _install_capture_function(connection) -> None:
                 v_batch_id text;
                 v_batch_sequence bigint;
                 v_business_date date;
-                v_source_targets text;
-                v_source_new_values text;
-                v_source_null_values text;
-                v_before_targets text;
-                v_before_old_values text;
-                v_before_null_values text;
-                v_target_columns text;
-                v_select_values text;
                 v_from_clause text;
                 v_table text := TG_TABLE_NAME;
                 v_row_id text;
@@ -338,46 +346,13 @@ def _install_capture_function(connection) -> None:
                     v_from_clause := 'FROM old_rows o';
                 END IF;
 
-                SELECT
-                    string_agg(format('%I', a.attname), ', ' ORDER BY a.attnum),
-                    string_agg(format('n.%I', a.attname), ', ' ORDER BY a.attnum),
-                    string_agg(format('NULL::%s', format_type(a.atttypid, a.atttypmod)), ', ' ORDER BY a.attnum),
-                    string_agg(format('%I', '_before_' || a.attname), ', ' ORDER BY a.attnum),
-                    string_agg(format('o.%I', a.attname), ', ' ORDER BY a.attnum)
-                INTO v_source_targets, v_source_new_values, v_source_null_values,
-                     v_before_targets, v_before_old_values
-                FROM pg_catalog.pg_attribute a
-                WHERE a.attrelid = TG_RELID
-                  AND a.attnum > 0 AND NOT a.attisdropped
-                  AND a.attname <> 'source_row_id';
-
-                SELECT string_agg(format('NULL::%s', format_type(a.atttypid, a.atttypmod)), ', ' ORDER BY a.attnum)
-                INTO v_before_null_values
-                FROM pg_catalog.pg_attribute a
-                WHERE a.attrelid = TG_RELID
-                  AND a.attnum > 0 AND NOT a.attisdropped
-                  AND a.attname <> 'source_row_id';
-
-                v_target_columns := v_source_targets || ', ' || v_before_targets ||
-                    ', _dataset_id, _batch_id, _batch_sequence, _change_id, _source_row_id, _op,' ||
-                    ' _business_date, _captured_at, _transfer_id, _ingest_run_id, _ingest_ts,' ||
-                    ' _source_system, _source_table, _contract_version';
-                v_select_values := CASE WHEN TG_OP = 'DELETE' THEN v_source_null_values
-                                        ELSE v_source_new_values END;
-                v_select_values := v_select_values || ', ' ||
-                    CASE WHEN TG_OP = 'INSERT' THEN v_before_null_values
-                         ELSE v_before_old_values END ||
-                    ', $1::text, $2::text, $3::bigint,' ||
-                    ' nextval(''source_changes.change_id_seq''), ' || v_row_id ||
-                    ', $4::char(1), $5::date, clock_timestamp(), NULL::text,' ||
-                    ' current_setting(''application_name'', true), clock_timestamp(),' ||
-                    ' ''postgres-pre-raw'', $6::text, 4';
-
                 EXECUTE format(
-                    'INSERT INTO source_changes.%I (%s) SELECT %s %s',
-                    v_table, v_target_columns, v_select_values, v_from_clause
-                ) USING v_dataset_id, v_batch_id, v_batch_sequence,
-                        v_op, v_business_date, v_table;
+                    'INSERT INTO source_changes.%I '
+                    '(batch_id,change_id,source_row_id,op) ' ||
+                    'SELECT $1::uuid,nextval(''source_changes.change_id_seq''),' ||
+                    v_row_id || '::uuid,$2::char(1) ' || v_from_clause,
+                    v_table
+                ) USING v_batch_id, v_op;
                 GET DIAGNOSTICS v_change_count = ROW_COUNT;
 
                 IF TG_OP = 'UPDATE' THEN
@@ -513,23 +488,23 @@ def _complete_batch(connection, dataset_id: uuid.UUID, batch_id: uuid.UUID) -> N
     )
 
 
-def _truncate_source_change_payload(connection) -> None:
-    """Remove obsolete source-change rows before seeding a reset baseline."""
+def _truncate_source_change_metadata(connection) -> None:
+    """Clear old compact keys before seeding a new dataset baseline."""
     tables = ", ".join(
         f"{_quote('source_changes')}.{_quote(table)}" for table in SOURCE_TABLES
     )
     connection.execute(text(f"TRUNCATE TABLE {tables}"))
 
 
-def _delete_inactive_source_change_payload(connection) -> None:
+def _delete_inactive_source_change_metadata(connection) -> None:
     """Keep only the active dataset's changes while retaining batch metadata."""
     for table in SOURCE_TABLES:
         connection.execute(
             text(
-                f"DELETE FROM {_quote('source_changes')}.{_quote(table)} "
-                "WHERE _dataset_id <> ("
-                "SELECT dataset_id::text FROM pipeline.datasets WHERE status='ready'"
-                ")"
+                f"DELETE FROM {_quote('source_changes')}.{_quote(table)} j "
+                "WHERE NOT EXISTS (SELECT 1 FROM pipeline.batches b "
+                "JOIN pipeline.datasets d ON d.dataset_id=b.dataset_id "
+                "WHERE b.batch_id=j.batch_id AND d.status='ready')"
             )
         )
 
@@ -541,7 +516,7 @@ def initialize_dataset_journal(
     *,
     source_code_version: str = "unknown",
 ) -> str:
-    """Create a new dataset lineage and atomically seed its typed baseline batch.
+    """Create a new dataset lineage and atomically seed compact baseline keys.
 
     The caller owns one transaction that also creates/truncates/populates all
     source tables. Retired datasets' change payloads are cleared because the
@@ -559,13 +534,13 @@ def initialize_dataset_journal(
         )
     for table in SOURCE_TABLES:
         _ensure_source_row_identity(connection, source_schema, table)
-        _create_typed_journal_table(connection, source_schema, table)
+        _create_compact_journal_table(connection, source_schema, table)
     _install_triggers(connection, source_schema)
 
     connection.execute(text("UPDATE pipeline.datasets SET status='retired', retired_at=clock_timestamp() WHERE status='ready'"))
     # The reset source contents supersede every previous journal payload. Keep
     # the small lineage metadata, then seed the new dataset's baseline below.
-    _truncate_source_change_payload(connection)
+    _truncate_source_change_metadata(connection)
     dataset_id = uuid.uuid4()
     connection.execute(
         text(
@@ -588,34 +563,12 @@ def initialize_dataset_journal(
         code_version=source_code_version,
     )
     for table in SOURCE_TABLES:
-        source_columns = _source_columns(connection, source_schema, table)
-        source_names = [name for name, _ in source_columns]
-        before_names = [f"_before_{name}" for name in source_names]
-        metadata_names = list(_METADATA_COLUMNS)
-        target_names = source_names + before_names + metadata_names
-        projection = [f"s.{_quote(name)}" for name in source_names]
-        projection += [f"NULL::{sql_type}" for _, sql_type in source_columns]
-        projection += [
-            "CAST(:dataset AS text)",
-            "CAST(:batch AS text)",
-            ":sequence",
-            "nextval('source_changes.change_id_seq')",
-            "s.source_row_id::text",
-            "'B'",
-            ":business_date",
-            "clock_timestamp()",
-            "NULL::text",
-            "current_setting('application_name', true)",
-            "clock_timestamp()",
-            "'postgres-pre-raw'",
-            f"'{table}'",
-            "4",
-        ]
         connection.execute(
             text(
                 f"INSERT INTO source_changes.{_quote(table)} "
-                f"({', '.join(_quote(name) for name in target_names)}) "
-                f"SELECT {', '.join(projection)} FROM {_quote(source_schema)}.{_quote(table)} s"
+                "(batch_id,change_id,source_row_id,op) "
+                f"SELECT CAST(:batch AS uuid),nextval('source_changes.change_id_seq'),"
+                f"s.source_row_id,'B' FROM {_quote(source_schema)}.{_quote(table)} s"
             ),
             {
                 "dataset": str(dataset_id),
@@ -628,8 +581,7 @@ def initialize_dataset_journal(
             text(
                 "UPDATE pipeline.batch_table_counts SET change_count = "
                 f"(SELECT count(*) FROM {_quote('source_changes')}.{_quote(table)} "
-                "WHERE _dataset_id=CAST(:dataset AS text) "
-                "AND _batch_id=CAST(:batch AS text)) "
+                "WHERE batch_id=CAST(:batch AS uuid)) "
                 "WHERE dataset_id=CAST(:dataset AS uuid) AND batch_id=CAST(:batch AS uuid) "
                 "AND source_table=:table"
             ),
@@ -675,7 +627,7 @@ def migrate_existing_source_journal(
             {"table": table},
         )
         _ensure_source_row_identity(connection, source_schema, table)
-        _create_typed_journal_table(connection, source_schema, table)
+        _create_compact_journal_table(connection, source_schema, table)
 
     ready = connection.execute(
         text(
@@ -690,7 +642,7 @@ def migrate_existing_source_journal(
                 f"{ready.source_schema}, not {source_schema}"
             )
         _install_triggers(connection, source_schema)
-        _delete_inactive_source_change_payload(connection)
+        _delete_inactive_source_change_metadata(connection)
         return str(ready.dataset_id)
 
     # Existing source rows may already cover a historical interval. Start new

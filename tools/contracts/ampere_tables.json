@@ -1,5 +1,5 @@
 {
-  "contract_version": 4,
+  "contract_version": 5,
   "contract_status": "implemented_not_deployed",
   "catalog": {
     "ampere": {
@@ -18,84 +18,74 @@
                 "position": 2
               },
               {
-                "name": "_before_product_id",
-                "type_text": "int",
-                "position": 3
-              },
-              {
-                "name": "_before_store_id",
-                "type_text": "int",
-                "position": 4
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 5
+                "position": 3
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 6
+                "position": 4
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 7
+                "position": 5
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 8
+                "position": 6
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 18
+                "position": 16
               }
             ],
             "profile": {
@@ -119,7 +109,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "assortment",
               "change_keys": [
@@ -148,10 +138,6 @@
                 "product_id",
                 "store_id"
               ],
-              "before_image_columns": {
-                "product_id": "_before_product_id",
-                "store_id": "_before_store_id"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -205,104 +191,74 @@
                 "position": 6
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 7
-              },
-              {
-                "name": "_before_fullname",
-                "type_text": "string",
-                "position": 8
-              },
-              {
-                "name": "_before_preferred_store_id",
-                "type_text": "int",
-                "position": 9
-              },
-              {
-                "name": "_before_registration_date",
-                "type_text": "date",
-                "position": 10
-              },
-              {
-                "name": "_before_updated_at",
-                "type_text": "date",
-                "position": 11
-              },
-              {
-                "name": "_before_churned",
-                "type_text": "boolean",
-                "position": 12
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 13
+                "position": 7
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 14
+                "position": 8
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 15
+                "position": 9
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 16
+                "position": 10
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 17
+                "position": 11
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 18
+                "position": 12
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 19
+                "position": 13
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 20
+                "position": 14
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 21
+                "position": 15
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 22
+                "position": 16
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 23
+                "position": 17
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 24
+                "position": 18
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 25
+                "position": 19
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 26
+                "position": 20
               }
             ],
             "profile": {
@@ -326,7 +282,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "clients",
               "change_keys": [
@@ -359,14 +315,6 @@
                 "updated_at",
                 "churned"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "fullname": "_before_fullname",
-                "preferred_store_id": "_before_preferred_store_id",
-                "registration_date": "_before_registration_date",
-                "updated_at": "_before_updated_at",
-                "churned": "_before_churned"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -415,99 +363,74 @@
                 "position": 5
               },
               {
-                "name": "_before_product_id",
-                "type_text": "int",
-                "position": 6
-              },
-              {
-                "name": "_before_store_id",
-                "type_text": "int",
-                "position": 7
-              },
-              {
-                "name": "_before_avg_cost",
-                "type_text": "decimal(10,2)",
-                "position": 8
-              },
-              {
-                "name": "_before_valid_from",
-                "type_text": "date",
-                "position": 9
-              },
-              {
-                "name": "_before_valid_to",
-                "type_text": "date",
-                "position": 10
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 11
+                "position": 6
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 12
+                "position": 7
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 13
+                "position": 8
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 14
+                "position": 9
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 15
+                "position": 10
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 16
+                "position": 11
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 17
+                "position": 12
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 18
+                "position": 13
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 19
+                "position": 14
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 20
+                "position": 15
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 21
+                "position": 16
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 22
+                "position": 17
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 23
+                "position": 18
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 24
+                "position": 19
               }
             ],
             "profile": {
@@ -531,7 +454,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "costing",
               "change_keys": [
@@ -563,13 +486,6 @@
                 "valid_from",
                 "valid_to"
               ],
-              "before_image_columns": {
-                "product_id": "_before_product_id",
-                "store_id": "_before_store_id",
-                "avg_cost": "_before_avg_cost",
-                "valid_from": "_before_valid_from",
-                "valid_to": "_before_valid_to"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -608,89 +524,74 @@
                 "position": 3
               },
               {
-                "name": "_before_zone_id",
-                "type_text": "int",
-                "position": 4
-              },
-              {
-                "name": "_before_delivery_type_id",
-                "type_text": "int",
-                "position": 5
-              },
-              {
-                "name": "_before_tariff",
-                "type_text": "decimal(4,2)",
-                "position": 6
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 7
+                "position": 4
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 8
+                "position": 5
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 9
+                "position": 6
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 10
+                "position": 7
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 11
+                "position": 8
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 12
+                "position": 9
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 13
+                "position": 10
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 14
+                "position": 11
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 15
+                "position": 12
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 16
+                "position": 13
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 17
+                "position": 14
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 18
+                "position": 15
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 19
+                "position": 16
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 20
+                "position": 17
               }
             ],
             "profile": {
@@ -714,7 +615,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "delivery_costing",
               "change_keys": [
@@ -744,11 +645,6 @@
                 "delivery_type_id",
                 "tariff"
               ],
-              "before_image_columns": {
-                "zone_id": "_before_zone_id",
-                "delivery_type_id": "_before_delivery_type_id",
-                "tariff": "_before_tariff"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -807,109 +703,74 @@
                 "position": 7
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 8
-              },
-              {
-                "name": "_before_fullname",
-                "type_text": "string",
-                "position": 9
-              },
-              {
-                "name": "_before_delivery_type_id",
-                "type_text": "int",
-                "position": 10
-              },
-              {
-                "name": "_before_store_id",
-                "type_text": "int",
-                "position": 11
-              },
-              {
-                "name": "_before_created_at",
-                "type_text": "date",
-                "position": 12
-              },
-              {
-                "name": "_before_updated_at",
-                "type_text": "date",
-                "position": 13
-              },
-              {
-                "name": "_before_active_flag",
-                "type_text": "boolean",
-                "position": 14
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 15
+                "position": 8
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 16
+                "position": 9
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 17
+                "position": 10
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 18
+                "position": 11
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 19
+                "position": 12
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 20
+                "position": 13
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 21
+                "position": 14
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 22
+                "position": 15
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 23
+                "position": 16
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 24
+                "position": 17
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 25
+                "position": 18
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 26
+                "position": 19
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 27
+                "position": 20
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 28
+                "position": 21
               }
             ],
             "profile": {
@@ -933,7 +794,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "delivery_resource",
               "change_keys": [
@@ -967,15 +828,6 @@
                 "updated_at",
                 "active_flag"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "fullname": "_before_fullname",
-                "delivery_type_id": "_before_delivery_type_id",
-                "store_id": "_before_store_id",
-                "created_at": "_before_created_at",
-                "updated_at": "_before_updated_at",
-                "active_flag": "_before_active_flag"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -1024,99 +876,74 @@
                 "position": 5
               },
               {
-                "name": "_before_order_id",
-                "type_text": "int",
-                "position": 6
-              },
-              {
-                "name": "_before_courier_id",
-                "type_text": "int",
-                "position": 7
-              },
-              {
-                "name": "_before_delivery_status_id",
-                "type_text": "int",
-                "position": 8
-              },
-              {
-                "name": "_before_status",
-                "type_text": "string",
-                "position": 9
-              },
-              {
-                "name": "_before_status_datetime",
-                "type_text": "timestamp",
-                "position": 10
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 11
+                "position": 6
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 12
+                "position": 7
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 13
+                "position": 8
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 14
+                "position": 9
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 15
+                "position": 10
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 16
+                "position": 11
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 17
+                "position": 12
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 18
+                "position": 13
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 19
+                "position": 14
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 20
+                "position": 15
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 21
+                "position": 16
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 22
+                "position": 17
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 23
+                "position": 18
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 24
+                "position": 19
               }
             ],
             "profile": {
@@ -1149,7 +976,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "delivery_tracking",
               "change_keys": [
@@ -1181,13 +1008,6 @@
                 "status",
                 "status_datetime"
               ],
-              "before_image_columns": {
-                "order_id": "_before_order_id",
-                "courier_id": "_before_courier_id",
-                "delivery_status_id": "_before_delivery_status_id",
-                "status": "_before_status",
-                "status_datetime": "_before_status_datetime"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -1221,84 +1041,74 @@
                 "position": 2
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 3
-              },
-              {
-                "name": "_before_courier_type",
-                "type_text": "string",
-                "position": 4
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 5
+                "position": 3
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 6
+                "position": 4
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 7
+                "position": 5
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 8
+                "position": 6
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 18
+                "position": 16
               }
             ],
             "profile": {
@@ -1322,7 +1132,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "delivery_type",
               "change_keys": [
@@ -1351,10 +1161,6 @@
                 "id",
                 "courier_type"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "courier_type": "_before_courier_type"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -1403,99 +1209,74 @@
                 "position": 5
               },
               {
-                "name": "_before_order_id",
-                "type_text": "int",
-                "position": 6
-              },
-              {
-                "name": "_before_order_date",
-                "type_text": "date",
-                "position": 7
-              },
-              {
-                "name": "_before_product_id",
-                "type_text": "int",
-                "position": 8
-              },
-              {
-                "name": "_before_quantity",
-                "type_text": "decimal(6,2)",
-                "position": 9
-              },
-              {
-                "name": "_before_sales_price",
-                "type_text": "decimal(10,2)",
-                "position": 10
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 11
+                "position": 6
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 12
+                "position": 7
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 13
+                "position": 8
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 14
+                "position": 9
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 15
+                "position": 10
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 16
+                "position": 11
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 17
+                "position": 12
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 18
+                "position": 13
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 19
+                "position": 14
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 20
+                "position": 15
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 21
+                "position": 16
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 22
+                "position": 17
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 23
+                "position": 18
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 24
+                "position": 19
               }
             ],
             "profile": {
@@ -1528,7 +1309,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "order_product",
               "change_keys": [
@@ -1560,13 +1341,6 @@
                 "quantity",
                 "sales_price"
               ],
-              "before_image_columns": {
-                "order_id": "_before_order_id",
-                "order_date": "_before_order_date",
-                "product_id": "_before_product_id",
-                "quantity": "_before_quantity",
-                "sales_price": "_before_sales_price"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -1605,89 +1379,74 @@
                 "position": 3
               },
               {
-                "name": "_before_order_id",
-                "type_text": "int",
-                "position": 4
-              },
-              {
-                "name": "_before_order_status_id",
-                "type_text": "int",
-                "position": 5
-              },
-              {
-                "name": "_before_status_datetime",
-                "type_text": "timestamp",
-                "position": 6
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 7
+                "position": 4
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 8
+                "position": 5
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 9
+                "position": 6
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 10
+                "position": 7
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 11
+                "position": 8
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 12
+                "position": 9
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 13
+                "position": 10
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 14
+                "position": 11
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 15
+                "position": 12
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 16
+                "position": 13
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 17
+                "position": 14
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 18
+                "position": 15
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 19
+                "position": 16
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 20
+                "position": 17
               }
             ],
             "profile": {
@@ -1720,7 +1479,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "order_status_history",
               "change_keys": [
@@ -1750,11 +1509,6 @@
                 "order_status_id",
                 "status_datetime"
               ],
-              "before_image_columns": {
-                "order_id": "_before_order_id",
-                "order_status_id": "_before_order_status_id",
-                "status_datetime": "_before_status_datetime"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -1788,84 +1542,74 @@
                 "position": 2
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 3
-              },
-              {
-                "name": "_before_order_status",
-                "type_text": "string",
-                "position": 4
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 5
+                "position": 3
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 6
+                "position": 4
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 7
+                "position": 5
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 8
+                "position": 6
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 18
+                "position": 16
               }
             ],
             "profile": {
@@ -1889,7 +1633,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "order_statuses",
               "change_keys": [
@@ -1918,10 +1662,6 @@
                 "id",
                 "order_status"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "order_status": "_before_order_status"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -1975,104 +1715,74 @@
                 "position": 6
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 7
-              },
-              {
-                "name": "_before_client_id",
-                "type_text": "int",
-                "position": 8
-              },
-              {
-                "name": "_before_order_date",
-                "type_text": "date",
-                "position": 9
-              },
-              {
-                "name": "_before_order_source_id",
-                "type_text": "int",
-                "position": 10
-              },
-              {
-                "name": "_before_store_id",
-                "type_text": "int",
-                "position": 11
-              },
-              {
-                "name": "_before_total_amount",
-                "type_text": "decimal(12,4)",
-                "position": 12
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 13
+                "position": 7
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 14
+                "position": 8
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 15
+                "position": 9
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 16
+                "position": 10
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 17
+                "position": 11
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 18
+                "position": 12
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 19
+                "position": 13
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 20
+                "position": 14
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 21
+                "position": 15
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 22
+                "position": 16
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 23
+                "position": 17
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 24
+                "position": 18
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 25
+                "position": 19
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 26
+                "position": 20
               }
             ],
             "profile": {
@@ -2105,7 +1815,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "orders",
               "change_keys": [
@@ -2138,14 +1848,6 @@
                 "store_id",
                 "total_amount"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "client_id": "_before_client_id",
-                "order_date": "_before_order_date",
-                "order_source_id": "_before_order_source_id",
-                "store_id": "_before_store_id",
-                "total_amount": "_before_total_amount"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -2194,99 +1896,74 @@
                 "position": 5
               },
               {
-                "name": "_before_order_id",
-                "type_text": "int",
-                "position": 6
-              },
-              {
-                "name": "_before_amount",
-                "type_text": "decimal(12,4)",
-                "position": 7
-              },
-              {
-                "name": "_before_method",
-                "type_text": "string",
-                "position": 8
-              },
-              {
-                "name": "_before_payment_status",
-                "type_text": "string",
-                "position": 9
-              },
-              {
-                "name": "_before_payment_date",
-                "type_text": "date",
-                "position": 10
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 11
+                "position": 6
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 12
+                "position": 7
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 13
+                "position": 8
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 14
+                "position": 9
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 15
+                "position": 10
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 16
+                "position": 11
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 17
+                "position": 12
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 18
+                "position": 13
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 19
+                "position": 14
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 20
+                "position": 15
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 21
+                "position": 16
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 22
+                "position": 17
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 23
+                "position": 18
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 24
+                "position": 19
               }
             ],
             "profile": {
@@ -2319,7 +1996,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "payments",
               "change_keys": [
@@ -2351,13 +2028,6 @@
                 "payment_status",
                 "payment_date"
               ],
-              "before_image_columns": {
-                "order_id": "_before_order_id",
-                "amount": "_before_amount",
-                "method": "_before_method",
-                "payment_status": "_before_payment_status",
-                "payment_date": "_before_payment_date"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -2391,84 +2061,74 @@
                 "position": 2
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 3
-              },
-              {
-                "name": "_before_category_name",
-                "type_text": "string",
-                "position": 4
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 5
+                "position": 3
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 6
+                "position": 4
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 7
+                "position": 5
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 8
+                "position": 6
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 18
+                "position": 16
               }
             ],
             "profile": {
@@ -2492,7 +2152,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "product_categories",
               "change_keys": [
@@ -2521,10 +2181,6 @@
                 "id",
                 "category_name"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "category_name": "_before_category_name"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -2588,114 +2244,74 @@
                 "position": 8
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 9
-              },
-              {
-                "name": "_before_product_name",
-                "type_text": "string",
-                "position": 10
-              },
-              {
-                "name": "_before_price",
-                "type_text": "decimal(10,2)",
-                "position": 11
-              },
-              {
-                "name": "_before_unit_type",
-                "type_text": "string",
-                "position": 12
-              },
-              {
-                "name": "_before_category_id",
-                "type_text": "int",
-                "position": 13
-              },
-              {
-                "name": "_before_chance",
-                "type_text": "decimal(4,2)",
-                "position": 14
-              },
-              {
-                "name": "_before_valid_from",
-                "type_text": "date",
-                "position": 15
-              },
-              {
-                "name": "_before_valid_to",
-                "type_text": "date",
-                "position": 16
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 17
+                "position": 9
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 18
+                "position": 10
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 19
+                "position": 11
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 20
+                "position": 12
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 21
+                "position": 13
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 22
+                "position": 14
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 23
+                "position": 15
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 24
+                "position": 16
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 25
+                "position": 17
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 26
+                "position": 18
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 27
+                "position": 19
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 28
+                "position": 20
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 29
+                "position": 21
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 30
+                "position": 22
               }
             ],
             "profile": {
@@ -2719,7 +2335,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "products",
               "change_keys": [
@@ -2754,16 +2370,6 @@
                 "valid_from",
                 "valid_to"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "product_name": "_before_product_name",
-                "price": "_before_price",
-                "unit_type": "_before_unit_type",
-                "category_id": "_before_category_id",
-                "chance": "_before_chance",
-                "valid_from": "_before_valid_from",
-                "valid_to": "_before_valid_to"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -2802,89 +2408,74 @@
                 "position": 3
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 4
-              },
-              {
-                "name": "_before_city",
-                "type_text": "string",
-                "position": 5
-              },
-              {
-                "name": "_before_store_name",
-                "type_text": "string",
-                "position": 6
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 7
+                "position": 4
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 8
+                "position": 5
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 9
+                "position": 6
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 10
+                "position": 7
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 11
+                "position": 8
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 12
+                "position": 9
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 13
+                "position": 10
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 14
+                "position": 11
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 15
+                "position": 12
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 16
+                "position": 13
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 17
+                "position": 14
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 18
+                "position": 15
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 19
+                "position": 16
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 20
+                "position": 17
               }
             ],
             "profile": {
@@ -2908,7 +2499,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "stores",
               "change_keys": [
@@ -2938,11 +2529,6 @@
                 "city",
                 "store_name"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "city": "_before_city",
-                "store_name": "_before_store_name"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
@@ -2981,89 +2567,74 @@
                 "position": 3
               },
               {
-                "name": "_before_id",
-                "type_text": "int",
-                "position": 4
-              },
-              {
-                "name": "_before_store_id",
-                "type_text": "int",
-                "position": 5
-              },
-              {
-                "name": "_before_zone_name",
-                "type_text": "string",
-                "position": 6
-              },
-              {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 7
+                "position": 4
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 8
+                "position": 5
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 9
+                "position": 6
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 10
+                "position": 7
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 11
+                "position": 8
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 12
+                "position": 9
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 13
+                "position": 10
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 14
+                "position": 11
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 15
+                "position": 12
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 16
+                "position": 13
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 17
+                "position": 14
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 18
+                "position": 15
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 19
+                "position": 16
               },
               {
                 "name": "_contract_version",
                 "type_text": "int",
-                "position": 20
+                "position": 17
               }
             ],
             "profile": {
@@ -3087,7 +2658,7 @@
               }
             },
             "ingestion": {
-              "kind": "transactional_change_log",
+              "kind": "compact_source_change_metadata",
               "source_schema": "source",
               "source_table": "zones",
               "change_keys": [
@@ -3117,11 +2688,6 @@
                 "store_id",
                 "zone_name"
               ],
-              "before_image_columns": {
-                "id": "_before_id",
-                "store_id": "_before_store_id",
-                "zone_name": "_before_zone_name"
-              },
               "required_metadata": [
                 "_dataset_id",
                 "_batch_id",
