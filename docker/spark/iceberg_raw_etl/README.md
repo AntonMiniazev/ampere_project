@@ -18,14 +18,26 @@ controlled SQL entrypoints are
 `pipeline.complete_manual_source_batch()` within the same transaction. A
 deferred constraint prevents a started source batch from committing.
 
-`journal_to_raw.py` freezes up to 32 completed batches, including the baseline,
-and records a deterministic transfer ID from dataset, sequence interval, and
-contract version. One Spark application processes tables sequentially with one
-JDBC reader at a time. Per-table counts come from the transactional source
-control records and are checked against the bounded JDBC transfer. Raw tables
-use change identity `(dataset_id, batch_id, change_id)`. The Iceberg MERGE
-skips already committed keys after a crash; PostgreSQL marks the table complete
-only after the Iceberg commit and records its snapshot ID. A transfer becomes
+`journal_to_raw.py` reads completed batches in ascending sequence and records a
+deterministic transfer ID from dataset, sequence interval, and contract
+version. `--max-batches` limits the total batches handled by one Spark
+application (default 32); `--batch-size` limits each sequential transfer group
+(default and maximum 96). A historical run can therefore process multiple
+groups of at most 96 batches in one Airflow run. For the January-October 2026
+range, baseline plus 304 daily batches is 305 total; use
+`{"max_batches":305,"batch_size":96}` to process four bounded groups. Daily
+triggers keep the default total of 32 and normally handle only the new daily
+batch.
+
+The PostgreSQL transfer ledger records completed batch sequences. An index on
+`(dataset_id, batch_sequence)` lets each run read the high-water mark directly,
+then select only later batches; it does not join or rescan the full batch
+history. One Spark application processes tables sequentially with one JDBC
+reader at a time. Per-table counts come from transactional source control
+records and are checked against the bounded JDBC transfer. Raw tables use
+change identity `(dataset_id, batch_id, change_id)`. The Iceberg MERGE skips
+already committed keys after a crash; PostgreSQL marks each table complete
+only after its Iceberg commit and records the snapshot ID. A transfer becomes
 visible to Bronze only after all Raw tables, including zero-change tables, are
 acknowledged.
 
@@ -38,7 +50,14 @@ reject stale updates and deletes. A delete removes a matching row and never
 inserts a tombstone as active data. Per-table PostgreSQL acknowledgments make a
 retry after an Iceberg commit idempotent. The full-rebuild DAG reduces all
 accepted Raw history at one frozen boundary and replaces each Bronze table in
-one Iceberg commit.
+one Iceberg commit. Bronze lineage maps Raw `_batch_sequence` and `_change_id`
+to `_source_batch_sequence` and `_source_change_id`; these values are required
+for checkpoint-bounded reads and version-guarded updates. After deploying a
+writer that corrects lineage values, run the full-rebuild DAG once to replace
+rows written with null lineage; a new deterministic rebuild identity ensures
+old per-table acknowledgments do not skip the repair, while retries of the
+corrected rebuild remain idempotent. The daily version guard cannot repair
+those rows.
 
 Bronze's v4 schema adds dataset ID, stable source-row ID, source batch sequence,
 and source change ID to its prior business and operational columns. Catalog init

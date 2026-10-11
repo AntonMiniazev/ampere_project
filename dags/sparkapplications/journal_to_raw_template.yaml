@@ -15,6 +15,8 @@ spec:
   arguments:
     - --max-batches
     - "{{ dag_run.conf.get('max_batches', 32) if dag_run.conf else 32 }}"
+    - --batch-size
+    - "{{ dag_run.conf.get('batch_size', 96) if dag_run.conf else 96 }}"
     - --warehouse
     - {{ params.warehouse }}
     - --catalog-uri

@@ -19,6 +19,8 @@ LOGGER = logging.getLogger("journal-to-raw")
 CONTRACT = load_contract()
 SOURCE_TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
 TRANSFER_LOCK_KEY = 724614902632
+MAX_TRANSFER_BATCHES = 96
+DEFAULT_RUN_BATCHES = 32
 
 
 def _pg_quote(identifier: str) -> str:
@@ -37,8 +39,22 @@ def _connect_postgres():
     )
 
 
+def _last_acknowledged_batch(cursor, dataset_id: str) -> int:
+    """Read the indexed transfer high-water mark without joining old batches."""
+    cursor.execute(
+        "SELECT COALESCE(MAX(batch_sequence), 0) "
+        "FROM pipeline.raw_transfer_batches WHERE dataset_id=%s",
+        (dataset_id,),
+    )
+    return int(cursor.fetchone()[0])
+
+
 def reserve_transfer(max_batches: int = 32) -> dict | None:
     """Freeze/resume one ordered, dataset-scoped transfer in PostgreSQL."""
+    if not 1 <= max_batches <= MAX_TRANSFER_BATCHES:
+        raise ValueError(
+            f"Each Raw transfer group must contain 1..{MAX_TRANSFER_BATCHES} batches"
+        )
     with _connect_postgres() as connection, connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s)", (TRANSFER_LOCK_KEY,))
         cursor.execute(
@@ -80,8 +96,14 @@ def reserve_transfer(max_batches: int = 32) -> dict | None:
             """
         )
         cursor.execute(
-            "SELECT transfer_id, dataset_id, first_batch_sequence, last_batch_sequence "
-            "FROM pipeline.raw_transfers WHERE status='started' ORDER BY started_at LIMIT 1"
+            "CREATE INDEX IF NOT EXISTS ix_pipeline_raw_transfer_batches_dataset_sequence "
+            "ON pipeline.raw_transfer_batches (dataset_id, batch_sequence DESC)"
+        )
+        cursor.execute(
+            "SELECT t.transfer_id, t.dataset_id, t.first_batch_sequence, t.last_batch_sequence "
+            "FROM pipeline.raw_transfers t "
+            "JOIN pipeline.datasets d ON d.dataset_id=t.dataset_id "
+            "WHERE t.status='started' AND d.status='ready' ORDER BY t.started_at LIMIT 1"
         )
         existing = cursor.fetchone()
         if existing:
@@ -92,18 +114,7 @@ def reserve_transfer(max_batches: int = 32) -> dict | None:
             if dataset_row is None:
                 raise RuntimeError("No ready source dataset exists for Raw transfer")
             dataset_id = dataset_row[0]
-            cursor.execute(
-                """
-                SELECT COALESCE(MAX(b.batch_sequence), 0)
-                FROM pipeline.batches b
-                LEFT JOIN pipeline.raw_transfer_batches r
-                  ON r.dataset_id=b.dataset_id AND r.batch_id=b.batch_id
-                JOIN pipeline.datasets d ON d.dataset_id=b.dataset_id
-                WHERE b.dataset_id=%s AND b.status='completed' AND r.batch_id IS NOT NULL
-                """,
-                (dataset_id,),
-            )
-            last_acknowledged = int(cursor.fetchone()[0])
+            last_acknowledged = _last_acknowledged_batch(cursor, dataset_id)
             cursor.execute(
                 """
                 SELECT batch_id, batch_sequence FROM pipeline.batches
@@ -257,11 +268,95 @@ def _latest_snapshot(spark: SparkSession, table: str) -> int | None:
     return int(row[0]) if row else None
 
 
+def _complete_transfer(spark: SparkSession, transfer: dict) -> None:
+    """Merge one bounded batch group and acknowledge its completed tables."""
+    LOGGER.info(
+        "Raw transfer %s dataset=%s batches=%s..%s (%s source batches)",
+        transfer["transfer_id"], transfer["dataset_id"], transfer["first_sequence"],
+        transfer["last_sequence"], len(transfer["batches"]),
+    )
+    for table in SOURCE_TABLES:
+        if _table_already_complete(transfer["transfer_id"], table):
+            LOGGER.info("RAW_TABLE_COMPLETE table=%s resumed=checkpoint", table)
+            continue
+        count = _merge_source_changes(spark, transfer, table)
+        _record_table_complete(
+            transfer["transfer_id"],
+            table,
+            count,
+            _latest_snapshot(spark, table) if count else None,
+        )
+        LOGGER.info("RAW_TABLE_COMPLETE table=%s rows=%s", table, count)
+    with _connect_postgres() as connection, connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pipeline.raw_transfer_tables "
+            "WHERE transfer_id=%s AND status='completed'",
+            (transfer["transfer_id"],),
+        )
+        if cursor.fetchone()[0] != len(SOURCE_TABLES):
+            raise RuntimeError("Raw transfer is missing per-table completion records")
+        cursor.execute(
+            "UPDATE pipeline.raw_transfers SET status='completed',completed_at=clock_timestamp() "
+            "WHERE transfer_id=%s AND status='started'",
+            (transfer["transfer_id"],),
+        )
+    LOGGER.info("RAW_TRANSFER_COMPLETE transfer_id=%s", transfer["transfer_id"])
+
+
+def transfer_backlog(
+    spark: SparkSession,
+    first_transfer: dict,
+    *,
+    max_batches: int,
+    batch_size: int,
+) -> int:
+    """Process up to max_batches in sequential transfer groups of at most 96."""
+    if max_batches < 1:
+        raise ValueError("max_batches must be positive")
+    if not 1 <= batch_size <= MAX_TRANSFER_BATCHES:
+        raise ValueError(f"batch_size must be between 1 and {MAX_TRANSFER_BATCHES}")
+
+    completed = 0
+    transfer = first_transfer
+    while transfer is not None and completed < max_batches:
+        batch_count = len(transfer["batches"])
+        if not batch_count:
+            raise RuntimeError("Reserved Raw transfer contains no batches")
+        if batch_count > MAX_TRANSFER_BATCHES:
+            raise RuntimeError(
+                f"Reserved transfer has {batch_count} batches; maximum safe group is "
+                f"{MAX_TRANSFER_BATCHES}. Resolve the existing started transfer before retrying."
+            )
+        _complete_transfer(spark, transfer)
+        completed += batch_count
+        LOGGER.info(
+            "RAW_TRANSFER_GROUP_COMPLETE batches=%s total=%s requested=%s",
+            batch_count, completed, max_batches,
+        )
+        if completed >= max_batches:
+            break
+        next_size = min(batch_size, max_batches - completed)
+        transfer = reserve_transfer(next_size)
+    LOGGER.info("RAW_BACKLOG_COMPLETE transferred=%s requested=%s", completed, max_batches)
+    return completed
+
+
 def main() -> None:
     global _SPARK
     setup_logging()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--max-batches", type=int, default=32)
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=DEFAULT_RUN_BATCHES,
+        help="Maximum total completed batches to transfer in this Spark run",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=MAX_TRANSFER_BATCHES,
+        help=f"Maximum batches per transfer group (1..{MAX_TRANSFER_BATCHES})",
+    )
     parser.add_argument("--warehouse", default="raw")
     parser.add_argument("--catalog-uri", required=True)
     parser.add_argument("--oauth-uri", required=True)
@@ -270,7 +365,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.max_batches < 1:
         raise ValueError("--max-batches must be positive")
-    transfer = reserve_transfer(args.max_batches)
+    if not 1 <= args.batch_size <= MAX_TRANSFER_BATCHES:
+        raise ValueError(f"--batch-size must be between 1 and {MAX_TRANSFER_BATCHES}")
+    transfer = reserve_transfer(min(args.max_batches, args.batch_size))
     if transfer is None:
         LOGGER.info("No completed untransferred source batches")
         return
@@ -297,37 +394,12 @@ def main() -> None:
             client_secret=get_env("LAKEKEEPER_CLIENT_SECRET"),
             minio_endpoint=minio.endpoint,
         )
-        LOGGER.info(
-            "Raw transfer %s dataset=%s batches=%s..%s (%s source batches)",
-            transfer["transfer_id"], transfer["dataset_id"], transfer["first_sequence"],
-            transfer["last_sequence"], len(transfer["batches"]),
+        transfer_backlog(
+            spark,
+            transfer,
+            max_batches=args.max_batches,
+            batch_size=args.batch_size,
         )
-        for table in SOURCE_TABLES:
-            if _table_already_complete(transfer["transfer_id"], table):
-                LOGGER.info("RAW_TABLE_COMPLETE table=%s resumed=checkpoint", table)
-                continue
-            count = _merge_source_changes(spark, transfer, table)
-            _record_table_complete(
-                transfer["transfer_id"],
-                table,
-                count,
-                _latest_snapshot(spark, table) if count else None,
-            )
-            LOGGER.info("RAW_TABLE_COMPLETE table=%s rows=%s", table, count)
-        with _connect_postgres() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT count(*) FROM pipeline.raw_transfer_tables "
-                "WHERE transfer_id=%s AND status='completed'",
-                (transfer["transfer_id"],),
-            )
-            if cursor.fetchone()[0] != len(SOURCE_TABLES):
-                raise RuntimeError("Raw transfer is missing per-table completion records")
-            cursor.execute(
-                "UPDATE pipeline.raw_transfers SET status='completed',completed_at=clock_timestamp() "
-                "WHERE transfer_id=%s AND status='started'",
-                (transfer["transfer_id"],),
-            )
-        LOGGER.info("RAW_TRANSFER_COMPLETE transfer_id=%s", transfer["transfer_id"])
     finally:
         spark.stop()
 

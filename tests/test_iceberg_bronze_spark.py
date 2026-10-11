@@ -24,6 +24,10 @@ os.environ["ICEBERG_CONTRACT_PATH"] = str(ROOT / "tools/contracts/ampere_tables.
 from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402
 from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
+from iceberg_bronze.journal_apply import (  # noqa: E402
+    _full_rebuild_transfer_id,
+    _raw_source_column_for_bronze,
+)
 from iceberg_bronze.main import (  # noqa: E402
     _candidate_runs,
     _processed_batches,
@@ -37,6 +41,30 @@ from tools.contracts.ampere_contract import load_contract  # noqa: E402
 
 class IcebergRegistryTests(unittest.TestCase):
     """Keep failed historical batches visible after newer successes."""
+
+    def test_bronze_lineage_columns_map_to_raw_journal_names(self) -> None:
+        self.assertEqual(
+            _raw_source_column_for_bronze("_source_batch_sequence"),
+            "_batch_sequence",
+        )
+        self.assertEqual(
+            _raw_source_column_for_bronze("_source_change_id"),
+            "_change_id",
+        )
+        self.assertEqual(_raw_source_column_for_bronze("_dataset_id"), "_dataset_id")
+
+    def test_corrected_full_rebuild_gets_new_stable_acknowledgment_identity(self) -> None:
+        import uuid
+
+        dataset_id = "51e4343e-cf56-4181-9796-3f27865ebe2b"
+        rebuilt = _full_rebuild_transfer_id(dataset_id, 37)
+        prior = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"ampere-bronze-rebuild:{dataset_id}:37:contract-v4",
+        )
+
+        self.assertEqual(rebuilt, _full_rebuild_transfer_id(dataset_id, 37))
+        self.assertNotEqual(rebuilt, prior)
 
     def test_unresolved_failures_anchor_landing_search(self) -> None:
         """Exclude retried successes but retain older failed partitions."""

@@ -17,6 +17,7 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
+BRONZE_REBUILD_GENERATION = "lineage-v1"
 
 
 def _pg_connect():
@@ -156,10 +157,7 @@ def reserve_full_rebuild() -> dict:
             (ids,),
         )
         expected_counts = {table: int(count) for table, count in cursor.fetchall()}
-        rebuild_id = uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v4",
-        )
+        rebuild_id = _full_rebuild_transfer_id(str(dataset_id), last_sequence)
         cursor.execute(
             "INSERT INTO pipeline.bronze_transfers "
             "(transfer_id,dataset_id,first_batch_sequence,last_batch_sequence,status) "
@@ -188,6 +186,22 @@ def _latest_changes(raw: DataFrame) -> DataFrame:
     )
 
 
+def _raw_source_column_for_bronze(column: str) -> str:
+    """Map Bronze lineage names to their corresponding Raw journal columns."""
+    return {
+        "_source_batch_sequence": "_batch_sequence",
+        "_source_change_id": "_change_id",
+    }.get(column, column)
+
+
+def _full_rebuild_transfer_id(dataset_id: str, last_sequence: int) -> uuid.UUID:
+    """Give corrected rebuilds a fresh checkpoint identity while keeping retries stable."""
+    return uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v4:{BRONZE_REBUILD_GENERATION}",
+    )
+
+
 def _bronze_rows(table: str, changes: DataFrame, transfer: dict) -> DataFrame:
     spec = CONTRACT.table("bronze", table)
     validate_spark_table(_SESSION, "iceberg_bronze", spec)
@@ -200,7 +214,8 @@ def _bronze_rows(table: str, changes: DataFrame, transfer: dict) -> DataFrame:
             "_dataset_id", "_source_row_id", "_source_batch_sequence", "_source_change_id",
             "_ingest_run_id", "_ingest_ts", "_source_system", "_source_table", "_op",
         }:
-            expr = F.col(quote_identifier(name)) if name in changes.columns else F.lit(None)
+            source_name = _raw_source_column_for_bronze(name)
+            expr = F.col(quote_identifier(source_name)) if source_name in changes.columns else F.lit(None)
         elif name == "_row_hash":
             expr = F.sha2(F.to_json(F.struct(*[F.col(quote_identifier(c)) for c in business])), 256)
         elif name == "_bronze_last_run_id":
