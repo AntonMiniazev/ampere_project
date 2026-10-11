@@ -55,7 +55,7 @@ def _source_columns(connection, source_schema: str, table: str) -> list[tuple[st
     rows = connection.execute(
         text(
             """
-            SELECT column_name, format_type(atttypid, atttypmod)
+            SELECT a.attname, format_type(a.atttypid, a.atttypmod)
             FROM pg_catalog.pg_attribute a
             JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
