@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Initial source data preparation for Ampere"
 requires-python = ">=3.14,<3.15"
 dependencies = [
+    "boto3==1.40.18",
     "faker>=37.3.0",
     "polars-lts-cpu>=1.0.0",
     "psycopg[binary]>=3.2.2",

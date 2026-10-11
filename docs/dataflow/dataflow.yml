@@ -4,21 +4,21 @@ layers:
   source:
     title: Python generator + PostgreSQL
     status: implemented
-    responsibility: Generate synthetic operational data in PostgreSQL.
-    diagram_note: Synthetic transactions and mutable source rows.
+    responsibility: Generate current operational data in PostgreSQL and capture exact mutation-time event images as bounded immutable Parquet batches in MinIO.
+    diagram_note: PostgreSQL owns current state and compact batch controls; MinIO holds typed, replayable event files and commit manifests.
     engine: [Python, PostgreSQL]
     storage: [PostgreSQL]
 
   raw:
     title: Raw Iceberg change history
     status: implemented
-    responsibility: Join compact PostgreSQL change keys to source after-images and merge typed change rows into Raw Iceberg with durable per-table acknowledgments.
-    diagram_note: Compact source-change keys joined to typed after-images, ordered by dataset batch and change sequence.
+    responsibility: Validate committed PostgreSQL batch controls and MinIO Parquet manifests, then merge typed event rows into Raw Iceberg with durable per-table acknowledgments.
+    diagram_note: Typed event files and commit markers, ordered by dataset batch and change sequence.
     engine: [Spark]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
     catalog_schema: raw warehouse / raw namespace
-    controls: [PostgreSQL dataset and batch registry, PostgreSQL Raw transfer registry]
+    controls: [PostgreSQL dataset and batch registry, PostgreSQL Raw transfer registry, MinIO manifests and commit markers]
 
   bronze:
     title: Bronze
@@ -63,7 +63,7 @@ flows:
     to: raw
     engine: Spark
     artifact: Accepted Raw Iceberg change history
-    description: Freeze completed source batches, join compact change keys to source rows, and idempotently merge typed rows into Raw Iceberg.
+    description: Validate completed source batches and immutable typed Parquet manifests, then idempotently merge staged rows into Raw Iceberg.
 
   - from: raw
     to: bronze

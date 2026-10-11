@@ -70,6 +70,14 @@ spec:
             key: pgpass
       - name: MINIO_S3_ENDPOINT
         value: "{{ params.minio_endpoint }}"
+      - name: MINIO_STAGING_BUCKET
+        value: "{{ params.staging_bucket }}"
+      - name: MINIO_STAGING_PREFIX
+        value: "{{ params.staging_prefix }}"
+      - name: AMPERE_RAW_TARGET_INPUT_BYTES
+        value: "{{ params.target_input_bytes }}"
+      - name: AMPERE_RAW_MAX_FILES_PER_CHUNK
+        value: "{{ params.max_files_per_chunk }}"
       - name: MINIO_ACCESS_KEY
         valueFrom:
           secretKeyRef:

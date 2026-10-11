@@ -17,7 +17,7 @@ package = ModuleType("order_data_generator")
 package.__path__ = [str(GENERATOR_DIR)]
 sys.modules["order_data_generator"] = package
 
-from order_data_generator import main  # noqa: E402
+from order_data_generator import db, main  # noqa: E402
 from order_data_generator.config import load_config  # noqa: E402
 
 
@@ -32,6 +32,23 @@ class GeneratorTransactionTests(unittest.TestCase):
         result.scalar_one_or_none.return_value = value
         return result
 
+    def test_copy_readback_captures_database_after_images_in_bounded_queries(self) -> None:
+        connection = MagicMock()
+        connection.info = {"ampere_source_batch_stager": SimpleNamespace(chunk_rows=2)}
+        connection.execute.side_effect = [MagicMock(), MagicMock()]
+        with patch.object(db, "MUTATION_RETURNING_BATCH_ROWS", 2), patch.object(
+            db, "_capture_result", side_effect=[2, 1]
+        ) as capture:
+            count = db._capture_copied_rows(
+                connection, "source", "delivery_tracking", ["id-1", "id-2", "id-3"]
+            )
+        self.assertEqual(count, 3)
+        self.assertEqual(connection.execute.call_count, 2)
+        self.assertEqual(capture.call_count, 2)
+        for call_args in connection.execute.call_args_list:
+            self.assertIn("SELECT *", str(call_args.args[0]))
+            self.assertIn("source_row_id=ANY", str(call_args.args[0]))
+
     def test_generation_holds_one_advisory_locked_transaction_for_the_day(self) -> None:
         connection = MagicMock()
         transaction = MagicMock()
@@ -42,7 +59,12 @@ class GeneratorTransactionTests(unittest.TestCase):
             MagicMock(),
             self._result(date(2026, 10, 10)),
         ]
-        batch = {"dataset_id": "dataset", "batch_id": "batch", "batch_sequence": 2}
+        stager = MagicMock()
+        stager.row_counts = {"orders": 1}
+        batch = {
+            "dataset_id": "dataset", "batch_id": "batch", "batch_sequence": 2,
+            "stager": stager,
+        }
 
         with (
             patch.object(main, "get_engine", return_value=engine),
@@ -62,12 +84,14 @@ class GeneratorTransactionTests(unittest.TestCase):
 
         self.assertTrue(generated)
         engine.begin.assert_called_once_with()
-        self.assertEqual(connection.execute.call_count, 2)
+        self.assertGreaterEqual(connection.execute.call_count, 2)
         self.assertEqual(start_batch.call_args.args[0], connection)
-        self.assertEqual(complete_batch.call_args.args, (connection, batch))
+        self.assertEqual(complete_batch.call_args.args, (connection, batch, {"orders": 1}))
         self.assertEqual(prepare_clients.call_args.kwargs["connection"], connection)
         self.assertEqual(update_churned.call_args.kwargs["connection"], connection)
         self.assertEqual(prepare_orders.call_args.kwargs["connection"], connection)
+        stager.prepare.assert_called_once_with()
+        stager.publish_committed.assert_called_once_with()
         transaction.__exit__.assert_called_once_with(None, None, None)
 
     def test_completed_date_is_skipped_without_running_mutations(self) -> None:
@@ -126,10 +150,11 @@ class GeneratorTransactionTests(unittest.TestCase):
 
         engine = MagicMock()
         engine.begin.side_effect = begin
+        stager = MagicMock()
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(
-                main, "_run_generation_in_transaction", side_effect=[True, False, True]
+                main, "_run_generation_in_transaction", side_effect=[(True, stager), (False, None), (True, stager)]
             ) as run,
             patch.object(main, "set_seed") as set_seed,
         ):
@@ -138,6 +163,7 @@ class GeneratorTransactionTests(unittest.TestCase):
         self.assertEqual(generated, 2)
         self.assertEqual([call.args[0] for call in run.call_args_list], dates)
         self.assertEqual(engine.begin.call_count, 2)
+        self.assertEqual(stager.publish_committed.call_count, 2)
         self.assertIs(run.call_args_list[0].args[2], connections[0])
         self.assertIs(run.call_args_list[1].args[2], connections[0])
         self.assertIs(run.call_args_list[2].args[2], connections[1])
@@ -154,13 +180,14 @@ class GeneratorTransactionTests(unittest.TestCase):
         transaction.__enter__.return_value = connection
         engine = MagicMock()
         engine.begin.return_value = transaction
+        stager = MagicMock()
 
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(
                 main,
                 "_run_generation_in_transaction",
-                side_effect=[True, RuntimeError("synthetic day failure")],
+                side_effect=[(True, stager), RuntimeError("synthetic day failure")],
             ),
             self.assertRaisesRegex(RuntimeError, "synthetic day failure"),
         ):
@@ -178,10 +205,11 @@ class GeneratorTransactionTests(unittest.TestCase):
         transaction = MagicMock()
         transaction.__enter__.return_value = MagicMock()
         engine.begin.return_value = transaction
+        stager = MagicMock()
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(
-                main, "_run_generation_in_transaction", return_value=True
+                main, "_run_generation_in_transaction", return_value=(True, stager)
             ) as run,
         ):
             generated = main.run_generation_range(

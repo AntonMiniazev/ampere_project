@@ -42,7 +42,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: docker/order_data_generator
+          context: .
           file: docker/order_data_generator/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}

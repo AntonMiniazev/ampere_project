@@ -2,8 +2,8 @@
 
 | Layer | Status | Engine | Storage | Catalog | Responsibility |
 |---|---|---|---|---|---|
-| Python generator + PostgreSQL | implemented | Python, PostgreSQL | PostgreSQL | - | Generate synthetic operational data in PostgreSQL. |
-| Raw Iceberg change history | implemented | Spark | MinIO, Iceberg | Lakekeeper / raw warehouse / raw namespace | Join compact PostgreSQL change keys to source after-images and merge typed change rows into Raw Iceberg with durable per-table acknowledgments. |
+| Python generator + PostgreSQL | implemented | Python, PostgreSQL | PostgreSQL | - | Generate current operational data in PostgreSQL and capture exact mutation-time event images as bounded immutable Parquet batches in MinIO. |
+| Raw Iceberg change history | implemented | Spark | MinIO, Iceberg | Lakekeeper / raw warehouse / raw namespace | Validate committed PostgreSQL batch controls and MinIO Parquet manifests, then merge typed event rows into Raw Iceberg with durable per-table acknowledgments. |
 | Bronze | implemented | Spark, Iceberg | MinIO, Iceberg | Lakekeeper / bronze warehouse / bronze and ops namespaces | Reconstruct and incrementally maintain current source state from accepted Raw change rows, with dataset-scoped row identity and checkpoints. |
 | Silver | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / silver warehouse / silver namespace | Build tested analytical entities from Bronze with dbt and DuckDB. |
 | Gold | implemented | DuckDB, dbt, Iceberg | MinIO, Iceberg | Lakekeeper / gold warehouse / gold namespace | Publish eight monthly Curie report aggregates for Marketing, Financial, and Delivery. |

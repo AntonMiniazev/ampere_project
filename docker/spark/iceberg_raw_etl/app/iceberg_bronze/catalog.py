@@ -22,7 +22,7 @@ def parse_bool_flag(value: object, default: bool = False) -> bool:
 
 
 def _table_spec(schema: str, table: str) -> ResolvedTable:
-    """Resolve a Bronze table from the shared v4 contract."""
+    """Resolve a Bronze table from the shared current contract."""
     spec = CONTRACT.table("bronze", table)
     if spec.namespace != schema:
         raise ValueError(f"Missing Iceberg contract for {schema}.{table}")
@@ -74,7 +74,7 @@ def ensure_iceberg_table(
     table: str,
     logger: logging.Logger,
 ) -> str:
-    """Require a pre-initialized Bronze table to match contract v5."""
+    """Require a pre-initialized Bronze table to match contract v6."""
     spec = _table_spec(schema, table)
     fq_schema = f"{quote_ident(catalog)}.{quote_ident(schema)}"
     fqtn = f"{fq_schema}.{quote_ident(table)}"

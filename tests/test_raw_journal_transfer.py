@@ -20,21 +20,19 @@ def _transfer(size: int, first_sequence: int = 1) -> dict:
 
 
 class RawJournalTransferTests(unittest.TestCase):
-    def test_raw_query_joins_compact_keys_to_source_after_images(self) -> None:
+    def test_raw_contract_uses_typed_parquet_and_manifest_visibility(self) -> None:
         spec = journal_to_raw.CONTRACT.table("raw", "order_product")
-        sql = journal_to_raw._change_slice_query(spec, "transfer-1")
-
-        self.assertIn('FROM source_changes."order_product" j', sql)
-        self.assertIn('LEFT JOIN "source"."order_product" s', sql)
-        self.assertIn('s."order_date" AS "order_date"', sql)
-        self.assertIn("j.source_row_id", sql)
-        self.assertIn("pb.batch_sequence", sql)
-        self.assertNotIn("_before_", sql)
+        self.assertEqual(spec.ingestion["kind"], "staged_typed_parquet_manifest")
+        self.assertEqual(spec.ingestion["staging"]["file_format"], "parquet")
+        self.assertEqual(spec.ingestion["staging"]["commit_marker"], "COMMITTED.json")
+        self.assertEqual(spec.ingestion["staging"]["max_rows_per_chunk"], 50000)
+        self.assertNotIn("source_changes", Path(journal_to_raw.__file__).read_text(encoding="utf-8"))
 
     def test_requested_backlog_is_processed_in_groups_no_larger_than_96(self) -> None:
         transfers = [_transfer(96, 1), _transfer(96, 97), _transfer(96, 193), _transfer(17, 289)]
         with (
             patch.object(journal_to_raw, "_complete_transfer") as complete,
+            patch.object(journal_to_raw, "_load_eligible_manifests", return_value={}),
             patch.object(
                 journal_to_raw,
                 "reserve_transfer",
@@ -55,6 +53,7 @@ class RawJournalTransferTests(unittest.TestCase):
     def test_stops_when_no_more_batches_are_available(self) -> None:
         with (
             patch.object(journal_to_raw, "_complete_transfer") as complete,
+            patch.object(journal_to_raw, "_load_eligible_manifests", return_value={}),
             patch.object(journal_to_raw, "reserve_transfer", return_value=None) as reserve,
         ):
             processed = journal_to_raw.transfer_backlog(
@@ -71,6 +70,13 @@ class RawJournalTransferTests(unittest.TestCase):
     def test_batch_group_limit_rejects_values_above_96(self) -> None:
         with self.assertRaisesRegex(ValueError, "1..96"):
             journal_to_raw.reserve_transfer(97)
+
+    def test_started_transfer_does_not_exceed_this_runs_max_batches(self) -> None:
+        transfer = _transfer(8)
+        with self.assertRaisesRegex(RuntimeError, "max_batches limit"):
+            journal_to_raw.transfer_backlog(
+                MagicMock(), transfer, max_batches=4, batch_size=4
+            )
 
     def test_high_water_mark_reads_indexed_transfer_batches_directly(self) -> None:
         cursor = MagicMock()

@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import timedelta
 from functools import lru_cache
+from uuid import uuid4
 
 import polars as pl
 from sqlalchemy import MetaData, Table, create_engine, inspect, text
@@ -9,8 +10,52 @@ from sqlalchemy.engine import make_url
 
 from order_data_generator.config import load_config
 from order_data_generator.logging_utils import APP_NAME
+from tools.source_batch_staging import StagedChangeBatch
 
 logger = logging.getLogger(APP_NAME)
+MUTATION_RETURNING_BATCH_ROWS = 5_000
+
+
+def _capture_frame(connection, table: str, frame: pl.DataFrame, operation: str) -> int:
+    """Stage exact mutation-time row images when a source batch is active."""
+    stager: StagedChangeBatch | None = connection.info.get("ampere_source_batch_stager")
+    return stager.append(table, frame, operation) if stager is not None else 0
+
+
+def _capture_result(connection, table: str, result, operation: str) -> int:
+    stager: StagedChangeBatch | None = connection.info.get("ampere_source_batch_stager")
+    if stager is None:
+        return 0
+    mapping_result = result.mappings()
+    total = 0
+    while rows := mapping_result.fetchmany(stager.chunk_rows):
+        total += stager.append(table, pl.DataFrame([dict(row) for row in rows]), operation)
+    return total
+
+
+def _capture_copied_rows(connection, schema: str, table: str, source_ids: list[str]) -> int:
+    """Read back bounded COPY inserts so database defaults are captured exactly."""
+    stager: StagedChangeBatch | None = connection.info.get("ampere_source_batch_stager")
+    if stager is None or not source_ids:
+        return 0
+    total = 0
+    for offset in range(0, len(source_ids), MUTATION_RETURNING_BATCH_ROWS):
+        ids = source_ids[offset : offset + MUTATION_RETURNING_BATCH_ROWS]
+        result = connection.execute(
+            text(
+                f'SELECT * FROM "{schema}"."{table}" '
+                "WHERE source_row_id=ANY(CAST(:source_ids AS uuid[])) ORDER BY source_row_id"
+            ),
+            {"source_ids": ids},
+        )
+        captured = _capture_result(connection, table, result, "I")
+        if captured != len(ids):
+            raise RuntimeError(
+                f"COPY readback count mismatch for {schema}.{table}: "
+                f"expected={len(ids)} captured={captured}"
+            )
+        total += captured
+    return total
 
 
 def _get_env_any(*names: str) -> str | None:
@@ -186,8 +231,8 @@ def upload_new_data(
     if target_table == "delivery_tracking":
         if yesterday is None:
             raise ValueError("yesterday is required for delivery_tracking updates")
-        exec_sql(
-            f'''
+        removed = connection.execute(
+            text(f'''
             DELETE FROM "{schema}"."delivery_tracking"
             WHERE status IS NULL
               AND order_id IN (
@@ -195,10 +240,32 @@ def upload_new_data(
                 FROM "{schema}"."order_status_history"
                 WHERE order_status_id = :delivered_status_id AND status_datetime >= :yesterday
               )
-            ''',
+            RETURNING *
+            '''),
             {"yesterday": yesterday, "delivered_status_id": delivered_status_id},
-            connection=connection,
         )
+        _capture_result(connection, target_table, removed, "D")
+
+    if "source_row_id" not in table.columns:
+        table = table.with_columns(
+            pl.Series("source_row_id", [str(uuid4()) for _ in range(table.height)], dtype=pl.String)
+        )
+
+    if target_table == "clients" and "id" not in table.columns:
+        # Client ids are PostgreSQL identity values. Use one executemany INSERT
+        # per bounded input chunk with RETURNING so Parquet captures the exact
+        # assigned IDs without buffering the entire day's result.
+        metadata = MetaData(schema=schema)
+        clients_table = Table("clients", metadata, autoload_with=connection)
+        rows = table.to_dicts()
+        for offset in range(0, len(rows), MUTATION_RETURNING_BATCH_ROWS):
+            result = connection.execute(
+                clients_table.insert().returning(*clients_table.c),
+                rows[offset : offset + MUTATION_RETURNING_BATCH_ROWS],
+            )
+            _capture_result(connection, target_table, result, "I")
+        logger.info("Bulk INSERT RETURNING completed: %s records into %s.%s", table.height, schema, target_table)
+        return
 
     columns = table.columns
     column_list = ", ".join(f'"{col}"' for col in columns)
@@ -219,6 +286,12 @@ def upload_new_data(
         with cur.copy(copy_sql) as copy:
             for row in table.iter_rows():
                 copy.write_row(row)
+    _capture_copied_rows(
+        connection,
+        schema,
+        target_table,
+        [str(source_id) for source_id in table.get_column("source_row_id").to_list()],
+    )
     logger.info(
         "Bulk insert completed: %s records into %s.%s",
         table.height,
@@ -240,15 +313,39 @@ def insert_orders_returning_ids(orders: list[dict], schema: str, *, connection=N
     metadata = MetaData(schema=schema)
     engine = get_engine()
     orders_table = Table("orders", metadata, autoload_with=engine)
-    stmt = orders_table.insert().returning(orders_table.c.id)
+    for order in orders:
+        order.setdefault("source_row_id", str(uuid4()))
+    # SQLAlchemy correlates each returned ID with the original parameter order;
+    # downstream generated rows consume this list positionally.
+    stmt = orders_table.insert().returning(
+        *orders_table.c,
+        sort_by_parameter_order=True,
+    )
 
     if connection is not None:
-        result = connection.execute(stmt, orders)
-        return [row[0] for row in result.fetchall()]
+        ids = []
+        stager: StagedChangeBatch | None = connection.info.get("ampere_source_batch_stager")
+        chunk_rows = stager.chunk_rows if stager is not None else 50000
+        for offset in range(0, len(orders), MUTATION_RETURNING_BATCH_ROWS):
+            result = connection.execute(
+                stmt,
+                orders[offset : offset + MUTATION_RETURNING_BATCH_ROWS],
+            ).mappings()
+            while rows := result.fetchmany(chunk_rows):
+                if stager is not None:
+                    stager.append("orders", pl.DataFrame([dict(row) for row in rows]), "I")
+                ids.extend(int(row["id"]) for row in rows)
+        return ids
 
     with engine.begin() as conn:
-        result = conn.execute(stmt, orders)
-        ids = [row[0] for row in result.fetchall()]
+        ids = []
+        for offset in range(0, len(orders), MUTATION_RETURNING_BATCH_ROWS):
+            result = conn.execute(
+                stmt,
+                orders[offset : offset + MUTATION_RETURNING_BATCH_ROWS],
+            )
+            while rows := result.fetchmany(50000):
+                ids.extend(int(row[0]) for row in rows)
 
     return ids
 
@@ -290,8 +387,8 @@ def start_generation_batch(
 
     Completed dates are idempotently skipped. A new date must continue directly
     after the last completed generation date; the first generated date equals
-    the dataset's bootstrap date. The active batch identity is installed as
-    transaction-local PostgreSQL settings consumed by journal triggers.
+    the dataset's bootstrap date. The active batch writer is attached to the
+    SQLAlchemy connection so mutation helpers can stage exact event images.
     """
     from sqlalchemy import text
 
@@ -309,7 +406,7 @@ def start_generation_batch(
 
     existing = connection.execute(
         text(
-            "SELECT batch_id, status FROM pipeline.batches "
+            "SELECT batch_id, batch_sequence, status, scenario_seed, config_fingerprint FROM pipeline.batches "
             "WHERE dataset_id=:dataset AND business_date=:business_date "
             "AND batch_kind='generation'"
         ),
@@ -317,6 +414,23 @@ def start_generation_batch(
     ).mappings().one_or_none()
     if existing is not None:
         if existing["status"] == "completed":
+            if (
+                existing["scenario_seed"] != scenario_seed
+                or existing["config_fingerprint"] != config_fingerprint
+            ):
+                raise ValueError(
+                    f"Completed generation date {business_date} exists with a different seed or config"
+                )
+            StagedChangeBatch.recover_committed(
+                dataset_id=str(dataset_id),
+                batch_id=str(existing["batch_id"]),
+                batch_sequence=int(existing["batch_sequence"]),
+                business_date=business_date,
+                contract_version=6,
+                source_tables=tuple(connection.execute(
+                    text("SELECT source_table FROM pipeline.source_tables WHERE enabled ORDER BY source_table")
+                ).scalars().all()),
+            )
             logger.info("Skipping completed generation batch %s for %s", existing["batch_id"], business_date)
             return None
         raise RuntimeError(f"Generation batch for {business_date} is unexpectedly still started")
@@ -374,13 +488,38 @@ def start_generation_batch(
             text("SELECT set_config(:setting, :value, true)"),
             {"setting": setting, "value": value},
         )
-    return {"dataset_id": dataset_id, "batch_id": batch_id, "batch_sequence": batch_sequence}
+    tables = tuple(
+        connection.execute(
+            text("SELECT source_table FROM pipeline.source_tables WHERE enabled ORDER BY source_table")
+        ).scalars().all()
+    )
+    stager = StagedChangeBatch(
+        dataset_id=str(dataset_id),
+        batch_id=str(batch_id),
+        batch_sequence=int(batch_sequence),
+        business_date=business_date,
+        contract_version=6,
+        source_tables=tables,
+    )
+    connection.info["ampere_source_batch_stager"] = stager
+    return {
+        "dataset_id": dataset_id,
+        "batch_id": batch_id,
+        "batch_sequence": batch_sequence,
+        "stager": stager,
+    }
 
 
-def complete_generation_batch(connection, batch: dict) -> dict[str, int]:
+def complete_generation_batch(connection, batch: dict, change_counts: dict[str, int]) -> dict[str, int]:
     """Commit the in-transaction batch marker after business generation succeeds."""
     from sqlalchemy import text
 
+    for table, count in change_counts.items():
+        connection.execute(
+            text("UPDATE pipeline.batch_table_counts SET change_count=:count "
+                 "WHERE dataset_id=:dataset AND batch_id=:batch AND source_table=:table"),
+            {"count": count, "dataset": batch["dataset_id"], "batch": batch["batch_id"], "table": table},
+        )
     result = connection.execute(
         text(
             "UPDATE pipeline.batches SET status='completed', completed_at=clock_timestamp() "
@@ -394,7 +533,7 @@ def complete_generation_batch(connection, batch: dict) -> dict[str, int]:
         str(row.source_table): int(row.change_count)
         for row in connection.execute(
             text(
-                "SELECT source_table, change_count FROM pipeline.batch_table_counts "
+            "SELECT source_table, change_count FROM pipeline.batch_table_counts "
                 "WHERE dataset_id=:dataset AND batch_id=:batch"
             ),
             {"dataset": batch["dataset_id"], "batch": batch["batch_id"]},

@@ -6,6 +6,7 @@ from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
 
 from utils.ampere_dag_config import load_pre_raw_dag_config
+from utils.ampere_dag_config import get_optional_variable, resolve_minio_endpoint
 
 DAG_ID = "ampere__pre_raw__generators__backfill"
 DAG_CONFIG = load_pre_raw_dag_config(
@@ -25,6 +26,14 @@ pg_pass = Secret(
     secret="pgpass",
     key="pgpass",
 )
+minio_access_key = Secret(
+    deploy_type="env", deploy_target="MINIO_ACCESS_KEY",
+    secret="minio-creds", key="MINIO_ACCESS_KEY",
+)
+minio_secret_key = Secret(
+    deploy_type="env", deploy_target="MINIO_SECRET_KEY",
+    secret="minio-creds", key="MINIO_SECRET_KEY",
+)
 
 with DAG(
     dag_id=DAG_ID,
@@ -36,7 +45,7 @@ with DAG(
     description=(
         "Generate a consecutive source-data range sequentially in one "
         "PostgreSQL-bound pod, committing one calendar month at a time. "
-        "Journal capture runs once per SQL write batch; failed months roll back "
+        "Mutation-time Parquet capture runs in bounded chunks; failed months roll back "
         "and can be retried. This DAG does not start Raw or Bronze."
     ),
     tags=["layer:pre_raw", "system:postgres", "mode:backfill"],
@@ -49,10 +58,14 @@ with DAG(
         image=DAG_CONFIG.image,
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
-        secrets=[pg_user, pg_pass],
+        secrets=[pg_user, pg_pass, minio_access_key, minio_secret_key],
         env_vars={
             "PGOPTIONS": f"-c work_mem={DAG_CONFIG.pg_work_mem}",
             "AMPERE_SOURCE_CODE_VERSION": DAG_CONFIG.image,
+            "MINIO_S3_ENDPOINT": resolve_minio_endpoint(),
+            "MINIO_STAGING_BUCKET": get_optional_variable("minio_raw_bucket") or "ampere-raw",
+            "MINIO_STAGING_PREFIX": get_optional_variable("ampere_staging_prefix") or "ampere/source-batches/v1",
+            "AMPERE_STAGING_TARGET_FILE_BYTES": get_optional_variable("ampere_staging_target_file_bytes") or str(128 * 1024 * 1024),
             "POLARS_MAX_THREADS": "3",
             "OPENBLAS_NUM_THREADS": "1",
             "OMP_NUM_THREADS": "1",

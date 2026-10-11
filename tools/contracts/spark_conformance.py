@@ -130,7 +130,7 @@ def _active_sort_order(
 
 
 def validate_spark_table(spark: Any, catalog: str, table: Any) -> str:
-    """Fail when a Spark-visible Iceberg table differs from its v4 contract."""
+    """Fail when a Spark-visible Iceberg table differs from the canonical contract."""
     target = ".".join(
         quote_identifier(part)
         for part in (catalog, table.namespace, table.name)

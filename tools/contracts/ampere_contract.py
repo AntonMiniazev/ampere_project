@@ -1,4 +1,4 @@
-"""Load and resolve Ampere's canonical Iceberg contract v5."""
+"""Load and resolve Ampere's canonical Iceberg contract v6."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-CONTRACT_VERSION = 5
+CONTRACT_VERSION = 6
 LAYERS = ("raw", "bronze", "silver", "gold")
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ampere_tables.json")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -187,8 +187,8 @@ def _validate_publication(layer: str, table_path: str, raw: Any, columns: set[st
 def _validate_ingestion(table_path: str, raw: Any, columns: dict[str, str]) -> dict[str, Any]:
     """Validate Raw change-history semantics without discarding contract fields."""
     ingestion = _object(raw, f"{table_path}.ingestion")
-    if ingestion.get("kind") != "compact_source_change_metadata":
-        _fail(f"{table_path}.ingestion.kind", "must be compact_source_change_metadata")
+    if ingestion.get("kind") != "staged_typed_parquet_manifest":
+        _fail(f"{table_path}.ingestion.kind", "must be staged_typed_parquet_manifest")
 
     def names(key: str, *, required: bool = True) -> tuple[str, ...]:
         value = ingestion.get(key)
@@ -255,6 +255,17 @@ def _validate_ingestion(table_path: str, raw: Any, columns: dict[str, str]) -> d
         _fail(f"{table_path}.ingestion.history_policy", "unsupported Raw history policy")
     if ingestion.get("batch_visibility") != "completed_source_batch_and_acknowledged_raw_transfer":
         _fail(f"{table_path}.ingestion.batch_visibility", "unsupported Raw batch visibility policy")
+    staging = _object(ingestion.get("staging"), f"{table_path}.ingestion.staging")
+    if staging != {
+        "manifest_version": 1,
+        "file_format": "parquet",
+        "compression": "zstd",
+        "target_file_size_bytes": 134217728,
+        "max_rows_per_chunk": 50000,
+        "commit_marker": "COMMITTED.json",
+        "eligibility": "completed_postgres_batch_and_validated_manifest",
+    }:
+        _fail(f"{table_path}.ingestion.staging", "must define the typed immutable batch staging contract")
     if ingestion["source_table"] != table_path.rsplit(".", 1)[-1]:
         _fail(f"{table_path}.ingestion.source_table", "must match the Raw table name")
 
@@ -314,7 +325,7 @@ def _validate_profile(name: str, raw: Any) -> dict[str, Any]:
 
 
 def load_contract(path: str | Path = DEFAULT_CONTRACT_PATH) -> AmpereContract:
-    """Read, validate, and resolve v4 defaults for all declared table specs."""
+    """Read, validate, and resolve the current defaults for all declared table specs."""
     contract_path = Path(path)
     try:
         raw = json.loads(contract_path.read_text(encoding="utf-8"))

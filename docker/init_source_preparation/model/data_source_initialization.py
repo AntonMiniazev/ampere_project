@@ -27,11 +27,10 @@ from init_source_preparation.generators.delivery_resource_gen_init import (
 )
 from init_source_preparation.logging_utils import APP_NAME
 from init_source_preparation.db import get_engine
-from init_source_preparation.source_journal import (
-    drop_source_capture_triggers,
-    initialize_dataset_journal,
-    migrate_existing_source_journal,
+from init_source_preparation.source_batches import (
+    initialize_source_dataset,
 )
+from tools.source_batch_staging import StagedChangeBatch
 
 logger = logging.getLogger(APP_NAME)
 
@@ -59,14 +58,61 @@ def initialize_data_sources() -> None:
     PostgreSQL source schema.
     """
     project_date = date.fromisoformat(project_start_date)
+    if schema_init != "source":
+        raise ValueError("SOURCE_INIT_MODE=reset is limited to the Ampere-owned 'source' schema")
     engine = get_engine()
+    initialization_run_id = os.getenv("AMPERE_AIRFLOW_RUN_ID")
+    if initialization_run_id:
+        with engine.connect() as connection:
+            existing = None
+            has_datasets = connection.execute(
+                text("SELECT to_regclass('pipeline.datasets') IS NOT NULL")
+            ).scalar_one()
+            if has_datasets:
+                has_run_id = connection.execute(text("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema='pipeline' AND table_name='datasets'
+                          AND column_name='initialization_run_id'
+                    )
+                """)).scalar_one()
+                if has_run_id:
+                    existing = connection.execute(text("""
+                        SELECT d.dataset_id,d.project_start_date,b.batch_id,b.batch_sequence
+                        FROM pipeline.datasets d JOIN pipeline.batches b
+                          ON b.dataset_id=d.dataset_id AND b.batch_kind='baseline'
+                         AND b.status='completed'
+                        WHERE d.initialization_run_id=:run_id AND d.status='ready'
+                    """), {"run_id": initialization_run_id}).mappings().one_or_none()
+            if existing is not None:
+                tables = tuple(connection.execute(text(
+                    "SELECT source_table FROM pipeline.source_tables WHERE enabled ORDER BY source_table"
+                )).scalars().all())
+                StagedChangeBatch.recover_committed(
+                    dataset_id=str(existing["dataset_id"]),
+                    batch_id=str(existing["batch_id"]),
+                    batch_sequence=int(existing["batch_sequence"]),
+                    business_date=existing["project_start_date"],
+                    contract_version=6,
+                    source_tables=tables,
+                )
+                logger.info("Recovered already-committed init dataset_id=%s run_id=%s", existing["dataset_id"], initialization_run_id)
+                return
+    stager = None
     with engine.begin() as connection:
         # Init and generation share this lock; a reset cannot race an active
         # source-writing pod. Existing triggers allow this explicit reset path.
         connection.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 724614902631})
+        # Task 7 replaces the invalid source/control dataset with a clean
+        # bootstrap. Drop only Ampere-owned schemas; Silver/Gold and shared
+        # platform schemas are outside this reset boundary.
+        quoted_schema = '"' + schema_init.replace('"', '""') + '"'
+        connection.execute(text(f"DROP SCHEMA IF EXISTS {quoted_schema} CASCADE"))
+        connection.execute(text("DROP SCHEMA IF EXISTS source_changes CASCADE"))
+        connection.execute(text("DROP SCHEMA IF EXISTS pipeline CASCADE"))
         ensure_schema(schema_init, connection=connection)
 
-        # Keep reset, seed rows, baseline journal, and dataset activation in one
+        # Keep reset, seed rows, baseline staging, and dataset activation in one
         # transaction. A failed init rolls back rather than leaving a half-ready
         # source dataset that the generator could extend.
         for table_name, data in table_queries.items():
@@ -80,10 +126,6 @@ def initialize_data_sources() -> None:
                 continue
 
             if table_exists(schema_init, table_name, connection=connection):
-                # Reset is the only unjournaled source write path. Remove the
-                # capture trigger before truncating and bulk-loading the table;
-                # the new dataset's baseline is journaled after all loads finish.
-                drop_source_capture_triggers(connection, schema_init, table_name)
                 logger.info("Truncating %s", table_name)
                 truncate_table(schema_init, table_name, connection=connection)
             else:
@@ -116,29 +158,12 @@ def initialize_data_sources() -> None:
                     connection=connection,
                 )
 
-        dataset_id = initialize_dataset_journal(
+        dataset_id, stager = initialize_source_dataset(
             connection,
             schema_init,
             project_date,
             source_code_version=os.getenv("AMPERE_SOURCE_CODE_VERSION", "unknown"),
+            initialization_run_id=initialization_run_id,
         )
         logger.info("Initialized source dataset_id=%s start_date=%s", dataset_id, project_date)
-
-
-def migrate_source_journal() -> str:
-    """Install transactional journal capture without resetting source data."""
-    project_date = date.fromisoformat(project_start_date)
-    engine = get_engine()
-    with engine.begin() as connection:
-        connection.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_key)"),
-            {"lock_key": 724614902631},
-        )
-        dataset_id = migrate_existing_source_journal(
-            connection,
-            schema_init,
-            project_date,
-            source_code_version=os.getenv("AMPERE_SOURCE_CODE_VERSION", "unknown"),
-        )
-        logger.info("Journal migration ready dataset_id=%s", dataset_id)
-        return dataset_id
+    stager.publish_committed()

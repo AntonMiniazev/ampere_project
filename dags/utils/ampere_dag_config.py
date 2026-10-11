@@ -164,6 +164,10 @@ class RawLandingDagConfig:
     pg_port: str
     pg_database: str
     schema: str
+    staging_bucket: str
+    staging_prefix: str
+    target_input_bytes: int
+    max_files_per_chunk: int
     source_system: str
     minio_endpoint: str
     warehouse: str
@@ -202,6 +206,8 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
     - pg_port: PostgreSQL port used by JDBC extraction. Default `5432`.
     - pg_database: PostgreSQL database name used by JDBC extraction. Default `ampere_db`.
     - schema: Source PostgreSQL schema to extract from. Default `source`.
+    - staging_bucket / staging_prefix: MinIO location for immutable source event files.
+    - target_input_bytes / max_files_per_chunk: independent Raw Spark input chunk limits.
     - source_system: Source-system id written into raw metadata and paths. Default `postgres-pre-raw`.
     - minio_endpoint: MinIO/S3 endpoint used by Spark S3A IO. Default `http://minio.ampere.svc.cluster.local:9000`.
     - warehouse: Lakekeeper Raw warehouse. Default `raw`.
@@ -238,6 +244,10 @@ def load_raw_landing_dag_config(anchor_file: str | Path) -> RawLandingDagConfig:
         pg_port=Variable.get("pg_port", default="5432"),
         pg_database=Variable.get("pg_database", default="ampere_db"),
         schema=Variable.get("pg_schema", default="source"),
+        staging_bucket=Variable.get("minio_raw_bucket", default="ampere-raw"),
+        staging_prefix=Variable.get("ampere_staging_prefix", default="ampere/source-batches/v1"),
+        target_input_bytes=int(Variable.get("ampere_raw_target_input_bytes", default=str(512 * 1024 * 1024))),
+        max_files_per_chunk=int(Variable.get("ampere_raw_max_files_per_chunk", default="128")),
         source_system=Variable.get("raw_source_system", default="postgres-pre-raw"),
         minio_endpoint=minio_endpoint,
         warehouse=Variable.get("iceberg_raw_warehouse", default="raw"),

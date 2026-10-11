@@ -49,7 +49,7 @@ def _run_generation_in_transaction(
     connection,
     *,
     scenario_seed: int | None = None,
-) -> bool:
+) -> tuple[bool, object | None]:
     """Generate one logical date using the caller's active PostgreSQL transaction."""
     yesterday = run_date - timedelta(days=1)
     fingerprint = hashlib.sha256(
@@ -72,7 +72,7 @@ def _run_generation_in_transaction(
         source_code_version=code_version,
     )
     if batch is None:
-        return False
+        return False, None
     logger.info("Preparing client churn and new client generation")
     to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
         run_date, config, connection=connection
@@ -96,7 +96,16 @@ def _run_generation_in_transaction(
         raise RuntimeError(
             f"Generation for {run_date} committed no orders; refusing to advance"
         )
-    change_counts = complete_generation_batch(connection, batch)
+    stager = batch["stager"]
+    staged_counts = stager.row_counts
+    change_counts = complete_generation_batch(connection, batch, staged_counts)
+    if staged_counts != change_counts:
+        raise RuntimeError(
+            "Mutation-time Parquet event counts differ from PostgreSQL batch ledger: "
+            f"staged={staged_counts}, ledger={change_counts}"
+        )
+    stager.prepare()
+    connection.info.pop("ampere_source_batch_stager", None)
     changed_tables = sum(count > 0 for count in change_counts.values())
     logger.info(
         "Completed source batch dataset=%s batch=%s sequence=%s tables_changed=%s rows_changed=%s",
@@ -107,17 +116,24 @@ def _run_generation_in_transaction(
         sum(change_counts.values()),
     )
     logger.info("Daily generation workflow completed for %s", run_date)
-    return True
+    return True, stager
 
 
 def run_generation(
     run_date: date, config: GeneratorConfig, *, scenario_seed: int | None = None
 ) -> bool:
     """Generate one logical date and commit its source changes atomically."""
-    with get_engine().begin() as connection:
-        return _run_generation_in_transaction(
-            run_date, config, connection, scenario_seed=scenario_seed
-        )
+    stager = None
+    try:
+        with get_engine().begin() as connection:
+            generated, stager = _run_generation_in_transaction(
+                run_date, config, connection, scenario_seed=scenario_seed
+            )
+    except Exception:
+        raise
+    if stager is not None:
+        stager.publish_committed()
+    return generated
 
 
 def run_generation_range(
@@ -146,6 +162,7 @@ def run_generation_range(
         next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
         month_end = min(end_date, next_month - timedelta(days=1))
         month_completed = 0
+        month_stagers = []
         logger.info(
             "Starting monthly source transaction for %s..%s",
             run_date,
@@ -161,15 +178,21 @@ def run_generation_range(
                 else:
                     day_seed = None
                 logger.info("Backfill day %s/%s: %s", total, day_count, run_date)
-                if _run_generation_in_transaction(
+                generated, stager = _run_generation_in_transaction(
                     run_date,
                     config,
                     connection,
                     scenario_seed=day_seed,
-                ):
+                )
+                if generated:
                     completed += 1
                     month_completed += 1
+                    if stager is None:
+                        raise RuntimeError("Generated source batch has no staged change writer")
+                    month_stagers.append(stager)
                 run_date += timedelta(days=1)
+        for stager in month_stagers:
+            stager.publish_committed()
         logger.info(
             "Committed monthly source transaction through %s: generated=%s",
             month_end,

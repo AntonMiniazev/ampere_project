@@ -1,4 +1,4 @@
-"""Validate contract v5 layer resolution and key physical layouts."""
+"""Validate contract v6 layer resolution and key physical layouts."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class IcebergContractTests(unittest.TestCase):
     def test_resolves_all_tables_profiles_columns_and_layouts(self) -> None:
         contract = load_contract(ROOT / "tools/contracts/ampere_tables.json")
-        self.assertEqual(contract.version, 5)
+        self.assertEqual(contract.version, 6)
         self.assertEqual(
             {layer: len(contract.layer_tables(layer)) for layer in ("raw", "bronze", "silver", "gold")},
             {"raw": 16, "bronze": 17, "silver": 17, "gold": 8},
@@ -26,7 +26,7 @@ class IcebergContractTests(unittest.TestCase):
         self.assertEqual(contract.layer_inventory["total"], 58)
         orders = contract.table("raw", "orders")
         self.assertEqual(orders.namespace, "raw")
-        self.assertEqual(orders.ingestion["kind"], "compact_source_change_metadata")
+        self.assertEqual(orders.ingestion["kind"], "staged_typed_parquet_manifest")
         self.assertEqual(orders.ingestion["entity_keys"], ("_dataset_id", "_source_row_id"))
         self.assertEqual(orders.ingestion["source_order"], ("_batch_sequence", "_change_id"))
         self.assertNotIn("before_image_columns", orders.ingestion)

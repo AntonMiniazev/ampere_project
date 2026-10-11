@@ -6,9 +6,10 @@ from datetime import date
 import numpy as np
 import polars as pl
 from faker import Faker
+from sqlalchemy import text
 
 from order_data_generator.config import GeneratorConfig
-from order_data_generator.db import exec_sql, read_sql
+from order_data_generator.db import _capture_result, read_sql
 from order_data_generator.logging_utils import APP_NAME
 
 fake = Faker()
@@ -33,8 +34,10 @@ def update_churned(ids: list[int], schema: str, today: date, *, connection=None)
         SET churned = TRUE,
             updated_at = '{today.isoformat()}'
         WHERE id IN ({id_list_str})
+        RETURNING *
     '''
-    exec_sql(query, connection=connection)
+    result = connection.execute(text(query))
+    _capture_result(connection, "clients", result, "U")
     logger.info("Updated %s clients (churned = TRUE)", len(ids))
 
 

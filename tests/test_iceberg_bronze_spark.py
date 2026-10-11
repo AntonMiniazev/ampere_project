@@ -25,6 +25,9 @@ from iceberg_bronze.apply_utils import merge_to_iceberg  # noqa: E402
 from iceberg_bronze.catalog import align_df_to_iceberg_schema, ensure_iceberg_table  # noqa: E402
 from iceberg_bronze.facts_events import stabilize_merge_source  # noqa: E402
 from iceberg_bronze.journal_apply import (  # noqa: E402
+    SOURCE_ROW_BUCKETS,
+    _apply_batch_slices,
+    _apply_full_rebuild,
     _full_rebuild_transfer_id,
     _raw_source_column_for_bronze,
     reserve_full_rebuild,
@@ -94,6 +97,8 @@ class IcebergRegistryTests(unittest.TestCase):
         cursor.fetchall.side_effect = [
             [("raw-transfer-1",), ("raw-transfer-2",)],
             [("clients", 24)],
+            [("raw-transfer-1", "batch-1", 1), ("raw-transfer-2", "batch-2", 37)],
+            [("batch-1", "clients", 10), ("batch-2", "clients", 14)],
         ]
         with patch("iceberg_bronze.journal_apply._pg_connect", return_value=connection):
             transfer = reserve_full_rebuild()
@@ -105,6 +110,8 @@ class IcebergRegistryTests(unittest.TestCase):
             transfer["transfer_ids"], ["raw-transfer-1", "raw-transfer-2"]
         )
         self.assertEqual(transfer["expected_counts"], {"clients": 24})
+        self.assertEqual([batch["batch_sequence"] for batch in transfer["batches"]], [1, 37])
+        self.assertEqual(transfer["batch_counts"]["batch-1"]["clients"], 10)
         self.assertTrue(transfer["rebuild"])
 
     def test_daily_apply_waits_for_started_full_rebuild(self) -> None:
@@ -156,7 +163,7 @@ class IcebergRegistryTests(unittest.TestCase):
         rebuilt = _full_rebuild_transfer_id(dataset_id, 37)
         prior = uuid.uuid5(
             uuid.NAMESPACE_URL,
-            f"ampere-bronze-rebuild:{dataset_id}:37:contract-v5",
+            f"ampere-bronze-rebuild:{dataset_id}:37:contract-v6",
         )
 
         self.assertEqual(rebuilt, _full_rebuild_transfer_id(dataset_id, 37))
@@ -424,6 +431,62 @@ class IcebergRegistryTests(unittest.TestCase):
         self.assertIn("WHEN MATCHED AND", sql)
         self.assertIn("extract_date=([0-9]{4}-[0-9]{2}-[0-9]{2})", sql)
         self.assertIn("<= '2026-07-09'", sql)
+
+
+class BoundedBronzeReplayTests(unittest.TestCase):
+    def test_source_row_hash_buckets_keep_entity_events_together(self) -> None:
+        spark = SparkSession.builder.master("local[2]").appName("bounded-bronze-buckets").getOrCreate()
+        spark.sparkContext.setLogLevel("ERROR")
+        try:
+            frame = spark.createDataFrame(
+                [
+                    ("dataset", "batch", 1, 1, "entity-a", "I"),
+                    ("dataset", "batch", 1, 2, "entity-a", "D"),
+                    ("dataset", "batch", 1, 3, "entity-b", "I"),
+                ],
+                ["_dataset_id", "_batch_id", "_batch_sequence", "_change_id", "_source_row_id", "_op"],
+            )
+            spark.table = MagicMock(return_value=frame)
+            transfer = {
+                "dataset_id": "dataset",
+                "transfer_id": "rebuild",
+                "batch_counts": {"batch": {"clients": 3}},
+            }
+            batch = {"batch_id": "batch", "batch_sequence": 1}
+            seen = []
+
+            def record(_spark, _target, _table, changes, _transfer):
+                seen.append(changes.select("_source_row_id", "_change_id").collect())
+
+            with patch("iceberg_bronze.journal_apply._merge_incremental", side_effect=record):
+                count = _apply_batch_slices(spark, "bronze.clients", "clients", transfer, batch)
+
+            self.assertEqual(count, 3)
+            self.assertEqual(len(seen), 2)
+            buckets = {tuple(sorted(row._source_row_id for row in group)) for group in seen}
+            self.assertEqual(buckets, {("entity-a", "entity-a"), ("entity-b",)})
+            self.assertGreaterEqual(SOURCE_ROW_BUCKETS, len(seen))
+        finally:
+            spark.stop()
+
+    def test_full_rebuild_replays_batches_in_order_after_table_clear(self) -> None:
+        spark = MagicMock()
+        transfer = {
+            "batches": [
+                {"batch_id": "first", "batch_sequence": 2},
+                {"batch_id": "second", "batch_sequence": 8},
+            ],
+            "expected_counts": {"clients": 3},
+        }
+        with patch(
+            "iceberg_bronze.journal_apply._apply_batch_slices",
+            side_effect=[1, 2],
+        ) as apply:
+            total = _apply_full_rebuild(spark, "bronze.clients", "clients", transfer)
+
+        spark.sql.assert_called_once_with("DELETE FROM bronze.clients")
+        self.assertEqual(total, 3)
+        self.assertEqual([call.args[-1]["batch_sequence"] for call in apply.call_args_list], [2, 8])
 
 
 @unittest.skipUnless(

@@ -5,6 +5,7 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from kubernetes.client import V1LocalObjectReference, V1ResourceRequirements
+from utils.ampere_dag_config import get_optional_variable, resolve_minio_endpoint
 
 from utils.ampere_dag_config import load_pre_raw_dag_config
 
@@ -25,6 +26,14 @@ pg_pass = Secret(
     deploy_target="PGPASSWORD",
     secret="pgpass",
     key="pgpass",
+)
+minio_access_key = Secret(
+    deploy_type="env", deploy_target="MINIO_ACCESS_KEY",
+    secret="minio-creds", key="MINIO_ACCESS_KEY",
+)
+minio_secret_key = Secret(
+    deploy_type="env", deploy_target="MINIO_SECRET_KEY",
+    secret="minio-creds", key="MINIO_SECRET_KEY",
 )
 
 with DAG(
@@ -47,10 +56,14 @@ with DAG(
         image=DAG_CONFIG.image,
         image_pull_policy="IfNotPresent",
         image_pull_secrets=[V1LocalObjectReference(name="ghcr-pull")],
-        secrets=[pg_user, pg_pass],
+        secrets=[pg_user, pg_pass, minio_access_key, minio_secret_key],
         env_vars={
             "PGOPTIONS": f"-c work_mem={DAG_CONFIG.pg_work_mem}",
             "AMPERE_SOURCE_CODE_VERSION": DAG_CONFIG.image,
+            "MINIO_S3_ENDPOINT": resolve_minio_endpoint(),
+            "MINIO_STAGING_BUCKET": get_optional_variable("minio_raw_bucket") or "ampere-raw",
+            "MINIO_STAGING_PREFIX": get_optional_variable("ampere_staging_prefix") or "ampere/source-batches/v1",
+            "AMPERE_STAGING_TARGET_FILE_BYTES": get_optional_variable("ampere_staging_target_file_bytes") or str(128 * 1024 * 1024),
             "POLARS_MAX_THREADS": "3",
             "OPENBLAS_NUM_THREADS": "1",
             "OMP_NUM_THREADS": "1",
@@ -79,6 +92,7 @@ with DAG(
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
         wait_for_completion=False,
+        conf={"trigger_bronze": True},
     )
 
     generate_data >> trigger_raw_landing

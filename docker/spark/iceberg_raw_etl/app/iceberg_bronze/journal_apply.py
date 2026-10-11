@@ -26,6 +26,7 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
 BRONZE_REBUILD_GENERATION = "lineage-v1"
+SOURCE_ROW_BUCKETS = 16
 
 
 def _pg_connect():
@@ -139,6 +140,23 @@ def reserve_incremental_transfer() -> dict | None:
             (transfer_id,),
         )
         expected_counts = {table: int(count) for table, count in cursor.fetchall()}
+        cursor.execute(
+            "SELECT batch_id,batch_sequence FROM pipeline.raw_transfer_batches "
+            "WHERE transfer_id=%s ORDER BY batch_sequence",
+            (transfer_id,),
+        )
+        batches = [{"batch_id": str(batch_id), "batch_sequence": int(sequence)} for batch_id, sequence in cursor.fetchall()]
+        if not batches:
+            raise RuntimeError(f"Completed Raw transfer {transfer_id} has no source batches")
+        cursor.execute(
+            "SELECT c.batch_id,c.source_table,c.change_count "
+            "FROM pipeline.batch_table_counts c JOIN pipeline.raw_transfer_batches b "
+            "ON b.dataset_id=c.dataset_id AND b.batch_id=c.batch_id WHERE b.transfer_id=%s",
+            (transfer_id,),
+        )
+        batch_counts = {item["batch_id"]: {} for item in batches}
+        for batch_id, table, count in cursor.fetchall():
+            batch_counts[str(batch_id)][str(table)] = int(count)
         return {
             "transfer_id": str(transfer_id),
             "dataset_id": str(dataset_id),
@@ -146,6 +164,8 @@ def reserve_incremental_transfer() -> dict | None:
             "last_sequence": int(last_sequence),
             "transfer_ids": [str(transfer_id)],
             "expected_counts": expected_counts,
+            "batches": batches,
+            "batch_counts": batch_counts,
             "rebuild": False,
         }
 
@@ -201,6 +221,26 @@ def reserve_full_rebuild() -> dict:
                 (ids,),
             )
             expected_counts = {table: int(count) for table, count in cursor.fetchall()}
+            cursor.execute(
+                "SELECT rtb.transfer_id,rtb.batch_id,rtb.batch_sequence "
+                "FROM pipeline.raw_transfer_batches rtb WHERE rtb.transfer_id=ANY(%s) "
+                "ORDER BY rtb.batch_sequence",
+                (ids,),
+            )
+            batches = [
+                {"raw_transfer_id": str(raw_id), "batch_id": str(batch_id), "batch_sequence": int(sequence)}
+                for raw_id, batch_id, sequence in cursor.fetchall()
+            ]
+            cursor.execute(
+                "SELECT c.batch_id,c.source_table,c.change_count "
+                "FROM pipeline.batch_table_counts c JOIN pipeline.raw_transfer_batches b "
+                "ON b.dataset_id=c.dataset_id AND b.batch_id=c.batch_id "
+                "WHERE b.transfer_id=ANY(%s)",
+                (ids,),
+            )
+            batch_counts = {item["batch_id"]: {} for item in batches}
+            for batch_id, table, count in cursor.fetchall():
+                batch_counts[str(batch_id)][str(table)] = int(count)
             return {
                 "transfer_id": str(rebuild_id),
                 "dataset_id": str(dataset_id),
@@ -208,6 +248,8 @@ def reserve_full_rebuild() -> dict:
                 "last_sequence": int(last_sequence),
                 "transfer_ids": [str(value) for value in ids],
                 "expected_counts": expected_counts,
+                "batches": batches,
+                "batch_counts": batch_counts,
                 "rebuild": True,
             }
         cursor.execute(
@@ -228,6 +270,26 @@ def reserve_full_rebuild() -> dict:
             (ids,),
         )
         expected_counts = {table: int(count) for table, count in cursor.fetchall()}
+        cursor.execute(
+            "SELECT rtb.transfer_id,rtb.batch_id,rtb.batch_sequence "
+            "FROM pipeline.raw_transfer_batches rtb WHERE rtb.transfer_id=ANY(%s) "
+            "ORDER BY rtb.batch_sequence",
+            (ids,),
+        )
+        batches = [
+            {"raw_transfer_id": str(raw_id), "batch_id": str(batch_id), "batch_sequence": int(sequence)}
+            for raw_id, batch_id, sequence in cursor.fetchall()
+        ]
+        cursor.execute(
+            "SELECT c.batch_id,c.source_table,c.change_count "
+            "FROM pipeline.batch_table_counts c JOIN pipeline.raw_transfer_batches b "
+            "ON b.dataset_id=c.dataset_id AND b.batch_id=c.batch_id "
+            "WHERE b.transfer_id=ANY(%s)",
+            (ids,),
+        )
+        batch_counts = {item["batch_id"]: {} for item in batches}
+        for batch_id, table, count in cursor.fetchall():
+            batch_counts[str(batch_id)][str(table)] = int(count)
         rebuild_id = _full_rebuild_transfer_id(str(dataset_id), last_sequence)
         cursor.execute(
             "INSERT INTO pipeline.bronze_transfers "
@@ -242,6 +304,8 @@ def reserve_full_rebuild() -> dict:
             "last_sequence": last_sequence,
             "transfer_ids": [str(value) for value in ids],
             "expected_counts": expected_counts,
+            "batches": batches,
+            "batch_counts": batch_counts,
             "rebuild": True,
         }
 
@@ -269,7 +333,7 @@ def _full_rebuild_transfer_id(dataset_id: str, last_sequence: int) -> uuid.UUID:
     """Give corrected rebuilds a fresh checkpoint identity while keeping retries stable."""
     return uuid.uuid5(
         uuid.NAMESPACE_URL,
-        f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v5:{BRONZE_REBUILD_GENERATION}",
+        f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v6:{BRONZE_REBUILD_GENERATION}",
     )
 
 
@@ -344,11 +408,77 @@ def _merge_incremental(
         changes.unpersist()
 
 
-def _apply_full_rebuild(spark: SparkSession, target: str, table: str, changes: DataFrame, transfer: dict) -> None:
-    latest = _latest_changes(changes).filter(F.col("_op") != "D")
-    final_rows = _bronze_rows(table, latest, transfer)
-    # One Iceberg overwrite commit atomically replaces the table contents.
-    final_rows.writeTo(target).overwrite(F.lit(True))
+def _apply_batch_slices(
+    spark: SparkSession,
+    target: str,
+    table: str,
+    transfer: dict,
+    batch: dict,
+) -> int:
+    """Apply one source batch in disjoint source-row buckets."""
+    expected = transfer["batch_counts"].get(batch["batch_id"], {}).get(table)
+    if expected is None:
+        raise RuntimeError(f"Missing {table} count for completed source batch {batch['batch_id']}")
+    if expected == 0:
+        return 0
+    raw_batch = spark.table(f"iceberg_raw.raw.{quote_identifier(table)}").filter(
+        (F.col("_dataset_id") == transfer["dataset_id"])
+        & (F.col("_batch_id") == batch["batch_id"])
+        & (F.col("_batch_sequence") == batch["batch_sequence"])
+    ).persist(StorageLevel.DISK_ONLY)
+    try:
+        actual = raw_batch.count()
+        if actual != expected:
+            raise RuntimeError(
+                f"Raw batch count mismatch table={table} batch={batch['batch_id']} "
+                f"control={expected} Iceberg={actual}"
+            )
+        bucket_expr = F.pmod(F.xxhash64(F.col("_source_row_id")), F.lit(SOURCE_ROW_BUCKETS))
+        buckets = [int(row[0]) for row in raw_batch.select(bucket_expr.alias("bucket")).distinct().collect()]
+        for bucket in sorted(buckets):
+            changes = raw_batch.filter(bucket_expr == F.lit(bucket))
+            _merge_incremental(spark, target, table, changes, transfer)
+            LOGGER.info(
+                "BRONZE_BATCH_CHUNK_COMPLETE table=%s batch=%s bucket=%s/%s rows_in_batch=%s",
+                table, batch["batch_sequence"], bucket, SOURCE_ROW_BUCKETS, actual,
+            )
+        return actual
+    finally:
+        raw_batch.unpersist()
+
+
+def _apply_full_rebuild(spark: SparkSession, target: str, table: str, transfer: dict) -> int:
+    """Clear one target table, then replay accepted batches chronologically."""
+    # If this table has no completion marker, a retry starts it cleanly and
+    # replays the complete frozen batch list. Other completed tables stay put.
+    spark.sql(f"DELETE FROM {target}")
+    applied = 0
+    previous_sequence = None
+    for batch in transfer["batches"]:
+        sequence = int(batch["batch_sequence"])
+        if previous_sequence is not None and sequence <= previous_sequence:
+            raise RuntimeError("Frozen Raw batch boundary is not strictly ascending")
+        previous_sequence = sequence
+        rows = _apply_batch_slices(spark, target, table, transfer, batch)
+        applied += rows
+    if applied != transfer["expected_counts"].get(table, 0):
+        raise RuntimeError(
+            f"Bronze rebuild input count mismatch for {table}: "
+            f"batch ledger={transfer['expected_counts'].get(table, 0)} applied={applied}"
+        )
+    return applied
+
+
+def _apply_incremental_table(spark: SparkSession, target: str, table: str, transfer: dict) -> int:
+    applied = 0
+    for batch in transfer["batches"]:
+        applied += _apply_batch_slices(spark, target, table, transfer, batch)
+    if applied != transfer["expected_counts"].get(table, 0):
+        raise RuntimeError(
+            f"Bronze incremental input count mismatch for {table}: "
+            f"transfer ledger={transfer['expected_counts'].get(table, 0)} applied={applied}"
+        )
+    return applied
 
 
 def _mark_table_complete(transfer_id: str, table: str) -> None:
@@ -469,34 +599,20 @@ def run(
             "full_rebuild" if transfer["rebuild"] else "incremental",
             expected_count,
         )
-        raw = spark.table(f"iceberg_raw.raw.{quote_identifier(table)}").filter(
-            (F.col("_dataset_id") == transfer["dataset_id"])
-            & F.col("_transfer_id").isin(transfer["transfer_ids"])
-        ).persist(StorageLevel.DISK_ONLY)
         target = f"iceberg_bronze.bronze.{quote_identifier(table)}"
         try:
-            actual_count = raw.count()
+            if transfer["rebuild"]:
+                actual_count = _apply_full_rebuild(spark, target, table, transfer)
+            else:
+                actual_count = _apply_incremental_table(spark, target, table, transfer)
             LOGGER.info(
                 "BRONZE_TABLE_SOURCE_VALIDATED table=%s raw_rows=%s expected_rows=%s",
-                table,
-                actual_count,
-                expected_count,
+                table, actual_count, expected_count,
             )
-            if actual_count != expected_count:
-                raise RuntimeError(
-                    f"Raw table count mismatch for {table}: "
-                    f"registry={expected_count}, Iceberg={actual_count}"
-                )
-            if transfer["rebuild"]:
-                _apply_full_rebuild(spark, target, table, raw, transfer)
-            else:
-                _merge_incremental(spark, target, table, raw, transfer)
             _mark_table_complete(transfer["transfer_id"], table)
         except Exception:
             LOGGER.exception("BRONZE_TABLE_FAILED table=%s", table)
             raise
-        finally:
-            raw.unpersist()
         LOGGER.info(
             "BRONZE_TABLE_COMPLETE table=%s rebuild=%s raw_rows=%s elapsed_seconds=%.1f",
             table,

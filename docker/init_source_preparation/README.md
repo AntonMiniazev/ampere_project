@@ -24,7 +24,7 @@ Airflow DAGs use this image with the same environment variable contract.
 
 Image version comes from the shared repo release tag `v*`.
 
-In reset mode, initialization removes both legacy and statement-level journal triggers before it truncates and seeds source tables. It reinstalls statement-level capture only after creating the new dataset baseline, within the same transaction.
+With explicit `SOURCE_INIT_MODE=reset`, initialization recreates the Ampere-owned source and pipeline schemas, seeds all 16 source tables, and stages an exact typed baseline to MinIO. The baseline manifest records every source table, including empty ones. PostgreSQL commits source data and compact batch controls before `COMMITTED.json` is published. A retry for the same Airflow run repairs a missing marker from the committed baseline. There are no row-event journal tables or active capture triggers. Init requires `MINIO_S3_ENDPOINT`, `MINIO_ACCESS_KEY`, and `MINIO_SECRET_KEY`; bucket and prefix default to `ampere-raw` and `ampere/source-batches/v1`.
 Branch pushes rebuild this image only when `docker/init_source_preparation/**` changes.
 Airflow selects the runtime tag through variable `ampere_release_version`.
 

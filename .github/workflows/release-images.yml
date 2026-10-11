@@ -100,18 +100,20 @@ jobs:
               },
               {
                   "image": "init-source-preparation",
-                  "context": "docker/init_source_preparation",
+                  "context": ".",
                   "file": "docker/init_source_preparation/Dockerfile",
                   "paths": [
                       "docker/init_source_preparation/",
+                      "tools/source_batch_staging.py",
                   ],
               },
               {
                   "image": "order-data-generator",
-                  "context": "docker/order_data_generator",
+                  "context": ".",
                   "file": "docker/order_data_generator/Dockerfile",
                   "paths": [
                       "docker/order_data_generator/",
+                      "tools/source_batch_staging.py",
                   ],
               },
           ]

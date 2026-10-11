@@ -1,31 +1,30 @@
 # Ampere data platform
 
-Ampere generates operational data in PostgreSQL and publishes Iceberg tables on MinIO through Lakekeeper. Task 6's compact source journal, Raw transfer, and Bronze current-state implementation is running from release `v1.0.35`. The reset flow needs the follow-up `v1.0.36` trigger-cleanup fix before the January rebuild sequence continues.
-
-The init DAG defaults to the existing destructive source reset/bootstrap. Trigger it with `{"source_init_mode":"journal_migrate"}` to install source identities, capture triggers, and a baseline on existing rows without truncating or reseeding them. This migration preserves current rows but treats them as one baseline; it cannot recreate historical daily changes that were not captured. New generation starts after the latest existing `orders.order_date` to prevent accidental replay of uncaptured dates.
+Ampere generates operational data in PostgreSQL and publishes Iceberg tables on MinIO through Lakekeeper. Init and generator mutations capture exact typed event images into bounded immutable Parquet in MinIO. PostgreSQL holds current business state and compact batch controls; Raw Iceberg stores durable change history and Bronze stores current state.
 
 ## Daily pipeline
 
 ```mermaid
 flowchart LR
-    G[Python generators] --> P[PostgreSQL source and change journal]
-    P --> R[Raw Iceberg change history]
+    G[Python generators] --> P[PostgreSQL source and batch controls]
+    G --> M[MinIO staged Parquet and manifests]
+    M --> R[Raw Iceberg change history]
     R --> B[Bronze Iceberg current state]
     B -. automatic trigger paused .-> S[Silver Iceberg via dbt and DuckDB]
     S -. automatic trigger paused .-> O[Gold Iceberg marts]
     O -. automatic trigger paused .-> C[Curie cache refresh]
 ```
 
-The scheduled generator runs at `15 4 * * *` (04:15 in the Airflow DAG timezone), journals each source date atomically, and triggers Raw. Raw transfers a fixed completed-batch boundary and then triggers Bronze. Bronze processes snapshots/mutable dimensions and facts/events in two sequential Spark applications; the latter advances the transfer checkpoint after both groups finish. The chain stops at Bronze; automatic Silver, Gold, and Curie handoffs remain disabled until the owner authorizes their restoration. The manual backfill accepts an inclusive date range in one generator pod, commits one bounded transaction per calendar month, and does not trigger downstream work. The Bronze full-rebuild DAG uses the same two groups over accepted Raw history at one frozen boundary. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
+The scheduled generator runs at `15 4 * * *` (04:15 in the Airflow DAG timezone), captures each source date atomically, and triggers Raw. Raw validates committed manifests, transfers a fixed batch boundary, and triggers Bronze only when requested. Bronze processes snapshots/mutable dimensions and facts/events in two sequential Spark applications; the latter advances the transfer checkpoint after both groups finish. The manual backfill accepts an inclusive date range in one generator pod, commits one bounded transaction per calendar month, and does not trigger downstream work. The Bronze full-rebuild DAG replays accepted Raw history chronologically in bounded slices at one frozen boundary. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
 
-The canonical [contract v5](tools/contracts/ampere_tables.json) defines 58 tables across Raw, Bronze, Silver, and Gold. PostgreSQL `source_changes` stores compact row identity, operation, and batch metadata; Raw joins those records to the source tables during transfer and preserves typed change history. Bronze stores current source state with dataset and stable row lineage, source-order version guards, and delete application. Catalog initialization creates contract tables and refuses schema/layout conflicts; it does not migrate or drop existing Iceberg tables automatically. Silver and Gold dbt/DuckDB models and manual rebuild DAGs remain available but isolated from automatic triggers during Task 6 validation.
+The canonical [contract v6](tools/contracts/ampere_tables.json) defines 58 tables across Raw, Bronze, Silver, and Gold. PostgreSQL stores current source state and compact dataset/batch/checkpoint metadata; init and generator mutations capture exact typed event images into bounded immutable Parquet files in MinIO. Raw validates the committed batch manifest and merges those files into Iceberg without querying current source rows. Bronze stores current source state with dataset and stable row lineage, source-order version guards, and delete application. Catalog initialization creates contract tables and refuses schema/layout conflicts; it does not migrate or drop existing Iceberg tables automatically. Silver and Gold dbt/DuckDB models and manual rebuild DAGs remain isolated from automatic triggers.
 
-Weekly housekeeping uses the Spark Connect client to submit contract-driven compaction, manifest rewrite, snapshot expiration, and orphan cleanup. It checks table schema, partitioning, and properties before maintenance.
+Weekly housekeeping uses the Spark Connect client to submit contract-driven compaction, manifest rewrite, snapshot expiration, and orphan cleanup. It checks table schema, partitioning, and properties before maintenance. Acknowledged MinIO staging payloads use a separate 7–14 day retention cleanup.
 
 ## Repository layout
 
 - `dags/`: Airflow DAGs, table-group configuration, and SparkApplication templates.
-- `docker/spark/iceberg_raw_etl/`: Spark applications for PostgreSQL journal-to-Raw and Raw-to-Bronze.
+- `docker/spark/iceberg_raw_etl/`: Spark applications for staged-Parquet-to-Raw and Raw-to-Bronze.
 - `docker/spark/connect_client/`: Spark Connect client for catalog initialization and housekeeping.
 - `docker/dbt_iceberg/` and `dbt_iceberg/`: dbt v2 runtime, SQL models, tests, and Iceberg publisher.
 - `docker/init_source_preparation/` and `docker/order_data_generator/`: source initialization and synthetic generation.

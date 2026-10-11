@@ -5,10 +5,11 @@ from datetime import date, datetime, timedelta
 
 import numpy as np
 import polars as pl
+from sqlalchemy import text
 
 from order_data_generator.config import GeneratorConfig
 from order_data_generator.db import (
-    exec_sql,
+    _capture_result,
     fetch_delivery_type_ids,
     fetch_order_status_map,
     insert_orders_returning_ids,
@@ -522,7 +523,11 @@ def generate_payments(
     '''
 
     payments_input = read_sql(payments_query, {"yesterday": yesterday}, connection=connection)
-    exec_sql(delete_unpaid_payments, {"yesterday": yesterday}, connection=connection)
+    removed_payments = connection.execute(
+        text(delete_unpaid_payments + " RETURNING *"),
+        {"yesterday": yesterday},
+    )
+    _capture_result(connection, "payments", removed_payments, "D")
 
     records: list[dict] = []
 

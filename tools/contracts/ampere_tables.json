@@ -1,5 +1,5 @@
 {
-  "contract_version": 5,
+  "contract_version": 6,
   "contract_status": "implemented_not_deployed",
   "catalog": {
     "ampere": {
@@ -109,7 +109,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "assortment",
               "change_keys": [
@@ -155,7 +155,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "clients": {
@@ -282,7 +291,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "clients",
               "change_keys": [
@@ -332,7 +341,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "costing": {
@@ -454,7 +472,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "costing",
               "change_keys": [
@@ -503,7 +521,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "delivery_costing": {
@@ -615,7 +642,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "delivery_costing",
               "change_keys": [
@@ -662,7 +689,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "delivery_resource": {
@@ -794,7 +830,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "delivery_resource",
               "change_keys": [
@@ -845,7 +881,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "delivery_tracking": {
@@ -976,7 +1021,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "delivery_tracking",
               "change_keys": [
@@ -1025,7 +1070,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "delivery_type": {
@@ -1132,7 +1186,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "delivery_type",
               "change_keys": [
@@ -1178,7 +1232,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "order_product": {
@@ -1309,7 +1372,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "order_product",
               "change_keys": [
@@ -1358,7 +1421,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "order_status_history": {
@@ -1479,7 +1551,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "order_status_history",
               "change_keys": [
@@ -1526,7 +1598,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "order_statuses": {
@@ -1633,7 +1714,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "order_statuses",
               "change_keys": [
@@ -1679,7 +1760,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "orders": {
@@ -1815,7 +1905,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "orders",
               "change_keys": [
@@ -1865,7 +1955,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "payments": {
@@ -1996,7 +2095,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "payments",
               "change_keys": [
@@ -2045,7 +2144,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "product_categories": {
@@ -2152,7 +2260,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "product_categories",
               "change_keys": [
@@ -2198,7 +2306,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "products": {
@@ -2335,7 +2452,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "products",
               "change_keys": [
@@ -2387,7 +2504,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "stores": {
@@ -2499,7 +2625,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "stores",
               "change_keys": [
@@ -2546,7 +2672,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           },
           "zones": {
@@ -2658,7 +2793,7 @@
               }
             },
             "ingestion": {
-              "kind": "compact_source_change_metadata",
+              "kind": "staged_typed_parquet_manifest",
               "source_schema": "source",
               "source_table": "zones",
               "change_keys": [
@@ -2705,7 +2840,16 @@
                 "_contract_version"
               ],
               "history_policy": "retain_until_explicit_dataset_retirement",
-              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer"
+              "batch_visibility": "completed_source_batch_and_acknowledged_raw_transfer",
+              "staging": {
+                "manifest_version": 1,
+                "file_format": "parquet",
+                "compression": "zstd",
+                "max_rows_per_chunk": 50000,
+                "commit_marker": "COMMITTED.json",
+                "eligibility": "completed_postgres_batch_and_validated_manifest",
+                "target_file_size_bytes": 134217728
+              }
             }
           }
         },

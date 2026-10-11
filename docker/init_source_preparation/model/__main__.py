@@ -11,7 +11,6 @@ from init_source_preparation.config import (
 )
 from init_source_preparation.data_source_initialization import (
     initialize_data_sources,
-    migrate_source_journal,
 )
 from init_source_preparation.logging_utils import APP_NAME, setup_logging
 
@@ -39,18 +38,12 @@ def main() -> None:
         source_db_port,
         source_db_name,
     )
-    mode = os.getenv("SOURCE_INIT_MODE", "reset").strip().lower()
+    mode = os.getenv("SOURCE_INIT_MODE", "").strip().lower()
     if mode == "reset":
         initialize_data_sources()
         logger.info("Source reset and initialization completed")
-    elif mode == "journal_migrate":
-        migrate_source_journal()
-        logger.info("Non-destructive source journal migration completed")
     else:
-        raise ValueError(
-            "SOURCE_INIT_MODE must be 'reset' or 'journal_migrate'; "
-            f"received {mode!r}"
-        )
+        raise ValueError("SOURCE_INIT_MODE must be explicitly set to 'reset'")
 
 
 if __name__ == "__main__":

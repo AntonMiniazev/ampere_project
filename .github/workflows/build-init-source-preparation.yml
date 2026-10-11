@@ -42,7 +42,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: docker/init_source_preparation
+          context: .
           file: docker/init_source_preparation/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}

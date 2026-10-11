@@ -1,4 +1,4 @@
-"""Create all empty Ampere Iceberg tables from the canonical v4 contract."""
+"""Create all empty Ampere Iceberg tables from the current canonical contract."""
 
 from __future__ import annotations
 

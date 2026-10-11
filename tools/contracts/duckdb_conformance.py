@@ -1,4 +1,4 @@
-"""Validate DuckDB-visible Iceberg tables against contract v5."""
+"""Validate DuckDB-visible Iceberg tables against contract v6."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def validate_duckdb_table(con: Any, relation: str, table: Any) -> None:
     ]
     if actual_schema != expected_schema:
         raise ValueError(
-            f"Contract v4 schema mismatch for {relation}: "
+            f"Contract v6 schema mismatch for {relation}: "
             f"expected {expected_schema}, observed {actual_schema}"
         )
 

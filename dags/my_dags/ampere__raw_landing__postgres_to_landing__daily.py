@@ -3,6 +3,8 @@
 from datetime import datetime
 
 from airflow import DAG
+from airflow.operators.python import BranchPythonOperator
+from airflow.utils.trigger_rule import TriggerRule
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 
@@ -28,6 +30,15 @@ with DAG(
     max_active_runs=1,
     template_searchpath=DAG_CONFIG.template_paths,
 ) as dag:
+    def select_downstream(**context):
+        dag_run = context.get("dag_run")
+        conf = (dag_run.conf or {}) if dag_run else {}
+        return (
+            "trigger__iceberg__bronze__raw_to_iceberg__daily"
+            if conf.get("trigger_bronze") is True
+            else "done"
+        )
+
     start = EmptyOperator(task_id="start")
     transfer = SafeSparkKubernetesOperator(
         task_id="transfer__completed_source_batches_to_raw",
@@ -43,6 +54,10 @@ with DAG(
             "pg_host": DAG_CONFIG.pg_host,
             "pg_port": DAG_CONFIG.pg_port,
             "pg_database": DAG_CONFIG.pg_database,
+            "staging_bucket": DAG_CONFIG.staging_bucket,
+            "staging_prefix": DAG_CONFIG.staging_prefix,
+            "target_input_bytes": DAG_CONFIG.target_input_bytes,
+            "max_files_per_chunk": DAG_CONFIG.max_files_per_chunk,
             "warehouse": DAG_CONFIG.warehouse,
             "lakekeeper_uri": DAG_CONFIG.lakekeeper_uri,
             "lakekeeper_oauth_uri": DAG_CONFIG.lakekeeper_oauth_uri,
@@ -74,5 +89,11 @@ with DAG(
         reset_dag_run=True,
         wait_for_completion=False,
     )
-    done = EmptyOperator(task_id="done")
-    start >> transfer >> trigger_bronze >> done
+    branch = BranchPythonOperator(
+        task_id="select_bronze_after_raw",
+        python_callable=select_downstream,
+    )
+    done = EmptyOperator(task_id="done", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+    start >> transfer >> branch
+    branch >> trigger_bronze >> done
+    branch >> done
