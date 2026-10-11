@@ -496,6 +496,7 @@ class BoundedBronzeReplayTests(unittest.TestCase):
             self.assertEqual(len(seen), 2)
             buckets = {tuple(sorted(row._source_row_id for row in group)) for group in seen}
             self.assertEqual(buckets, {("entity-a", "entity-a"), ("entity-b",)})
+            self.assertLessEqual(len(seen), SOURCE_ROW_BUCKETS)
             self.assertGreaterEqual(SOURCE_ROW_BUCKETS, len(seen))
         finally:
             spark.stop()

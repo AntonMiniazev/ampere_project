@@ -26,7 +26,10 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
 BRONZE_REBUILD_GENERATION = "lineage-v1"
-SOURCE_ROW_BUCKETS = 16
+# Keep each replay batch bounded while limiting the number of sequential Iceberg
+# MERGEs on the executor. Eight buckets keeps the initial reference-table slice
+# small and halves repeated MERGE work compared with the previous setting.
+SOURCE_ROW_BUCKETS = 8
 
 
 def _pg_connect():
