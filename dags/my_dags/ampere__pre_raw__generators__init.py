@@ -45,8 +45,9 @@ with DAG(
     tags=["layer:pre_raw", "system:postgres", "mode:init"],
 ) as dag:
     env_vars = {
-        # Use the DAG logical date as the anchor for initial registration dates.
-        "PROJECT_START_DATE": "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+        # Allow a one-off historical source timeline while preserving the
+        # current-date default for ordinary initialization runs.
+        "PROJECT_START_DATE": "{{ dag_run.conf.get('project_start_date') or (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
     }
     init_client_num = get_optional_variable("init_client_num")
     if init_client_num is not None:
