@@ -564,7 +564,8 @@ def initialize_dataset_journal(
             text(
                 "UPDATE pipeline.batch_table_counts SET change_count = "
                 f"(SELECT count(*) FROM {_quote('source_changes')}.{_quote(table)} "
-                "WHERE _dataset_id=:dataset AND _batch_id=:batch) "
+                "WHERE _dataset_id=CAST(:dataset AS text) "
+                "AND _batch_id=CAST(:batch AS text)) "
                 "WHERE dataset_id=CAST(:dataset AS uuid) AND batch_id=CAST(:batch AS uuid) "
                 "AND source_table=:table"
             ),
