@@ -26,10 +26,10 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
 BRONZE_REBUILD_GENERATION = "lineage-v1"
-# Keep each replay batch bounded while limiting the number of sequential Iceberg
-# MERGEs on the executor. Eight buckets keeps the initial reference-table slice
-# small and halves repeated MERGE work compared with the previous setting.
+# Keep large replay batches bounded while avoiding repeated Iceberg MERGEs for
+# small batches. The row target is approximate because hash buckets can skew.
 SOURCE_ROW_BUCKETS = 8
+SOURCE_ROWS_PER_BUCKET = 8_000
 
 
 def _pg_connect():
@@ -340,6 +340,14 @@ def _materialize_bounded_merge_source(changes: DataFrame) -> DataFrame:
     return changes.sparkSession.createDataFrame(rows, schema=changes.schema)
 
 
+def _source_bucket_count(source_rows: int) -> int:
+    """Use fewer slices for small batches and cap hot batches at eight slices."""
+    return min(
+        SOURCE_ROW_BUCKETS,
+        max(1, (source_rows + SOURCE_ROWS_PER_BUCKET - 1) // SOURCE_ROWS_PER_BUCKET),
+    )
+
+
 def _raw_source_column_for_bronze(column: str) -> str:
     """Map Bronze lineage names to their corresponding Raw journal columns."""
     return {
@@ -428,9 +436,9 @@ def _merge_incremental(
                 finally:
                     spark.catalog.dropTempView("bronze_upsert_source")
         finally:
-            latest.unpersist()
+            latest.unpersist(blocking=True)
     finally:
-        changes.unpersist()
+        changes.unpersist(blocking=True)
 
 
 def _apply_batch_slices(
@@ -458,18 +466,19 @@ def _apply_batch_slices(
                 f"Raw batch count mismatch table={table} batch={batch['batch_id']} "
                 f"control={expected} Iceberg={actual}"
             )
-        bucket_expr = F.pmod(F.xxhash64(F.col("_source_row_id")), F.lit(SOURCE_ROW_BUCKETS))
+        bucket_count = _source_bucket_count(expected)
+        bucket_expr = F.pmod(F.xxhash64(F.col("_source_row_id")), F.lit(bucket_count))
         buckets = [int(row[0]) for row in raw_batch.select(bucket_expr.alias("bucket")).distinct().collect()]
         for bucket in sorted(buckets):
             changes = raw_batch.filter(bucket_expr == F.lit(bucket))
             _merge_incremental(spark, target, table, changes, transfer)
             LOGGER.info(
                 "BRONZE_BATCH_CHUNK_COMPLETE table=%s batch=%s bucket=%s/%s rows_in_batch=%s",
-                table, batch["batch_sequence"], bucket, SOURCE_ROW_BUCKETS, actual,
+                table, batch["batch_sequence"], bucket, bucket_count, actual,
             )
         return actual
     finally:
-        raw_batch.unpersist()
+        raw_batch.unpersist(blocking=True)
 
 
 def _apply_full_rebuild(spark: SparkSession, target: str, table: str, transfer: dict) -> int:

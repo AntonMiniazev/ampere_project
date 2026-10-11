@@ -29,6 +29,7 @@ from iceberg_bronze.journal_apply import (  # noqa: E402
     _apply_batch_slices,
     _apply_full_rebuild,
     _materialize_bounded_merge_source,
+    _source_bucket_count,
     _bronze_delete_rows,
     _full_rebuild_transfer_id,
     _raw_source_column_for_bronze,
@@ -436,6 +437,12 @@ class IcebergRegistryTests(unittest.TestCase):
 
 
 class BoundedBronzeReplayTests(unittest.TestCase):
+    def test_source_buckets_scale_with_batch_size(self) -> None:
+        self.assertEqual(_source_bucket_count(0), 1)
+        self.assertEqual(_source_bucket_count(8_000), 1)
+        self.assertEqual(_source_bucket_count(8_001), 2)
+        self.assertEqual(_source_bucket_count(64_000), SOURCE_ROW_BUCKETS)
+
     def test_merge_source_materializes_only_the_bounded_frame(self) -> None:
         changes = MagicMock()
         materialized = MagicMock()
@@ -503,13 +510,22 @@ class BoundedBronzeReplayTests(unittest.TestCase):
             def record(_spark, _target, _table, changes, _transfer):
                 seen.append(changes.select("_source_row_id", "_change_id").collect())
 
-            with patch("iceberg_bronze.journal_apply._merge_incremental", side_effect=record):
+            with (
+                patch("iceberg_bronze.journal_apply.SOURCE_ROWS_PER_BUCKET", 1),
+                patch("iceberg_bronze.journal_apply._merge_incremental", side_effect=record),
+            ):
                 count = _apply_batch_slices(spark, "bronze.clients", "clients", transfer, batch)
 
             self.assertEqual(count, 3)
-            self.assertEqual(len(seen), 2)
-            buckets = {tuple(sorted(row._source_row_id for row in group)) for group in seen}
-            self.assertEqual(buckets, {("entity-a", "entity-a"), ("entity-b",)})
+            entity_buckets = {}
+            change_ids = []
+            for bucket_index, group in enumerate(seen):
+                for row in group:
+                    entity_buckets.setdefault(row._source_row_id, set()).add(bucket_index)
+                    change_ids.append(row._change_id)
+            self.assertEqual(set(change_ids), {1, 2, 3})
+            self.assertEqual(len(entity_buckets["entity-a"]), 1)
+            self.assertEqual(len(entity_buckets["entity-b"]), 1)
             self.assertLessEqual(len(seen), SOURCE_ROW_BUCKETS)
             self.assertGreaterEqual(SOURCE_ROW_BUCKETS, len(seen))
         finally:
