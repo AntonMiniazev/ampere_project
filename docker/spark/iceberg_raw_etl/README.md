@@ -9,9 +9,11 @@ same MinIO and Lakekeeper credentials from Kubernetes Secrets.
 ## PostgreSQL journal to Raw
 
 The source initializer creates a dataset ID, a baseline batch, a typed
-`source_changes.<table>` table for each source table, and row triggers. Daily
-generation is one transaction per business date. The trigger rejects untagged
-source writes; the controlled SQL entrypoints are
+`source_changes.<table>` table for each source table, and statement-level
+transition-table triggers. Daily generation uses one transaction per business
+date; historical backfill commits one calendar month at a time. Each trigger
+captures all affected rows set-wise and rejects untagged source writes. The
+controlled SQL entrypoints are
 `pipeline.begin_manual_source_batch(...)` and
 `pipeline.complete_manual_source_batch()` within the same transaction. A
 deferred constraint prevents a started source batch from committing.

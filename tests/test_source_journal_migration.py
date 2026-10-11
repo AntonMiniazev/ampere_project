@@ -17,7 +17,7 @@ import source_journal  # noqa: E402
 
 
 class SourceJournalMigrationTests(unittest.TestCase):
-    def test_ready_dataset_is_migrated_without_creating_a_new_baseline(self) -> None:
+    def test_ready_dataset_is_migrated_without_new_baseline_or_active_row_deletion(self) -> None:
         connection = MagicMock()
         connection.execute.return_value.first.return_value = SimpleNamespace(
             dataset_id="existing-dataset", source_schema="source"
@@ -30,6 +30,7 @@ class SourceJournalMigrationTests(unittest.TestCase):
             patch.object(source_journal, "_ensure_source_row_identity") as ensure_identity,
             patch.object(source_journal, "_create_typed_journal_table") as ensure_journal,
             patch.object(source_journal, "_install_triggers") as install_triggers,
+            patch.object(source_journal, "_delete_inactive_source_change_payload") as prune_inactive,
             patch.object(source_journal, "initialize_dataset_journal") as create_baseline,
         ):
             result = source_journal.migrate_existing_source_journal(
@@ -41,6 +42,7 @@ class SourceJournalMigrationTests(unittest.TestCase):
         ensure_identity.assert_called_once_with(connection, "source", "orders")
         ensure_journal.assert_called_once_with(connection, "source", "orders")
         install_triggers.assert_called_once_with(connection, "source")
+        prune_inactive.assert_called_once_with(connection)
         create_baseline.assert_not_called()
 
     def test_missing_dataset_uses_existing_rows_as_a_new_baseline(self) -> None:

@@ -291,7 +291,7 @@ def start_generation_batch(
     Completed dates are idempotently skipped. A new date must continue directly
     after the last completed generation date; the first generated date equals
     the dataset's bootstrap date. The active batch identity is installed as
-    transaction-local PostgreSQL settings consumed by row triggers.
+    transaction-local PostgreSQL settings consumed by journal triggers.
     """
     from sqlalchemy import text
 

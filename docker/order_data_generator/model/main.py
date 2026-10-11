@@ -43,16 +43,14 @@ def set_seed(seed: int) -> None:
     Faker.seed(seed)
 
 
-def run_generation(
-    run_date: date, config: GeneratorConfig, *, scenario_seed: int | None = None
+def _run_generation_in_transaction(
+    run_date: date,
+    config: GeneratorConfig,
+    connection,
+    *,
+    scenario_seed: int | None = None,
 ) -> bool:
-    """Execute the full daily source-side generation workflow for one logical date.
-
-    The function first updates the customer base, then inserts new clients, and
-    finally generates operational order-related tables for the same business
-    day. This is the daily mutating step that makes the downstream raw landing
-    and bronze jobs meaningful instead of repeatedly reading static data.
-    """
+    """Generate one logical date using the caller's active PostgreSQL transaction."""
     yesterday = run_date - timedelta(days=1)
     fingerprint = hashlib.sha256(
         json.dumps(asdict(config), sort_keys=True, default=list).encode("utf-8")
@@ -62,53 +60,64 @@ def run_generation(
     logger.info("Starting atomic generation workflow for %s", run_date)
     # Serialize source progression across init/daily/backfill callers. The
     # advisory lock is held through commit or rollback for this business date.
-    with get_engine().begin() as connection:
-        connection.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_key)"),
-            {"lock_key": 724614902631},
-        )
-        batch = start_generation_batch(
-            connection,
-            run_date,
-            scenario_seed=scenario_seed,
-            config_fingerprint=fingerprint,
-            source_code_version=code_version,
-        )
-        if batch is None:
-            return False
-        logger.info("Preparing client churn and new client generation")
-        to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
-            run_date, config, connection=connection
-        )
-        update_churned(to_churn_ids, config.schema, run_date, connection=connection)
+    connection.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": 724614902631},
+    )
+    batch = start_generation_batch(
+        connection,
+        run_date,
+        scenario_seed=scenario_seed,
+        config_fingerprint=fingerprint,
+        source_code_version=code_version,
+    )
+    if batch is None:
+        return False
+    logger.info("Preparing client churn and new client generation")
+    to_churn_ids, clients_for_upload = prepare_clients_update_and_generation(
+        run_date, config, connection=connection
+    )
+    update_churned(to_churn_ids, config.schema, run_date, connection=connection)
 
-        if clients_for_upload:
-            upload_new_data(
-                pl.DataFrame(clients_for_upload), "clients", config.schema,
-                connection=connection,
-            )
-
-        logger.info("Preparing orders, statuses, delivery tracking, and payments")
-        prepare_orders_statuses(run_date, yesterday, config, connection=connection)
-        latest_generated = connection.execute(
-            text(f'SELECT MAX(order_date) FROM "{config.schema}"."orders"')
-        ).scalar_one_or_none()
-        if latest_generated != run_date:
-            raise RuntimeError(
-                f"Generation for {run_date} committed no orders; refusing to advance"
-            )
-        change_counts = complete_generation_batch(connection, batch)
-        changed_tables = sum(count > 0 for count in change_counts.values())
-        logger.info(
-            "Completed source batch dataset=%s batch=%s sequence=%s tables_changed=%s rows_changed=%s",
-            batch["dataset_id"],
-            batch["batch_id"],
-            batch["batch_sequence"],
-            changed_tables,
-            sum(change_counts.values()),
+    if clients_for_upload:
+        upload_new_data(
+            pl.DataFrame(clients_for_upload),
+            "clients",
+            config.schema,
+            connection=connection,
         )
+
+    logger.info("Preparing orders, statuses, delivery tracking, and payments")
+    prepare_orders_statuses(run_date, yesterday, config, connection=connection)
+    latest_generated = connection.execute(
+        text(f'SELECT MAX(order_date) FROM "{config.schema}"."orders"')
+    ).scalar_one_or_none()
+    if latest_generated != run_date:
+        raise RuntimeError(
+            f"Generation for {run_date} committed no orders; refusing to advance"
+        )
+    change_counts = complete_generation_batch(connection, batch)
+    changed_tables = sum(count > 0 for count in change_counts.values())
+    logger.info(
+        "Completed source batch dataset=%s batch=%s sequence=%s tables_changed=%s rows_changed=%s",
+        batch["dataset_id"],
+        batch["batch_id"],
+        batch["batch_sequence"],
+        changed_tables,
+        sum(change_counts.values()),
+    )
     logger.info("Daily generation workflow completed for %s", run_date)
     return True
+
+
+def run_generation(
+    run_date: date, config: GeneratorConfig, *, scenario_seed: int | None = None
+) -> bool:
+    """Generate one logical date and commit its source changes atomically."""
+    with get_engine().begin() as connection:
+        return _run_generation_in_transaction(
+            run_date, config, connection, scenario_seed=scenario_seed
+        )
 
 
 def run_generation_range(
@@ -117,37 +126,55 @@ def run_generation_range(
     config: GeneratorConfig,
     *,
     seed: int | None = None,
-    max_days: int = 31,
 ) -> int:
-    """Generate an inclusive date range sequentially in this process.
+    """Generate sequentially in calendar-month transactions.
 
-    Each date commits independently through ``run_generation``. The maximum
-    source ``orders.order_date`` acts as a durable checkpoint, so retrying the
-    range skips completed dates and resumes after them. A stable date-derived
-    seed makes a retry reproduce the same daily random choices.
+    Days remain ordered and use bounded daily working frames, but the journal
+    and source writes for a month commit together. A retry resumes from the
+    prior committed month; an interrupted month rolls back and can be rerun.
     """
     if end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
     day_count = (end_date - start_date).days + 1
-    if day_count > max_days:
-        raise ValueError(f"Range is {day_count} days; maximum supported is {max_days}")
 
     completed = 0
     total = 0
     run_date = start_date
+    engine = get_engine()
     while run_date <= end_date:
-        total += 1
-        if seed is not None:
-            # Do not use Python's randomized hash(); the same date always gets
-            # the same RNG state across containers and process restarts.
-            day_seed = (seed + run_date.toordinal()) % (2**32)
-            set_seed(day_seed)
-        else:
-            day_seed = None
-        logger.info("Backfill day %s/%s: %s", total, day_count, run_date)
-        if run_generation(run_date, config, scenario_seed=day_seed):
-            completed += 1
-        run_date += timedelta(days=1)
+        month_start = run_date.replace(day=1)
+        next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        month_end = min(end_date, next_month - timedelta(days=1))
+        month_completed = 0
+        logger.info(
+            "Starting monthly source transaction for %s..%s",
+            run_date,
+            month_end,
+        )
+        with engine.begin() as connection:
+            while run_date <= month_end:
+                total += 1
+                if seed is not None:
+                    # Keep each date reproducible across retries and releases.
+                    day_seed = (seed + run_date.toordinal()) % (2**32)
+                    set_seed(day_seed)
+                else:
+                    day_seed = None
+                logger.info("Backfill day %s/%s: %s", total, day_count, run_date)
+                if _run_generation_in_transaction(
+                    run_date,
+                    config,
+                    connection,
+                    scenario_seed=day_seed,
+                ):
+                    completed += 1
+                    month_completed += 1
+                run_date += timedelta(days=1)
+        logger.info(
+            "Committed monthly source transaction through %s: generated=%s",
+            month_end,
+            month_completed,
+        )
 
     logger.info(
         "Generation range finished: requested=%s..%s generated=%s skipped=%s",
@@ -157,4 +184,3 @@ def run_generation_range(
         total - completed,
     )
     return completed
-

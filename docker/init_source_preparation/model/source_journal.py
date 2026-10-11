@@ -297,15 +297,20 @@ def _install_capture_function(connection) -> None:
                 v_batch_id text;
                 v_batch_sequence bigint;
                 v_business_date date;
-                v_old jsonb;
-                v_new jsonb;
-                v_payload jsonb;
-                v_column record;
-                v_columns text;
-                v_select text;
+                v_source_targets text;
+                v_source_new_values text;
+                v_source_null_values text;
+                v_before_targets text;
+                v_before_old_values text;
+                v_before_null_values text;
+                v_target_columns text;
+                v_select_values text;
+                v_from_clause text;
                 v_table text := TG_TABLE_NAME;
                 v_row_id text;
                 v_op char(1);
+                v_change_count bigint;
+                v_expected_count bigint;
             BEGIN
                 v_dataset_id := current_setting('ampere.dataset_id', true);
                 v_batch_id := current_setting('ampere.batch_id', true);
@@ -315,68 +320,77 @@ def _install_capture_function(connection) -> None:
                     RAISE EXCEPTION 'Source write rejected: active pipeline batch metadata is required';
                 END IF;
 
-                IF TG_OP = 'INSERT' THEN
-                    v_new := to_jsonb(NEW);
-                    v_old := '{}'::jsonb;
-                    v_op := 'I';
-                    v_row_id := NEW.source_row_id::text;
-                ELSIF TG_OP = 'UPDATE' THEN
-                    v_new := to_jsonb(NEW);
-                    v_old := to_jsonb(OLD);
-                    v_op := 'U';
-                    v_row_id := NEW.source_row_id::text;
-                    IF NEW.source_row_id IS DISTINCT FROM OLD.source_row_id THEN
-                        RAISE EXCEPTION 'source_row_id is immutable for %.%', TG_TABLE_SCHEMA, TG_TABLE_NAME;
-                    END IF;
-                ELSE
-                    v_new := '{}'::jsonb;
-                    v_old := to_jsonb(OLD);
-                    v_op := 'D';
-                    v_row_id := OLD.source_row_id::text;
+                IF TG_LEVEL <> 'STATEMENT' THEN
+                    RAISE EXCEPTION 'Source journal capture requires statement-level triggers';
                 END IF;
 
-                v_payload := v_new || jsonb_build_object(
-                    '_dataset_id', v_dataset_id,
-                    '_batch_id', v_batch_id,
-                    '_batch_sequence', v_batch_sequence,
-                    '_change_id', nextval('source_changes.change_id_seq'),
-                    '_source_row_id', v_row_id,
-                    '_op', v_op,
-                    '_business_date', v_business_date,
-                    '_captured_at', clock_timestamp(),
-                    '_transfer_id', NULL,
-                    '_ingest_run_id', current_setting('application_name', true),
-                    '_ingest_ts', clock_timestamp(),
-                    '_source_system', 'postgres-pre-raw',
-                    '_source_table', v_table,
-                    '_contract_version', 4
-                );
-                FOR v_column IN
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = TG_TABLE_SCHEMA AND table_name = TG_TABLE_NAME
-                      AND column_name <> 'source_row_id'
-                    ORDER BY ordinal_position
-                LOOP
-                    v_payload := v_payload || jsonb_build_object(
-                        '_before_' || v_column.column_name,
-                        v_old -> v_column.column_name
-                    );
-                END LOOP;
+                IF TG_OP = 'INSERT' THEN
+                    v_op := 'I';
+                    v_row_id := 'n.source_row_id::text';
+                    v_from_clause := 'FROM new_rows n';
+                ELSIF TG_OP = 'UPDATE' THEN
+                    v_op := 'U';
+                    v_row_id := 'n.source_row_id::text';
+                    v_from_clause := 'FROM new_rows n JOIN old_rows o USING (source_row_id)';
+                ELSE
+                    v_op := 'D';
+                    v_row_id := 'o.source_row_id::text';
+                    v_from_clause := 'FROM old_rows o';
+                END IF;
 
-                SELECT string_agg(format('%I', column_name), ', ' ORDER BY ordinal_position),
-                       string_agg(format('r.%I', column_name), ', ' ORDER BY ordinal_position)
-                INTO v_columns, v_select
-                FROM information_schema.columns
-                WHERE table_schema = 'source_changes' AND table_name = v_table;
+                SELECT
+                    string_agg(format('%I', a.attname), ', ' ORDER BY a.attnum),
+                    string_agg(format('n.%I', a.attname), ', ' ORDER BY a.attnum),
+                    string_agg(format('NULL::%s', format_type(a.atttypid, a.atttypmod)), ', ' ORDER BY a.attnum),
+                    string_agg(format('%I', '_before_' || a.attname), ', ' ORDER BY a.attnum),
+                    string_agg(format('o.%I', a.attname), ', ' ORDER BY a.attnum)
+                INTO v_source_targets, v_source_new_values, v_source_null_values,
+                     v_before_targets, v_before_old_values
+                FROM pg_catalog.pg_attribute a
+                WHERE a.attrelid = TG_RELID
+                  AND a.attnum > 0 AND NOT a.attisdropped
+                  AND a.attname <> 'source_row_id';
+
+                SELECT string_agg(format('NULL::%s', format_type(a.atttypid, a.atttypmod)), ', ' ORDER BY a.attnum)
+                INTO v_before_null_values
+                FROM pg_catalog.pg_attribute a
+                WHERE a.attrelid = TG_RELID
+                  AND a.attnum > 0 AND NOT a.attisdropped
+                  AND a.attname <> 'source_row_id';
+
+                v_target_columns := v_source_targets || ', ' || v_before_targets ||
+                    ', _dataset_id, _batch_id, _batch_sequence, _change_id, _source_row_id, _op,' ||
+                    ' _business_date, _captured_at, _transfer_id, _ingest_run_id, _ingest_ts,' ||
+                    ' _source_system, _source_table, _contract_version';
+                v_select_values := CASE WHEN TG_OP = 'DELETE' THEN v_source_null_values
+                                        ELSE v_source_new_values END;
+                v_select_values := v_select_values || ', ' ||
+                    CASE WHEN TG_OP = 'INSERT' THEN v_before_null_values
+                         ELSE v_before_old_values END ||
+                    ', $1::text, $2::text, $3::bigint,' ||
+                    ' nextval(''source_changes.change_id_seq''), ' || v_row_id ||
+                    ', $4::char(1), $5::date, clock_timestamp(), NULL::text,' ||
+                    ' current_setting(''application_name'', true), clock_timestamp(),' ||
+                    ' ''postgres-pre-raw'', $6::text, 4';
+
                 EXECUTE format(
-                    'INSERT INTO source_changes.%I (%s) '
-                    'SELECT %s FROM jsonb_populate_record(NULL::source_changes.%I, $1) AS r',
-                    v_table, v_columns, v_select, v_table
-                ) USING v_payload;
+                    'INSERT INTO source_changes.%I (%s) SELECT %s %s',
+                    v_table, v_target_columns, v_select_values, v_from_clause
+                ) USING v_dataset_id, v_batch_id, v_batch_sequence,
+                        v_op, v_business_date, v_table;
+                GET DIAGNOSTICS v_change_count = ROW_COUNT;
+
+                IF TG_OP = 'UPDATE' THEN
+                    EXECUTE 'SELECT count(*) FROM old_rows' INTO v_expected_count;
+                    IF v_change_count <> v_expected_count THEN
+                        RAISE EXCEPTION
+                            'source_row_id is immutable for %.% (captured % of % updated rows)',
+                            TG_TABLE_SCHEMA, v_table, v_change_count, v_expected_count;
+                    END IF;
+                END IF;
 
                 UPDATE pipeline.batch_table_counts
-                SET change_count = change_count + 1
+                SET change_count = change_count + v_change_count
                 WHERE dataset_id = v_dataset_id::uuid
                   AND batch_id = v_batch_id::uuid
                   AND source_table = v_table;
@@ -384,7 +398,7 @@ def _install_capture_function(connection) -> None:
                     RAISE EXCEPTION 'Missing batch table-count row for %.%', TG_TABLE_SCHEMA, v_table;
                 END IF;
 
-                IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+                RETURN NULL;
             END;
             $function$
             """
@@ -404,11 +418,35 @@ def _install_triggers(connection, source_schema: str) -> None:
                 f"{_quote(source_schema)}.{_quote(table)}"
             )
         )
+        for operation in ("insert", "update", "delete"):
+            connection.execute(
+                text(
+                    f"DROP TRIGGER IF EXISTS capture_source_change_{operation} ON "
+                    f"{_quote(source_schema)}.{_quote(table)}"
+                )
+            )
         connection.execute(
             text(
-                f"CREATE TRIGGER capture_source_change "
-                f"AFTER INSERT OR UPDATE OR DELETE ON {_quote(source_schema)}.{_quote(table)} "
-                "FOR EACH ROW EXECUTE FUNCTION source_changes.capture_source_change()"
+                f"CREATE TRIGGER capture_source_change_insert "
+                f"AFTER INSERT ON {_quote(source_schema)}.{_quote(table)} "
+                "REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT "
+                "EXECUTE FUNCTION source_changes.capture_source_change()"
+            )
+        )
+        connection.execute(
+            text(
+                f"CREATE TRIGGER capture_source_change_update "
+                f"AFTER UPDATE ON {_quote(source_schema)}.{_quote(table)} "
+                "REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows "
+                "FOR EACH STATEMENT EXECUTE FUNCTION source_changes.capture_source_change()"
+            )
+        )
+        connection.execute(
+            text(
+                f"CREATE TRIGGER capture_source_change_delete "
+                f"AFTER DELETE ON {_quote(source_schema)}.{_quote(table)} "
+                "REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT "
+                "EXECUTE FUNCTION source_changes.capture_source_change()"
             )
         )
 
@@ -475,6 +513,27 @@ def _complete_batch(connection, dataset_id: uuid.UUID, batch_id: uuid.UUID) -> N
     )
 
 
+def _truncate_source_change_payload(connection) -> None:
+    """Remove obsolete source-change rows before seeding a reset baseline."""
+    tables = ", ".join(
+        f"{_quote('source_changes')}.{_quote(table)}" for table in SOURCE_TABLES
+    )
+    connection.execute(text(f"TRUNCATE TABLE {tables}"))
+
+
+def _delete_inactive_source_change_payload(connection) -> None:
+    """Keep only the active dataset's changes while retaining batch metadata."""
+    for table in SOURCE_TABLES:
+        connection.execute(
+            text(
+                f"DELETE FROM {_quote('source_changes')}.{_quote(table)} "
+                "WHERE _dataset_id <> ("
+                "SELECT dataset_id::text FROM pipeline.datasets WHERE status='ready'"
+                ")"
+            )
+        )
+
+
 def initialize_dataset_journal(
     connection,
     source_schema: str,
@@ -485,7 +544,9 @@ def initialize_dataset_journal(
     """Create a new dataset lineage and atomically seed its typed baseline batch.
 
     The caller owns one transaction that also creates/truncates/populates all
-    source tables. Existing journal rows remain attached to retired dataset IDs.
+    source tables. Retired datasets' change payloads are cleared because the
+    reset source state supersedes them; dataset and batch metadata remains for
+    lineage, and the new dataset receives a fresh baseline.
     """
     _ensure_control_schema(connection)
     for table in SOURCE_TABLES:
@@ -502,6 +563,9 @@ def initialize_dataset_journal(
     _install_triggers(connection, source_schema)
 
     connection.execute(text("UPDATE pipeline.datasets SET status='retired', retired_at=clock_timestamp() WHERE status='ready'"))
+    # The reset source contents supersede every previous journal payload. Keep
+    # the small lineage metadata, then seed the new dataset's baseline below.
+    _truncate_source_change_payload(connection)
     dataset_id = uuid.uuid4()
     connection.execute(
         text(
@@ -591,11 +655,12 @@ def migrate_existing_source_journal(
     *,
     source_code_version: str = "unknown",
 ) -> str:
-    """Install journal metadata without truncating or reseeding source rows.
+    """Install journal metadata without resetting source rows or active history.
 
     When no dataset exists, the current source contents become one baseline.
     Re-running the migration for an already-ready dataset only ensures the
-    identity columns and capture triggers; it never replaces its dataset ID.
+    identity columns and capture triggers, and removes payload for inactive
+    dataset IDs; it never replaces its dataset ID or active journal rows.
     """
     _ensure_control_schema(connection)
     for table in SOURCE_TABLES:
@@ -625,6 +690,7 @@ def migrate_existing_source_journal(
                 f"{ready.source_schema}, not {source_schema}"
             )
         _install_triggers(connection, source_schema)
+        _delete_inactive_source_change_payload(connection)
         return str(ready.dataset_id)
 
     # Existing source rows may already cover a historical interval. Start new

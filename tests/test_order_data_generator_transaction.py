@@ -1,4 +1,4 @@
-"""Verify a business date uses one shared PostgreSQL transaction."""
+"""Verify daily commits and month-sized backfill transaction boundaries."""
 
 from __future__ import annotations
 
@@ -46,15 +46,19 @@ class GeneratorTransactionTests(unittest.TestCase):
 
         with (
             patch.object(main, "get_engine", return_value=engine),
-            patch.object(main, "prepare_clients_update_and_generation", return_value=([], [])) as prepare_clients,
+            patch.object(
+                main, "prepare_clients_update_and_generation", return_value=([], [])
+            ) as prepare_clients,
             patch.object(main, "update_churned") as update_churned,
             patch.object(main, "prepare_orders_statuses") as prepare_orders,
-            patch.object(main, "start_generation_batch", return_value=batch) as start_batch,
-            patch.object(main, "complete_generation_batch", return_value={"orders": 1}) as complete_batch,
+            patch.object(
+                main, "start_generation_batch", return_value=batch
+            ) as start_batch,
+            patch.object(
+                main, "complete_generation_batch", return_value={"orders": 1}
+            ) as complete_batch,
         ):
-            generated = main.run_generation(
-                date(2026, 10, 10), self._config()
-            )
+            generated = main.run_generation(date(2026, 10, 10), self._config())
 
         self.assertTrue(generated)
         engine.begin.assert_called_once_with()
@@ -75,11 +79,11 @@ class GeneratorTransactionTests(unittest.TestCase):
         with (
             patch.object(main, "get_engine", return_value=engine),
             patch.object(main, "prepare_clients_update_and_generation") as prepare,
-            patch.object(main, "start_generation_batch", return_value=None) as start_batch,
+            patch.object(
+                main, "start_generation_batch", return_value=None
+            ) as start_batch,
         ):
-            generated = main.run_generation(
-                date(2026, 10, 10), self._config()
-            )
+            generated = main.run_generation(date(2026, 10, 10), self._config())
 
         self.assertFalse(generated)
         prepare.assert_not_called()
@@ -106,32 +110,89 @@ class GeneratorTransactionTests(unittest.TestCase):
 
         prepare.assert_not_called()
 
-    def test_range_is_inclusive_resumable_and_reseeds_each_date(self) -> None:
+    def test_range_commits_per_month_and_reseeds_each_date(self) -> None:
         config = SimpleNamespace(schema="source")
-        dates = [date(2026, 10, 10), date(2026, 10, 11), date(2026, 10, 12)]
+        dates = [date(2026, 1, 30), date(2026, 1, 31), date(2026, 2, 1)]
+        transactions = []
+        connections = []
+
+        def begin():
+            connection = MagicMock()
+            transaction = MagicMock()
+            transaction.__enter__.return_value = connection
+            transactions.append(transaction)
+            connections.append(connection)
+            return transaction
+
+        engine = MagicMock()
+        engine.begin.side_effect = begin
         with (
-            patch.object(main, "run_generation", side_effect=[True, False, True]) as run,
+            patch.object(main, "get_engine", return_value=engine),
+            patch.object(
+                main, "_run_generation_in_transaction", side_effect=[True, False, True]
+            ) as run,
             patch.object(main, "set_seed") as set_seed,
         ):
-            generated = main.run_generation_range(
-                dates[0], dates[-1], config, seed=42
-            )
+            generated = main.run_generation_range(dates[0], dates[-1], config, seed=42)
 
         self.assertEqual(generated, 2)
         self.assertEqual([call.args[0] for call in run.call_args_list], dates)
+        self.assertEqual(engine.begin.call_count, 2)
+        self.assertIs(run.call_args_list[0].args[2], connections[0])
+        self.assertIs(run.call_args_list[1].args[2], connections[0])
+        self.assertIs(run.call_args_list[2].args[2], connections[1])
         self.assertEqual(set_seed.call_count, 3)
         self.assertEqual(
             [call.args[0] for call in set_seed.call_args_list],
             [(42 + item.toordinal()) % (2**32) for item in dates],
         )
 
-    def test_range_rejects_more_than_31_days(self) -> None:
-        with self.assertRaisesRegex(ValueError, "maximum supported is 31"):
+    def test_failed_date_rolls_back_the_active_month_transaction(self) -> None:
+        dates = [date(2026, 1, 30), date(2026, 1, 31)]
+        connection = MagicMock()
+        transaction = MagicMock()
+        transaction.__enter__.return_value = connection
+        engine = MagicMock()
+        engine.begin.return_value = transaction
+
+        with (
+            patch.object(main, "get_engine", return_value=engine),
+            patch.object(
+                main,
+                "_run_generation_in_transaction",
+                side_effect=[True, RuntimeError("synthetic day failure")],
+            ),
+            self.assertRaisesRegex(RuntimeError, "synthetic day failure"),
+        ):
             main.run_generation_range(
-                date(2026, 1, 1),
-                date(2026, 2, 1),
-                SimpleNamespace(schema="source"),
+                dates[0], dates[-1], SimpleNamespace(schema="source")
             )
+
+        transaction.__exit__.assert_called_once()
+        self.assertIs(transaction.__exit__.call_args.args[0], RuntimeError)
+
+    def test_range_accepts_ten_months_and_generates_dates_sequentially(self) -> None:
+        start_date = date(2026, 1, 1)
+        end_date = date(2026, 10, 31)
+        engine = MagicMock()
+        transaction = MagicMock()
+        transaction.__enter__.return_value = MagicMock()
+        engine.begin.return_value = transaction
+        with (
+            patch.object(main, "get_engine", return_value=engine),
+            patch.object(
+                main, "_run_generation_in_transaction", return_value=True
+            ) as run,
+        ):
+            generated = main.run_generation_range(
+                start_date, end_date, SimpleNamespace(schema="source")
+            )
+
+        self.assertEqual(generated, 304)
+        self.assertEqual(run.call_count, 304)
+        self.assertEqual(engine.begin.call_count, 10)
+        self.assertEqual(run.call_args_list[0].args[0], start_date)
+        self.assertEqual(run.call_args_list[-1].args[0], end_date)
 
 
 if __name__ == "__main__":

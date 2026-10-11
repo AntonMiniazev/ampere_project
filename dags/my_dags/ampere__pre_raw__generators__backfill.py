@@ -34,8 +34,10 @@ with DAG(
     max_active_runs=1,
     dagrun_timeout=timedelta(hours=8),
     description=(
-        "Generate up to 31 consecutive source-data days in one PostgreSQL-bound "
-        "pod. Completed days are skipped on retry; this DAG does not start Raw or Bronze."
+        "Generate a consecutive source-data range sequentially in one "
+        "PostgreSQL-bound pod, committing one calendar month at a time. "
+        "Journal capture runs once per SQL write batch; failed months roll back "
+        "and can be retried. This DAG does not start Raw or Bronze."
     ),
     tags=["layer:pre_raw", "system:postgres", "mode:backfill"],
 ) as dag:
