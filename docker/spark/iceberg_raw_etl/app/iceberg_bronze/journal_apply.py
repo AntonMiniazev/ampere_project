@@ -26,15 +26,17 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
 BRONZE_REBUILD_GENERATION = "lineage-v1"
-# Keep large replay batches bounded while avoiding repeated Iceberg MERGEs for
-# small batches. The row target is approximate because hash buckets can skew.
+# Keep dimension slices small; facts/events use a larger multi-batch merge target.
+# Hash-bucket row counts remain approximate because source-row hashes can skew.
 SOURCE_ROW_BUCKETS = 8
 SOURCE_ROWS_PER_BUCKET = 16_000
-SOURCE_ROWS_PER_BUCKET_BY_TABLE = {
-    # Observed January batches carry roughly 40k–65k rows. A 64k target keeps
-    # the usual batch to one MERGE (two when it exceeds the target) instead of
-    # four small sequential MERGEs, while the eight-bucket cap bounds growth.
-    "order_product": 64_000,
+FACT_EVENT_ROWS_PER_GROUP = 256_000
+FACT_EVENT_TABLES = {
+    "order_product",
+    "orders",
+    "payments",
+    "delivery_tracking",
+    "order_status_history",
 }
 
 
@@ -379,9 +381,11 @@ def _delete_merge_source_path(spark: SparkSession, staging_path: str) -> None:
 
 
 def _source_bucket_count(source_rows: int, table: str | None = None) -> int:
-    """Use fewer slices for small batches and cap hot batches at eight slices."""
-    rows_per_bucket = SOURCE_ROWS_PER_BUCKET_BY_TABLE.get(
-        table, SOURCE_ROWS_PER_BUCKET
+    """Use larger bounded slices for fact/event replay and cap at eight buckets."""
+    rows_per_bucket = (
+        FACT_EVENT_ROWS_PER_GROUP
+        if table in FACT_EVENT_TABLES
+        else SOURCE_ROWS_PER_BUCKET
     )
     return min(
         SOURCE_ROW_BUCKETS,
@@ -495,29 +499,73 @@ def _merge_incremental(
         changes.unpersist(blocking=True)
 
 
-def _apply_batch_slices(
+def _group_source_batches(
+    batches: list[dict],
+    batch_counts: dict,
+    table: str,
+) -> list[list[dict]]:
+    """Group fact/event source batches in order under a bounded row target."""
+    if table not in FACT_EVENT_TABLES:
+        return [[batch] for batch in batches]
+
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    current_rows = 0
+    for batch in batches:
+        batch_rows = int(
+            batch_counts.get(batch["batch_id"], {}).get(table, 0)
+        )
+        if current and current_rows + batch_rows > FACT_EVENT_ROWS_PER_GROUP:
+            groups.append(current)
+            current = []
+            current_rows = 0
+        current.append(batch)
+        current_rows += batch_rows
+        if current_rows >= FACT_EVENT_ROWS_PER_GROUP:
+            groups.append(current)
+            current = []
+            current_rows = 0
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _apply_batch_group_slices(
     spark: SparkSession,
     target: str,
     table: str,
     transfer: dict,
-    batch: dict,
+    batches: list[dict],
 ) -> int:
-    """Apply one source batch in disjoint source-row buckets."""
-    expected = transfer["batch_counts"].get(batch["batch_id"], {}).get(table)
-    if expected is None:
-        raise RuntimeError(f"Missing {table} count for completed source batch {batch['batch_id']}")
+    """Apply one chronological group of source batches in disjoint row buckets."""
+    batch_sequences = [int(batch["batch_sequence"]) for batch in batches]
+    expected = 0
+    batch_filter = None
+    for batch in batches:
+        batch_id = batch["batch_id"]
+        batch_sequence = int(batch["batch_sequence"])
+        table_counts = transfer["batch_counts"].get(batch_id)
+        if table_counts is None or table not in table_counts:
+            raise RuntimeError(
+                f"Missing {table} count for completed source batch {batch_id}"
+            )
+        expected += int(table_counts[table])
+        batch_match = (
+            (F.col("_batch_id") == batch_id)
+            & (F.col("_batch_sequence") == batch_sequence)
+        )
+        batch_filter = batch_match if batch_filter is None else batch_filter | batch_match
     if expected == 0:
         return 0
     raw_batch = spark.table(f"iceberg_raw.raw.{quote_identifier(table)}").filter(
-        (F.col("_dataset_id") == transfer["dataset_id"])
-        & (F.col("_batch_id") == batch["batch_id"])
-        & (F.col("_batch_sequence") == batch["batch_sequence"])
+        (F.col("_dataset_id") == transfer["dataset_id"]) & batch_filter
     ).persist(StorageLevel.DISK_ONLY)
     try:
         actual = raw_batch.count()
         if actual != expected:
             raise RuntimeError(
-                f"Raw batch count mismatch table={table} batch={batch['batch_id']} "
+                f"Raw batch count mismatch table={table} "
+                f"batches={batch_sequences[0]}..{batch_sequences[-1]} "
                 f"control={expected} Iceberg={actual}"
             )
         bucket_count = _source_bucket_count(expected, table)
@@ -525,15 +573,35 @@ def _apply_batch_slices(
         buckets = [int(row[0]) for row in raw_batch.select(bucket_expr.alias("bucket")).distinct().collect()]
         for bucket in sorted(buckets):
             changes = raw_batch.filter(bucket_expr == F.lit(bucket))
-            source_slice = f"batch-{batch['batch_sequence']}-bucket-{bucket}"
+            source_slice = (
+                f"batches-{batch_sequences[0]}-{batch_sequences[-1]}-bucket-{bucket}"
+            )
             _merge_incremental(spark, target, table, changes, transfer, source_slice)
             LOGGER.info(
-                "BRONZE_BATCH_CHUNK_COMPLETE table=%s batch=%s bucket=%s/%s rows_in_batch=%s",
-                table, batch["batch_sequence"], bucket, bucket_count, actual,
+                "BRONZE_BATCH_GROUP_CHUNK_COMPLETE table=%s batches=%s..%s "
+                "batch_count=%s bucket=%s/%s rows_in_group=%s",
+                table,
+                batch_sequences[0],
+                batch_sequences[-1],
+                len(batches),
+                bucket,
+                bucket_count,
+                actual,
             )
         return actual
     finally:
         raw_batch.unpersist(blocking=True)
+
+
+def _apply_batch_slices(
+    spark: SparkSession,
+    target: str,
+    table: str,
+    transfer: dict,
+    batch: dict,
+) -> int:
+    """Compatibility wrapper for applying one source batch."""
+    return _apply_batch_group_slices(spark, target, table, transfer, [batch])
 
 
 def _apply_full_rebuild(spark: SparkSession, target: str, table: str, transfer: dict) -> int:
@@ -543,12 +611,14 @@ def _apply_full_rebuild(spark: SparkSession, target: str, table: str, transfer: 
     spark.sql(f"DELETE FROM {target}")
     applied = 0
     previous_sequence = None
-    for batch in transfer["batches"]:
-        sequence = int(batch["batch_sequence"])
+    for group in _group_source_batches(
+        transfer["batches"], transfer["batch_counts"], table
+    ):
+        sequence = int(group[0]["batch_sequence"])
         if previous_sequence is not None and sequence <= previous_sequence:
             raise RuntimeError("Frozen Raw batch boundary is not strictly ascending")
-        previous_sequence = sequence
-        rows = _apply_batch_slices(spark, target, table, transfer, batch)
+        previous_sequence = int(group[-1]["batch_sequence"])
+        rows = _apply_batch_group_slices(spark, target, table, transfer, group)
         applied += rows
     if applied != transfer["expected_counts"].get(table, 0):
         raise RuntimeError(
@@ -560,8 +630,10 @@ def _apply_full_rebuild(spark: SparkSession, target: str, table: str, transfer: 
 
 def _apply_incremental_table(spark: SparkSession, target: str, table: str, transfer: dict) -> int:
     applied = 0
-    for batch in transfer["batches"]:
-        applied += _apply_batch_slices(spark, target, table, transfer, batch)
+    for group in _group_source_batches(
+        transfer["batches"], transfer["batch_counts"], table
+    ):
+        applied += _apply_batch_group_slices(spark, target, table, transfer, group)
     if applied != transfer["expected_counts"].get(table, 0):
         raise RuntimeError(
             f"Bronze incremental input count mismatch for {table}: "
