@@ -30,6 +30,12 @@ BRONZE_REBUILD_GENERATION = "lineage-v1"
 # small batches. The row target is approximate because hash buckets can skew.
 SOURCE_ROW_BUCKETS = 8
 SOURCE_ROWS_PER_BUCKET = 16_000
+SOURCE_ROWS_PER_BUCKET_BY_TABLE = {
+    # Observed January batches carry roughly 40k–65k rows. A 64k target keeps
+    # the usual batch to one MERGE (two when it exceeds the target) instead of
+    # four small sequential MERGEs, while the eight-bucket cap bounds growth.
+    "order_product": 64_000,
+}
 
 
 def _pg_connect():
@@ -372,11 +378,14 @@ def _delete_merge_source_path(spark: SparkSession, staging_path: str) -> None:
         )
 
 
-def _source_bucket_count(source_rows: int) -> int:
+def _source_bucket_count(source_rows: int, table: str | None = None) -> int:
     """Use fewer slices for small batches and cap hot batches at eight slices."""
+    rows_per_bucket = SOURCE_ROWS_PER_BUCKET_BY_TABLE.get(
+        table, SOURCE_ROWS_PER_BUCKET
+    )
     return min(
         SOURCE_ROW_BUCKETS,
-        max(1, (source_rows + SOURCE_ROWS_PER_BUCKET - 1) // SOURCE_ROWS_PER_BUCKET),
+        max(1, (source_rows + rows_per_bucket - 1) // rows_per_bucket),
     )
 
 
@@ -511,7 +520,7 @@ def _apply_batch_slices(
                 f"Raw batch count mismatch table={table} batch={batch['batch_id']} "
                 f"control={expected} Iceberg={actual}"
             )
-        bucket_count = _source_bucket_count(expected)
+        bucket_count = _source_bucket_count(expected, table)
         bucket_expr = F.pmod(F.xxhash64(F.col("_source_row_id")), F.lit(bucket_count))
         buckets = [int(row[0]) for row in raw_batch.select(bucket_expr.alias("bucket")).distinct().collect()]
         for bucket in sorted(buckets):
