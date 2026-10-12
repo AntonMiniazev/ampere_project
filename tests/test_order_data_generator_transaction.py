@@ -32,6 +32,12 @@ class GeneratorTransactionTests(unittest.TestCase):
         result.scalar_one_or_none.return_value = value
         return result
 
+    @staticmethod
+    def _mapping_result(value):
+        result = MagicMock()
+        result.mappings.return_value.one_or_none.return_value = value
+        return result
+
     def test_copy_readback_captures_database_after_images_in_bounded_queries(self) -> None:
         connection = MagicMock()
         connection.info = {"ampere_source_batch_stager": SimpleNamespace(chunk_rows=2)}
@@ -86,6 +92,7 @@ class GeneratorTransactionTests(unittest.TestCase):
         engine.begin.assert_called_once_with()
         self.assertGreaterEqual(connection.execute.call_count, 2)
         self.assertEqual(start_batch.call_args.args[0], connection)
+        self.assertTrue(start_batch.call_args.kwargs["allow_completed_mismatch"])
         self.assertEqual(complete_batch.call_args.args, (connection, batch, {"orders": 1}))
         self.assertEqual(prepare_clients.call_args.kwargs["connection"], connection)
         self.assertEqual(update_churned.call_args.kwargs["connection"], connection)
@@ -113,6 +120,74 @@ class GeneratorTransactionTests(unittest.TestCase):
         prepare.assert_not_called()
         self.assertEqual(connection.execute.call_count, 1)
         start_batch.assert_called_once()
+        self.assertTrue(start_batch.call_args.kwargs["allow_completed_mismatch"])
+
+    def test_daily_run_recovers_completed_batch_with_backfill_seed(self) -> None:
+        connection = MagicMock()
+        dataset_result = self._mapping_result(
+            {"dataset_id": "dataset", "project_start_date": date(2026, 1, 1)}
+        )
+        existing_result = self._mapping_result(
+            {
+                "batch_id": "batch",
+                "batch_sequence": 12,
+                "status": "completed",
+                "scenario_seed": 42,
+                "config_fingerprint": "backfill-config",
+            }
+        )
+        tables_result = MagicMock()
+        tables_result.scalars.return_value.all.return_value = ["orders"]
+        connection.execute.side_effect = [
+            dataset_result,
+            existing_result,
+            tables_result,
+        ]
+
+        with patch.object(db.StagedChangeBatch, "recover_committed") as recover:
+            batch = db.start_generation_batch(
+                connection,
+                date(2026, 10, 12),
+                scenario_seed=None,
+                config_fingerprint="daily-config",
+                source_code_version="image",
+                allow_completed_mismatch=True,
+            )
+
+        self.assertIsNone(batch)
+        recover.assert_called_once()
+        self.assertEqual(recover.call_args.kwargs["batch_id"], "batch")
+
+    def test_backfill_still_rejects_completed_batch_with_different_seed(self) -> None:
+        connection = MagicMock()
+        connection.execute.side_effect = [
+            self._mapping_result(
+                {"dataset_id": "dataset", "project_start_date": date(2026, 1, 1)}
+            ),
+            self._mapping_result(
+                {
+                    "batch_id": "batch",
+                    "batch_sequence": 12,
+                    "status": "completed",
+                    "scenario_seed": 42,
+                    "config_fingerprint": "same-config",
+                }
+            ),
+        ]
+
+        with (
+            patch.object(db.StagedChangeBatch, "recover_committed") as recover,
+            self.assertRaisesRegex(ValueError, "different seed or config"),
+        ):
+            db.start_generation_batch(
+                connection,
+                date(2026, 10, 12),
+                scenario_seed=None,
+                config_fingerprint="same-config",
+                source_code_version="image",
+            )
+
+        recover.assert_not_called()
 
     def test_generation_rejects_a_gap_in_the_source_dates(self) -> None:
         connection = MagicMock()

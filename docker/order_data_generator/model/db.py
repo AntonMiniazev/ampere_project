@@ -382,6 +382,7 @@ def start_generation_batch(
     scenario_seed: int | None,
     config_fingerprint: str,
     source_code_version: str,
+    allow_completed_mismatch: bool = False,
 ) -> dict | None:
     """Start a dataset-scoped source batch inside the caller's transaction.
 
@@ -414,12 +415,20 @@ def start_generation_batch(
     ).mappings().one_or_none()
     if existing is not None:
         if existing["status"] == "completed":
-            if (
+            configuration_mismatch = (
                 existing["scenario_seed"] != scenario_seed
                 or existing["config_fingerprint"] != config_fingerprint
-            ):
+            )
+            if configuration_mismatch and not allow_completed_mismatch:
                 raise ValueError(
                     f"Completed generation date {business_date} exists with a different seed or config"
+                )
+            if configuration_mismatch:
+                logger.warning(
+                    "Reusing completed generation batch %s for %s despite a different "
+                    "requested seed/config; completed business dates are immutable",
+                    existing["batch_id"],
+                    business_date,
                 )
             StagedChangeBatch.recover_committed(
                 dataset_id=str(dataset_id),

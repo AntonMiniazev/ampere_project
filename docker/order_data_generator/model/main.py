@@ -49,6 +49,7 @@ def _run_generation_in_transaction(
     connection,
     *,
     scenario_seed: int | None = None,
+    allow_completed_mismatch: bool = False,
 ) -> tuple[bool, object | None]:
     """Generate one logical date using the caller's active PostgreSQL transaction."""
     yesterday = run_date - timedelta(days=1)
@@ -70,6 +71,7 @@ def _run_generation_in_transaction(
         scenario_seed=scenario_seed,
         config_fingerprint=fingerprint,
         source_code_version=code_version,
+        allow_completed_mismatch=allow_completed_mismatch,
     )
     if batch is None:
         return False, None
@@ -127,7 +129,14 @@ def run_generation(
     try:
         with get_engine().begin() as connection:
             generated, stager = _run_generation_in_transaction(
-                run_date, config, connection, scenario_seed=scenario_seed
+                run_date,
+                config,
+                connection,
+                scenario_seed=scenario_seed,
+                # A scheduled run may overlap a date already completed by a
+                # seeded backfill. Reuse that immutable batch and continue the
+                # downstream chain instead of generating the date a second time.
+                allow_completed_mismatch=True,
             )
     except Exception:
         raise
