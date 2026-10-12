@@ -19,25 +19,10 @@ from utils.stream_group_config import build_bronze_execution_groups
 
 
 def build_bronze_dag(*, full_rebuild: bool) -> DAG:
-    """Apply one accepted Raw boundary in sequential, resource-sized Spark apps."""
+    """Apply one accepted Raw boundary in two sequential, resource-sized Spark apps."""
     run_name = "full_rebuild" if full_rebuild else "daily"
     dag_id = f"ampere__iceberg__bronze__raw_to_iceberg__{run_name}"
     config = load_bronze_dag_config(__file__)
-    execution_groups = build_bronze_execution_groups()
-    if full_rebuild:
-        snapshots_group, facts_events_group = execution_groups
-        fact_tables = facts_events_group["tables"]
-        facts_events_group = [
-            {
-                **facts_events_group,
-                "name": f"fact{index}",
-                "task_name": f"facts_events__{table}",
-                "tables": [table],
-                "complete_transfer": index == len(fact_tables) - 1,
-            }
-            for index, table in enumerate(fact_tables)
-        ]
-        execution_groups = [snapshots_group, *facts_events_group]
     with DAG(
         dag_id=dag_id,
         default_args=standard_default_args(),
@@ -50,11 +35,11 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
         template_searchpath=config.template_paths,
     ) as dag:
         tasks = []
-        for group in execution_groups:
-            facts_events = group["name"].startswith("fact") or group["name"] == "facts_events"
+        for group in build_bronze_execution_groups():
+            facts_events = group["name"] == "facts_events"
             tasks.append(
                 SafeSparkKubernetesOperator(
-                    task_id=f"apply__{group.get('task_name', group['name'])}",
+                    task_id=f"apply__{group['name']}",
                     pool=ICEBERG_MUTATION_POOL,
                     pool_slots=1,
                     namespace=config.spark_namespace,
@@ -139,6 +124,4 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
                 )
             )
         tasks[0] >> tasks[1]
-        for upstream, downstream in zip(tasks[1:], tasks[2:]):
-            upstream >> downstream
     return dag
