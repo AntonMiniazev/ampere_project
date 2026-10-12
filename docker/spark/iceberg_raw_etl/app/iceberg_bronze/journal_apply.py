@@ -32,7 +32,10 @@ BRONZE_REBUILD_GENERATION = "lineage-v1"
 SOURCE_ROW_BUCKETS = 8
 SOURCE_ROWS_PER_BUCKET = 16_000
 CLIENT_ROWS_PER_GROUP = 128_000
-FACT_EVENT_ROWS_PER_GROUP = 256_000
+# About 41 groups at the current average batch size for the 36.1M-row
+# order_product history. Keep the fact/event source bounded while avoiding
+# hundreds of small Iceberg MERGEs.
+FACT_EVENT_ROWS_PER_GROUP = 1_000_000
 FACT_EVENT_TABLES = {
     "order_product",
     "orders",

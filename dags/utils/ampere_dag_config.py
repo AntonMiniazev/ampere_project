@@ -368,7 +368,7 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "spark_bronze_driver_memory_overhead", default="512"
         ),
         driver_memory_facts_events=Variable.get(
-            "spark_bronze_driver_memory_facts_events", default="3072m"
+            "spark_bronze_driver_memory_facts_events", default="2560m"
         ),
         driver_memory_overhead_facts_events=Variable.get(
             "spark_bronze_driver_memory_overhead_facts_events", default="512m"
@@ -379,10 +379,10 @@ def load_bronze_dag_config(anchor_file: str | Path) -> BronzeDagConfig:
             "spark_executor_core_request", default="750m"
         ),
         executor_cores_facts_events=int(
-            Variable.get("spark_bronze_executor_cores_facts_events", default="2")
+            Variable.get("spark_bronze_executor_cores_facts_events", default="3")
         ),
         executor_core_request_facts_events=Variable.get(
-            "spark_bronze_executor_core_request_facts_events", default="1250m"
+            "spark_bronze_executor_core_request_facts_events", default="1300m"
         ),
         executor_memory=Variable.get("spark_executor_memory", default="1536m"),
         executor_memory_overhead=Variable.get(
