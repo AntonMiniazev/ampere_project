@@ -5,4 +5,14 @@ from utils.iceberg_dbt_layer import build_layer_dag
 DAG_ID = "ampere__iceberg__gold__dbt_duckdb__daily"
 SCHEDULE = None
 TAGS = ["layer:gold", "format:iceberg", "system:dbt", "mode:daily"]
-dag = build_layer_dag("gold", full_rebuild=False)
+TRIGGER_TASK_ID = "trigger__curie__cache_refresh__post_iceberg_gold"
+TRIGGER_DAG_ID = "ampere__curie__cache_refresh__post_iceberg_gold"
+TRIGGER_WAIT_FOR_COMPLETION = True
+
+dag = build_layer_dag(
+    "gold",
+    full_rebuild=False,
+    trigger_dag_id=TRIGGER_DAG_ID,
+    trigger_task_id=TRIGGER_TASK_ID,
+    wait_for_completion=TRIGGER_WAIT_FOR_COMPLETION,
+)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from airflow import DAG
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.sdk import Variable
@@ -31,15 +32,19 @@ def _secret(key: str, deployment: str, env_name: str) -> Secret:
     return Secret(deploy_type="env", deploy_target=env_name, secret=deployment, key=key)
 
 
-def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
-    """Create one serialized dbt layer DAG without an automatic next-layer handoff.
-
-    Silver-to-Gold and Gold-to-Curie handoffs remain disabled while historical
-    Raw/Bronze data is being migrated and validated. Restore them only after
-    explicit owner approval.
-    """
+def build_layer_dag(
+    layer: str,
+    *,
+    full_rebuild: bool,
+    trigger_dag_id: str | None = None,
+    trigger_task_id: str | None = None,
+    wait_for_completion: bool = False,
+) -> DAG:
+    """Create one serialized dbt layer DAG with an optional next-layer handoff."""
     if layer not in {"silver", "gold"}:
         raise ValueError("Layer must be silver or gold")
+    if (trigger_dag_id is None) != (trigger_task_id is None):
+        raise ValueError("trigger_dag_id and trigger_task_id must be set together")
     mode = "full_history" if full_rebuild else "daily_refresh"
     run_name = "full_rebuild" if full_rebuild else "daily"
     dag_id = f"ampere__iceberg__{layer}__dbt_duckdb__{run_name}"
@@ -143,7 +148,7 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
         catchup=False,
         max_active_runs=1,
     ) as dag:
-        KubernetesPodOperator(
+        build = KubernetesPodOperator(
             task_id=f"run__{layer}__dbt_{run_name}",
             name=f"ampere-dbt-iceberg-{layer}-{run_name}",
             namespace=config.namespace,
@@ -188,5 +193,13 @@ def build_layer_dag(layer: str, *, full_rebuild: bool) -> DAG:
             get_logs=True,
             is_delete_operator_pod=True,
         )
-        # No downstream DAG is triggered during the Raw/Bronze migration.
+        if trigger_dag_id:
+            handoff = TriggerDagRunOperator(
+                task_id=trigger_task_id,
+                trigger_dag_id=trigger_dag_id,
+                logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+                reset_dag_run=True,
+                wait_for_completion=wait_for_completion,
+            )
+            build >> handoff
     return dag

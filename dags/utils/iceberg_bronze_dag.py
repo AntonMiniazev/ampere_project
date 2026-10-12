@@ -6,6 +6,7 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.sdk import Variable
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 
 from utils.ampere_dag_config import (
     ICEBERG_MUTATION_POOL,
@@ -18,8 +19,16 @@ from utils.safe_spark_kubernetes import SafeSparkKubernetesOperator
 from utils.stream_group_config import build_bronze_execution_groups
 
 
-def build_bronze_dag(*, full_rebuild: bool) -> DAG:
+def build_bronze_dag(
+    *,
+    full_rebuild: bool,
+    trigger_dag_id: str | None = None,
+    trigger_task_id: str | None = None,
+    wait_for_completion: bool = False,
+) -> DAG:
     """Apply one accepted Raw boundary in two sequential, resource-sized Spark apps."""
+    if (trigger_dag_id is None) != (trigger_task_id is None):
+        raise ValueError("trigger_dag_id and trigger_task_id must be set together")
     run_name = "full_rebuild" if full_rebuild else "daily"
     dag_id = f"ampere__iceberg__bronze__raw_to_iceberg__{run_name}"
     config = load_bronze_dag_config(__file__)
@@ -132,4 +141,13 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
                 )
             )
         tasks[0] >> tasks[1]
+        if trigger_dag_id:
+            handoff = TriggerDagRunOperator(
+                task_id=trigger_task_id,
+                trigger_dag_id=trigger_dag_id,
+                logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
+                reset_dag_run=True,
+                wait_for_completion=wait_for_completion,
+            )
+            tasks[1] >> handoff
     return dag

@@ -10,16 +10,16 @@ flowchart LR
     G --> M[MinIO staged Parquet and manifests]
     M --> R[Raw Iceberg change history]
     R --> B[Bronze Iceberg current state]
-    B -. automatic trigger paused .-> S[Silver Iceberg via dbt and DuckDB]
-    S -. automatic trigger paused .-> O[Gold Iceberg marts]
-    O -. automatic trigger paused .-> C[Curie cache refresh]
+    B -->|daily handoff waits for completion| S[Silver Iceberg via dbt and DuckDB]
+    S -->|daily handoff waits for completion| O[Gold Iceberg marts]
+    O -->|daily handoff waits for completion| C[Curie cache refresh]
 ```
 
-The scheduled generator runs at `15 4 * * *` (04:15 in the Airflow DAG timezone), captures each source date atomically, and triggers Raw. Raw validates committed manifests, transfers a fixed batch boundary, and triggers Bronze only when requested. Bronze processes snapshots/mutable dimensions and facts/events in two sequential Spark applications; the latter advances the transfer checkpoint after both groups finish. The manual backfill accepts an inclusive date range in one generator pod, commits one bounded transaction per calendar month, and does not trigger downstream work. The Bronze full-rebuild DAG replays accepted Raw history chronologically in bounded slices at one frozen boundary. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
+The scheduled generator runs at `15 4 * * *` (04:15 in the Airflow DAG timezone), captures each source date atomically, then waits as the daily run proceeds through Raw, Bronze, Silver, Gold, and the Curie cache refresh. Raw transfers a fixed batch boundary and triggers Bronze only when requested. Bronze processes snapshots/mutable dimensions and facts/events in two sequential Spark applications; the latter advances the transfer checkpoint after both groups finish. The manual backfill accepts an inclusive date range in one generator pod, commits one bounded transaction per calendar month, and does not trigger downstream work. Full-rebuild DAGs remain manual entrypoints. See [Airflow orchestration](docs/dataflow/generated/airflow_dag_orchestration.md).
 
-The canonical [contract v6](tools/contracts/ampere_tables.json) defines 58 tables across Raw, Bronze, Silver, and Gold. PostgreSQL stores current source state and compact dataset/batch/checkpoint metadata; init and generator mutations capture exact typed event images into bounded immutable Parquet files in MinIO. Raw validates the committed batch manifest and merges those files into Iceberg without querying current source rows. Bronze stores current source state with dataset and stable row lineage, source-order version guards, and delete application. Catalog initialization creates contract tables and refuses schema/layout conflicts; it does not migrate or drop existing Iceberg tables automatically. Silver and Gold dbt/DuckDB models and manual rebuild DAGs remain isolated from automatic triggers.
+The canonical [contract v6](tools/contracts/ampere_tables.json) defines 58 tables across Raw, Bronze, Silver, and Gold. PostgreSQL stores current source state and compact dataset/batch/checkpoint metadata; init and generator mutations capture exact typed event images into bounded immutable Parquet files in MinIO. Raw validates the committed batch manifest and merges those files into Iceberg without querying current source rows. Bronze stores current source state with dataset and stable row lineage, source-order version guards, and delete application. Catalog initialization creates contract tables and refuses schema/layout conflicts; it does not migrate or drop existing Iceberg tables automatically. Daily Silver and Gold runs hand off sequentially to the next layer and Curie's cache refresh; full-rebuild DAGs remain manual entrypoints.
 
-Weekly housekeeping uses the Spark Connect client to submit contract-driven compaction, manifest rewrite, snapshot expiration, and orphan cleanup. It checks table schema, partitioning, and properties before maintenance. Acknowledged MinIO staging payloads use a separate 7–14 day retention cleanup.
+After Curie's cache refresh has been validated, the DAG triggers weekly housekeeping on Sundays using the Europe/Budapest weekday. Housekeeping uses the Spark Connect client to submit contract-driven compaction, manifest rewrite, snapshot expiration, and orphan cleanup. It checks table schema, partitioning, and properties before maintenance. Acknowledged MinIO staging payloads use a separate 7–14 day retention cleanup.
 
 ## Repository layout
 

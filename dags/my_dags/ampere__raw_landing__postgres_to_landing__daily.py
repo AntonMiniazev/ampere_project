@@ -24,7 +24,14 @@ with DAG(
     default_args=standard_default_args(),
     schedule=None,
     start_date=datetime(2025, 8, 24),
-    tags=["layer:raw", "system:postgres", "system:spark", "system:lakekeeper"],
+    tags=[
+        "layer:raw",
+        "format:iceberg",
+        "system:postgres",
+        "system:spark",
+        "system:lakekeeper",
+        "mode:daily",
+    ],
     catchup=False,
     max_active_tasks=1,
     max_active_runs=1,
@@ -87,7 +94,7 @@ with DAG(
         trigger_dag_id="ampere__iceberg__bronze__raw_to_iceberg__daily",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
-        wait_for_completion=False,
+        wait_for_completion=True,
     )
     branch = BranchPythonOperator(
         task_id="select_bronze_after_raw",
