@@ -16,7 +16,8 @@ from tools.contracts.ampere_contract import load_contract
 
 FULL_REBUILD_FACT_BATCHES = {
     "fact_delivery_tracking": 3,
-    "fact_order_product": 6,
+    # Keep the full-history MERGE working set below the DuckDB memory cap.
+    "fact_order_product": 50,
     "fact_order_status_history": 3,
 }
 DAILY_FACT_BATCHES = {

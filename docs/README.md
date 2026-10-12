@@ -28,6 +28,8 @@ Contract v6 requires the Raw Lakekeeper warehouse and MinIO storage access. The 
 
 The daily publisher stages and tests models locally before changing Lakekeeper tables. Silver daily `fact_delivery_tracking` and `fact_order_product` inputs publish through three `order_id` ranges each, with keyed `MERGE` updates and inserts; target-only historical rows are preserved. Complete Silver dimensions and budgets use a keyed merge followed by deletion of keys absent from the complete source. Every Gold dbt model reads the full published Silver inputs and produces a complete aggregate snapshot in daily and full-history modes. Gold publication updates and inserts its keys, then removes keys absent from that snapshot. Empty complete sources fail before publication. Fact ranges commit independently, so a failed publish can leave earlier ranges applied; rerunning the DAG converges by replaying all ranges.
 
+During Silver full-history publication, `fact_order_product` is split into 50 deterministic `order_id` ranges to bound DuckDB MERGE memory; `fact_delivery_tracking` and `fact_order_status_history` use three ranges each. Every range is an independent Iceberg commit and retries replay all ranges idempotently.
+
 Silver and Gold layouts follow DuckDB Iceberg 1.5 write limits: they are unsorted, and Silver fact partitioning uses DuckDB-supported identity transforms. For partitioned writes DuckDB ignores the target-file-size property; weekly Spark housekeeping uses the contract size target when compacting those tables. Contract validation rejects Spark-only distribution modes and unsupported DuckDB transforms before initialization.
 
 ## Contract and catalog

@@ -39,8 +39,9 @@ The Gold Iceberg tables are `marketing_sales_budget_monthly_store`,
 
 Three large Silver fact tables use deterministic `order_id` ranges during a
 full-history publish: `fact_delivery_tracking`, `fact_order_product`, and
-`fact_order_status_history`. `fact_order_product` uses six ranges; the other
-two use three. Each range is its own Iceberg commit; a retry converges by
+`fact_order_status_history`. `fact_order_product` uses 50 ranges to keep its
+large MERGE working set within the full-rebuild pod's DuckDB memory limit; the
+other two use three. Each range is its own Iceberg commit; a retry converges by
 merging each range again. Catalog initialization must run first; the publisher
 does not create or replace target tables.
 
