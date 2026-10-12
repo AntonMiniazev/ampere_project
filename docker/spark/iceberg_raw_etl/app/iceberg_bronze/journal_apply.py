@@ -26,10 +26,12 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
 BRONZE_REBUILD_GENERATION = "lineage-v1"
-# Keep dimension slices small; facts/events use a larger multi-batch merge target.
+# Keep most dimension slices small; clients use bounded multi-batch groups to
+# avoid one Iceberg MERGE per calendar batch during a full-history rebuild.
 # Hash-bucket row counts remain approximate because source-row hashes can skew.
 SOURCE_ROW_BUCKETS = 8
 SOURCE_ROWS_PER_BUCKET = 16_000
+CLIENT_ROWS_PER_GROUP = 128_000
 FACT_EVENT_ROWS_PER_GROUP = 256_000
 FACT_EVENT_TABLES = {
     "order_product",
@@ -504,8 +506,15 @@ def _group_source_batches(
     batch_counts: dict,
     table: str,
 ) -> list[list[dict]]:
-    """Group fact/event source batches in order under a bounded row target."""
-    if table not in FACT_EVENT_TABLES:
+    """Group selected source batches in order under bounded row targets."""
+    target_rows = (
+        FACT_EVENT_ROWS_PER_GROUP
+        if table in FACT_EVENT_TABLES
+        else CLIENT_ROWS_PER_GROUP
+        if table == "clients"
+        else None
+    )
+    if target_rows is None:
         return [[batch] for batch in batches]
 
     groups: list[list[dict]] = []
@@ -515,13 +524,13 @@ def _group_source_batches(
         batch_rows = int(
             batch_counts.get(batch["batch_id"], {}).get(table, 0)
         )
-        if current and current_rows + batch_rows > FACT_EVENT_ROWS_PER_GROUP:
+        if current and current_rows + batch_rows > target_rows:
             groups.append(current)
             current = []
             current_rows = 0
         current.append(batch)
         current_rows += batch_rows
-        if current_rows >= FACT_EVENT_ROWS_PER_GROUP:
+        if current_rows >= target_rows:
             groups.append(current)
             current = []
             current_rows = 0
