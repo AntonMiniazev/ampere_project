@@ -70,8 +70,16 @@ def build_bronze_dag(*, full_rebuild: bool) -> DAG:
                         "minio_ssl_enabled": minio_ssl_enabled(config.minio_endpoint),
                         "driver_cores": config.driver_cores,
                         "driver_core_request": config.driver_core_request,
-                        "driver_memory": config.driver_memory,
-                        "driver_memory_overhead": config.driver_memory_overhead,
+                        "driver_memory": (
+                            config.driver_memory_facts_events
+                            if facts_events
+                            else config.driver_memory
+                        ),
+                        "driver_memory_overhead": (
+                            config.driver_memory_overhead_facts_events
+                            if facts_events
+                            else config.driver_memory_overhead
+                        ),
                         "driver_node_selector": config.driver_node_selector,
                         "executor_cores": (
                             config.executor_cores_facts_events
