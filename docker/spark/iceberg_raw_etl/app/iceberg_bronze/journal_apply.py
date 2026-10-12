@@ -29,7 +29,7 @@ BRONZE_REBUILD_GENERATION = "lineage-v1"
 # Keep large replay batches bounded while avoiding repeated Iceberg MERGEs for
 # small batches. The row target is approximate because hash buckets can skew.
 SOURCE_ROW_BUCKETS = 8
-SOURCE_ROWS_PER_BUCKET = 8_000
+SOURCE_ROWS_PER_BUCKET = 16_000
 
 
 def _pg_connect():
@@ -745,6 +745,9 @@ def run_cli() -> None:
         SparkSession.builder.appName(args.app_name)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.sql.ui.retainedExecutions", "50")
+        .config("spark.ui.retainedJobs", "100")
+        .config("spark.ui.retainedStages", "200")
         .getOrCreate()
     )
     set_spark_log_level(spark)

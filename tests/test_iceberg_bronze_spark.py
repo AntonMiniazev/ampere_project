@@ -439,9 +439,9 @@ class IcebergRegistryTests(unittest.TestCase):
 class BoundedBronzeReplayTests(unittest.TestCase):
     def test_source_buckets_scale_with_batch_size(self) -> None:
         self.assertEqual(_source_bucket_count(0), 1)
-        self.assertEqual(_source_bucket_count(8_000), 1)
-        self.assertEqual(_source_bucket_count(8_001), 2)
-        self.assertEqual(_source_bucket_count(64_000), SOURCE_ROW_BUCKETS)
+        self.assertEqual(_source_bucket_count(16_000), 1)
+        self.assertEqual(_source_bucket_count(16_001), 2)
+        self.assertEqual(_source_bucket_count(128_000), SOURCE_ROW_BUCKETS)
 
     def test_merge_source_materializes_to_shared_storage(self) -> None:
         changes = MagicMock()
