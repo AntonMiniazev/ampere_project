@@ -91,7 +91,7 @@ with DAG(
         trigger_dag_id="ampere__raw_landing__postgres_to_landing__daily",
         logical_date="{{ (dag_run.logical_date or dag_run.run_after).isoformat() }}",
         reset_dag_run=True,
-        wait_for_completion=True,
+        wait_for_completion=False,
         conf={"trigger_bronze": True},
     )
 
