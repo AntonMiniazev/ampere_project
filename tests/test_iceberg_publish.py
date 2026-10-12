@@ -417,13 +417,13 @@ class PublishTests(unittest.TestCase):
                     )
                 self.con.execute(
                     f"INSERT INTO staged_silver.silver.{table} VALUES "
-                    "('1|a', 1, 11), ('4|a', 4, 40), "
-                    "('7|a', 7, 70), ('10|a', 10, 100)"
+                    "('1|a', 1, 11), ('201|a', 201, 40), "
+                    "('401|a', 401, 70), ('601|a', 601, 100)"
                 )
                 self.con.execute(
                     f"INSERT INTO publish_silver.silver.{table} VALUES "
                     "('-2|old', -2, 2), ('1|a', 1, 10), "
-                    "('7|a', 7, 70), ('15|old', 15, 150)"
+                    "('401|a', 401, 70), ('701|old', 701, 150)"
                 )
 
                 class RecordStatements:
@@ -445,7 +445,7 @@ class PublishTests(unittest.TestCase):
                             f"SELECT order_id, amount FROM publish_silver.silver.{table} "
                             "ORDER BY order_id"
                         ).fetchall(),
-                        [(1, 11), (4, 40), (7, 70), (10, 100)],
+                        [(1, 11), (201, 40), (401, 70), (601, 100)],
                     )
                 self.assertEqual(
                     sum(sql.startswith("MERGE INTO") for sql in recording.statements),
