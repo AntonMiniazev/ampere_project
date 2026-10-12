@@ -9,6 +9,7 @@ flowchart TD
     START(["Scheduled daily start<br/>04:15"])
     D_AMPERE__CURIE__CACHE_REFRESH__POST_ICEBERG_GOLD["curie<br/>cache_refresh<br/>post_iceberg_gold<br/>schedule: manual / triggered"]
     D_AMPERE__HOUSEKEEPING__ICEBERG_METADATA__WEEKLY["housekeeping<br/>iceberg_metadata<br/>weekly<br/>schedule: manual / triggered"]
+    D_AMPERE__ICEBERG__BRONZE__CATALOG_RESET["iceberg<br/>bronze<br/>catalog_reset<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__DAILY["iceberg<br/>bronze<br/>raw_to_iceberg<br/>daily<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__BRONZE__RAW_TO_ICEBERG__FULL_REBUILD["iceberg<br/>bronze<br/>raw_to_iceberg<br/>full_rebuild<br/>schedule: manual / triggered"]
     D_AMPERE__ICEBERG__CATALOG__INIT["iceberg<br/>catalog<br/>init<br/>schedule: manual / triggered"]
@@ -40,6 +41,7 @@ flowchart TD
 |---|---|---|---|
 | `ampere__curie__cache_refresh__post_iceberg_gold` | manual / triggered | layer:gold, format:iceberg, system:curie, system:api, mode:post_gold | `dags/my_dags/ampere__curie__cache_refresh__post_iceberg_gold.py` |
 | `ampere__housekeeping__iceberg_metadata__weekly` | manual / triggered | layer:housekeeping, format:iceberg, system:spark-connect, mode:weekly | `dags/my_dags/ampere__housekeeping__iceberg_metadata__weekly.py` |
+| `ampere__iceberg__bronze__catalog_reset` | manual / triggered | layer:bronze, format:iceberg, system:spark-connect, mode:reset | `dags/my_dags/ampere__iceberg__bronze__catalog_reset.py` |
 | `ampere__iceberg__bronze__raw_to_iceberg__daily` | manual / triggered | layer:bronze, format:iceberg, system:spark, mode:daily | `dags/my_dags/ampere__iceberg__bronze__raw_to_iceberg__daily.py` |
 | `ampere__iceberg__bronze__raw_to_iceberg__full_rebuild` | manual / triggered | layer:bronze, format:iceberg, system:spark, mode:full_rebuild | `dags/my_dags/ampere__iceberg__bronze__raw_to_iceberg__full_rebuild.py` |
 | `ampere__iceberg__catalog__init` | manual / triggered | layer:catalog, format:iceberg, system:spark-connect, mode:manual | `dags/my_dags/ampere__iceberg__catalog__init.py` |

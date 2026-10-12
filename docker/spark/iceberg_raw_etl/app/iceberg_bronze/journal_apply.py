@@ -25,7 +25,7 @@ from tools.contracts.spark_conformance import quote_identifier, validate_spark_t
 
 LOGGER = logging.getLogger("raw-journal-to-bronze")
 TABLES = tuple(spec.name for spec in CONTRACT.layer_tables("raw"))
-BRONZE_REBUILD_GENERATION = "lineage-v1"
+BRONZE_REBUILD_GENERATION = "bulk-state-v1"
 # Keep most dimension slices small; clients use bounded multi-batch groups to
 # avoid one Iceberg MERGE per calendar batch during a full-history rebuild.
 # Hash-bucket row counts remain approximate because source-row hashes can skew.
@@ -36,6 +36,10 @@ CLIENT_ROWS_PER_GROUP = 128_000
 # order_product history. Keep the fact/event source bounded while avoiding
 # hundreds of small Iceberg MERGEs.
 FACT_EVENT_ROWS_PER_GROUP = 1_000_000
+FULL_REBUILD_SHUFFLE_PARTITIONS = 256
+FULL_REBUILD_ROWS_PER_SHUFFLE_PARTITION = 100_000
+FULL_REBUILD_BUCKETS = 256
+IMMUTABLE_FULL_REBUILD_TABLES = {"order_product"}
 FACT_EVENT_TABLES = {
     "order_product",
     "orders",
@@ -218,6 +222,23 @@ def reserve_full_rebuild() -> dict:
         )
         in_progress = cursor.fetchone()
         if in_progress is not None:
+            prior_id, _, prior_last_sequence = in_progress
+            expected_id = _full_rebuild_transfer_id(
+                str(dataset_id), int(prior_last_sequence)
+            )
+            if prior_id != expected_id:
+                # A new rebuild algorithm must not inherit table acknowledgments
+                # from an older implementation, especially after table reset.
+                cursor.execute(
+                    "DELETE FROM pipeline.bronze_transfer_tables WHERE transfer_id=%s",
+                    (prior_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM pipeline.bronze_transfers WHERE transfer_id=%s",
+                    (prior_id,),
+                )
+                in_progress = None
+        if in_progress is not None:
             rebuild_id, first_sequence, last_sequence = in_progress
             cursor.execute(
                 "SELECT transfer_id FROM pipeline.raw_transfers "
@@ -337,6 +358,18 @@ def _latest_changes(raw: DataFrame) -> DataFrame:
     )
 
 
+def _full_rebuild_latest(changes: DataFrame) -> DataFrame:
+    """Resolve the latest accepted operation per entity over the frozen history."""
+    window = Window.partitionBy("_rebuild_bucket", "_source_row_id").orderBy(
+        F.col("_batch_sequence").desc(), F.col("_change_id").desc()
+    )
+    return (
+        changes.withColumn("_latest_rank", F.row_number().over(window))
+        .filter(F.col("_latest_rank") == 1)
+        .drop("_latest_rank")
+    )
+
+
 def _bronze_delete_rows(latest: DataFrame) -> DataFrame:
     """Project Raw ordering metadata under the names used by Bronze."""
     return latest.filter(F.col("_op") == "D").select(
@@ -412,6 +445,11 @@ def _full_rebuild_transfer_id(dataset_id: str, last_sequence: int) -> uuid.UUID:
         uuid.NAMESPACE_URL,
         f"ampere-bronze-rebuild:{dataset_id}:{last_sequence}:contract-v6:{BRONZE_REBUILD_GENERATION}",
     )
+
+
+def _bronze_rebuild_scratch_root(transfer: dict) -> str:
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-iceberg-raw")
+    return f"s3a://{bucket}/_spark_scratch/bronze_full_rebuild/{transfer['transfer_id']}"
 
 
 def _bronze_rows(table: str, changes: DataFrame, transfer: dict) -> DataFrame:
@@ -617,27 +655,88 @@ def _apply_batch_slices(
 
 
 def _apply_full_rebuild(spark: SparkSession, target: str, table: str, transfer: dict) -> int:
-    """Clear one target table, then replay accepted batches chronologically."""
-    # If this table has no completion marker, a retry starts it cleanly and
-    # replays the complete frozen batch list. Other completed tables stay put.
-    spark.sql(f"DELETE FROM {target}")
-    applied = 0
-    previous_sequence = None
-    for group in _group_source_batches(
-        transfer["batches"], transfer["batch_counts"], table
-    ):
-        sequence = int(group[0]["batch_sequence"])
-        if previous_sequence is not None and sequence <= previous_sequence:
-            raise RuntimeError("Frozen Raw batch boundary is not strictly ascending")
-        previous_sequence = int(group[-1]["batch_sequence"])
-        rows = _apply_batch_group_slices(spark, target, table, transfer, group)
-        applied += rows
-    if applied != transfer["expected_counts"].get(table, 0):
-        raise RuntimeError(
-            f"Bronze rebuild input count mismatch for {table}: "
-            f"batch ledger={transfer['expected_counts'].get(table, 0)} applied={applied}"
+    """Prepare the full current state, then atomically replace one Iceberg table."""
+    batch_ids = sorted({str(batch["batch_id"]) for batch in transfer["batches"]})
+    if not batch_ids:
+        raise RuntimeError("Frozen Raw boundary contains no accepted batches")
+
+    # A small broadcast relation avoids a large SQL IN expression and selects
+    # only batches attached to completed Raw transfers in this frozen boundary.
+    accepted_batches = spark.createDataFrame(
+        [(batch_id,) for batch_id in batch_ids], ["_batch_id"]
+    )
+    raw = (
+        spark.table(f"iceberg_raw.raw.{quote_identifier(table)}")
+        .filter(F.col("_dataset_id") == transfer["dataset_id"])
+        .join(F.broadcast(accepted_batches), on="_batch_id", how="inner")
+        .persist(StorageLevel.DISK_ONLY)
+    )
+    staging_path = (
+        f"{_bronze_rebuild_scratch_root(transfer)}/{table}/attempt-{uuid.uuid4().hex}"
+    )
+    try:
+        expected = int(transfer["expected_counts"].get(table, 0))
+        shuffle_partitions = min(
+            FULL_REBUILD_SHUFFLE_PARTITIONS,
+            max(
+                16,
+                (expected + FULL_REBUILD_ROWS_PER_SHUFFLE_PARTITION - 1)
+                // FULL_REBUILD_ROWS_PER_SHUFFLE_PARTITION,
+            ),
         )
-    return applied
+        spark.conf.set("spark.sql.shuffle.partitions", str(shuffle_partitions))
+        raw_rows = raw.count()
+        if raw_rows != expected:
+            raise RuntimeError(
+                f"Bronze rebuild input count mismatch for {table}: "
+                f"Raw={raw_rows} accepted-transfer-ledger={expected}"
+            )
+
+        bucket = F.pmod(
+            F.xxhash64(F.col("_source_row_id")), F.lit(FULL_REBUILD_BUCKETS)
+        ).cast("int")
+        changes = raw.withColumn("_rebuild_bucket", bucket).repartition(
+            shuffle_partitions,
+            F.col("_rebuild_bucket"),
+            F.col("_source_row_id"),
+        )
+        LOGGER.info(
+            "BRONZE_FULL_REBUILD_CONFIG table=%s shuffle_partitions=%s "
+            "rows_per_partition=%s buckets=%s",
+            table,
+            shuffle_partitions,
+            FULL_REBUILD_ROWS_PER_SHUFFLE_PARTITION,
+            FULL_REBUILD_BUCKETS,
+        )
+        if table in IMMUTABLE_FULL_REBUILD_TABLES:
+            # order_product is only inserted by the generator. Its source_row_id
+            # is generated once and uniquely indexed in PostgreSQL; no update or
+            # delete path exists for this table. Baseline rows may use op B.
+            final_rows = _bronze_rows(table, changes, transfer)
+        else:
+            latest = _full_rebuild_latest(changes)
+            final_rows = _bronze_rows(
+                table, latest.filter(F.col("_op") != "D"), transfer
+            )
+
+        # The temporary Parquet result bounds executor memory and gives retries
+        # an unambiguous per-attempt work area. Iceberg sees a single overwrite
+        # commit, preserving the initialized table's schema and partition spec.
+        final_rows.write.mode("errorifexists").parquet(staging_path)
+        staged = spark.read.schema(final_rows.schema).parquet(staging_path)
+        staged.writeTo(target).overwrite(F.lit(True))
+        LOGGER.info(
+            "BRONZE_FULL_REBUILD_TABLE_PUBLISHED table=%s raw_rows=%s "
+            "shuffle_partitions=%s buckets=%s",
+            table,
+            raw_rows,
+            shuffle_partitions,
+            FULL_REBUILD_BUCKETS,
+        )
+    finally:
+        raw.unpersist(blocking=True)
+        _delete_merge_source_path(spark, staging_path)
+    return raw_rows
 
 
 def _apply_incremental_table(spark: SparkSession, target: str, table: str, transfer: dict) -> int:

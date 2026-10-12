@@ -131,10 +131,20 @@ def _create_table(spark: SparkSession, contract: AmpereContract, table: Resolved
     logging.info("Initialized %s.%s.%s from contract v%s", catalog, namespace, table.name, contract.version)
 
 
-def initialize(spark_remote: str | None = None) -> None:
+def initialize(
+    spark_remote: str | None = None,
+    *,
+    layers: tuple[str, ...] = ("raw", "bronze", "silver", "gold"),
+    reset_bronze: bool = False,
+) -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     logger = logging.getLogger("iceberg-catalog-init")
     contract = load_contract()
+    allowed_layers = {"raw", "bronze", "silver", "gold"}
+    if not layers or set(layers) - allowed_layers:
+        raise ValueError(f"Unsupported catalog layers: {layers}")
+    if reset_bronze and layers != ("bronze",):
+        raise ValueError("A Bronze reset must select only the bronze layer")
     logger.info("Initializing %s contract v%s (%s tables)", contract.catalog_namespace, contract.version, len(contract.tables))
     spark_remote = spark_remote or os.getenv(
         "SPARK_REMOTE", "sc://spark-connect.ampere.svc.cluster.local:15002"
@@ -144,13 +154,36 @@ def initialize(spark_remote: str | None = None) -> None:
     ).getOrCreate()
     try:
         logger.info("Using existing Spark Connect session at %s", spark_remote)
-        for layer in ("raw", "bronze", "silver", "gold"):
+        for layer in layers:
             for table in contract.layer_tables(layer):
+                if reset_bronze:
+                    target = (
+                        f"{quote_identifier(_catalog_name(layer))}."
+                        f"{quote_identifier(table.namespace)}."
+                        f"{quote_identifier(table.name)}"
+                    )
+                    # Lakekeeper-managed warehouses use soft deletion. Do not
+                    # request Spark PURGE: Iceberg 1.x clients can delete files
+                    # client-side and bypass Lakekeeper's retention handling.
+                    spark.sql(f"DROP TABLE IF EXISTS {target}")
+                    logger.info("Dropped Bronze table through Lakekeeper: %s", target)
                 _create_table(spark, contract, table)
-        logger.info("Initialized and validated all %s contract tables", len(contract.tables))
+        initialized_count = sum(len(contract.layer_tables(layer)) for layer in layers)
+        logger.info("Initialized and validated %s selected contract tables", initialized_count)
     finally:
         spark.stop()
 
 
 if __name__ == "__main__":
-    initialize()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--layers",
+        nargs="+",
+        choices=("raw", "bronze", "silver", "gold"),
+        default=("raw", "bronze", "silver", "gold"),
+    )
+    parser.add_argument("--reset-bronze", action="store_true")
+    args = parser.parse_args()
+    initialize(layers=tuple(args.layers), reset_bronze=args.reset_bronze)

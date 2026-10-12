@@ -23,7 +23,7 @@ layers:
   bronze:
     title: Bronze
     status: implemented
-    responsibility: Reconstruct and incrementally maintain current source state from accepted Raw change rows, with dataset-scoped row identity and checkpoints.
+    responsibility: Maintain current state from accepted Raw changes; Daily Bronze uses versioned merges and full rebuild publishes each reconstructed table in one atomic overwrite commit.
     diagram_note: Reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.
     engine: [Spark, Iceberg]
     storage: [MinIO, Iceberg]

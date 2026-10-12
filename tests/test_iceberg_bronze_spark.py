@@ -33,6 +33,7 @@ from iceberg_bronze.journal_apply import (  # noqa: E402
     _source_bucket_count,
     _bronze_delete_rows,
     _full_rebuild_transfer_id,
+    _full_rebuild_latest,
     _group_source_batches,
     _raw_source_column_for_bronze,
     reserve_full_rebuild,
@@ -120,7 +121,7 @@ class IcebergRegistryTests(unittest.TestCase):
         cursor.fetchone.side_effect = [
             ("51e4343e-cf56-4181-9796-3f27865ebe2b",),
             None,
-            ("rebuild-id", 1, 37),
+            (_full_rebuild_transfer_id("51e4343e-cf56-4181-9796-3f27865ebe2b", 37), 1, 37),
         ]
         cursor.fetchall.side_effect = [
             [("raw-transfer-1",), ("raw-transfer-2",)],
@@ -131,7 +132,10 @@ class IcebergRegistryTests(unittest.TestCase):
         with patch("iceberg_bronze.journal_apply._pg_connect", return_value=connection):
             transfer = reserve_full_rebuild()
 
-        self.assertEqual(transfer["transfer_id"], "rebuild-id")
+        self.assertEqual(
+            transfer["transfer_id"],
+            str(_full_rebuild_transfer_id("51e4343e-cf56-4181-9796-3f27865ebe2b", 37)),
+        )
         self.assertEqual(transfer["first_sequence"], 1)
         self.assertEqual(transfer["last_sequence"], 37)
         self.assertEqual(
@@ -555,31 +559,72 @@ class BoundedBronzeReplayTests(unittest.TestCase):
         finally:
             spark.stop()
 
-    def test_full_rebuild_replays_batches_in_order_after_table_clear(self) -> None:
+    def test_full_rebuild_publishes_one_atomic_overwrite(self) -> None:
         spark = MagicMock()
+        spark.createDataFrame.return_value = MagicMock(name="accepted_batches")
+        raw = MagicMock(name="raw_history")
+        raw.count.return_value = 3
+        raw.persist.return_value = raw
+        filtered = MagicMock(name="filtered_raw")
+        joined = MagicMock(name="joined_raw")
+        spark.table.return_value.filter.return_value = filtered
+        filtered.join.return_value = joined
+        joined.persist.return_value = raw
+        prepared = MagicMock(name="prepared_bronze")
+        prepared.schema = "schema"
+        prepared.write.mode.return_value.parquet.return_value = None
+        staged = MagicMock(name="staged_bronze")
+        spark.read.schema.return_value.parquet.return_value = staged
+        staged.writeTo.return_value.overwrite.return_value = None
         transfer = {
-            "batches": [
-                {"batch_id": "first", "batch_sequence": 2},
-                {"batch_id": "second", "batch_sequence": 8},
-            ],
-            "batch_counts": {
-                "first": {"clients": 200_000},
-                "second": {"clients": 200_000},
-            },
-            "expected_counts": {"clients": 3},
+            "transfer_id": "transfer-1",
+            "dataset_id": "dataset-1",
+            "batches": [{"batch_id": "first"}, {"batch_id": "second"}],
+            "expected_counts": {"order_product": 3},
         }
-        with patch(
-            "iceberg_bronze.journal_apply._apply_batch_group_slices",
-            side_effect=[1, 2],
-        ) as apply:
-            total = _apply_full_rebuild(spark, "bronze.clients", "clients", transfer)
+        with (
+            patch("iceberg_bronze.journal_apply.F.broadcast", side_effect=lambda value: value),
+            patch("iceberg_bronze.journal_apply.F.col", side_effect=lambda name: MagicMock(name=name)),
+            patch("iceberg_bronze.journal_apply.F.xxhash64", return_value=MagicMock()),
+            patch("iceberg_bronze.journal_apply.F.pmod", return_value=MagicMock()),
+            patch("iceberg_bronze.journal_apply.F.lit", return_value=MagicMock()),
+            patch("iceberg_bronze.journal_apply._bronze_rows", return_value=prepared) as project,
+            patch("iceberg_bronze.journal_apply._delete_merge_source_path") as cleanup,
+        ):
+            total = _apply_full_rebuild(
+                spark, "iceberg_bronze.bronze.order_product", "order_product", transfer
+            )
 
-        spark.sql.assert_called_once_with("DELETE FROM bronze.clients")
+        spark.sql.assert_not_called()
         self.assertEqual(total, 3)
-        self.assertEqual(
-            [call.args[-1][0]["batch_sequence"] for call in apply.call_args_list],
-            [2, 8],
-        )
+        project.assert_called_once()
+        staged.writeTo.assert_called_once_with("iceberg_bronze.bronze.order_product")
+        staged.writeTo.return_value.overwrite.assert_called_once()
+        cleanup.assert_called_once()
+
+    def test_full_rebuild_latest_operation_includes_deletes_in_ordering(self) -> None:
+        spark = SparkSession.builder.master("local[2]").appName("bronze-full-rebuild-latest").getOrCreate()
+        spark.sparkContext.setLogLevel("ERROR")
+        try:
+            history = spark.createDataFrame(
+                [
+                    (0, "row-1", 1, 1, "I", "old"),
+                    (0, "row-1", 2, 1, "D", None),
+                    (1, "row-2", 1, 1, "I", "old"),
+                    (1, "row-2", 1, 2, "U", "new"),
+                ],
+                ["_rebuild_bucket", "_source_row_id", "_batch_sequence", "_change_id", "_op", "value"],
+            )
+            latest = _full_rebuild_latest(history)
+            rows = {
+                row._source_row_id: row
+                for row in latest.collect()
+            }
+            self.assertEqual(rows["row-1"]._op, "D")
+            self.assertEqual(rows["row-2"].value, "new")
+            self.assertEqual(latest.filter("_op != 'D'").count(), 1)
+        finally:
+            spark.stop()
 
 
 @unittest.skipUnless(
@@ -701,6 +746,20 @@ class IcebergSparkTests(unittest.TestCase):
                     )
                 client = spark.table(dimension_table).where("id = 7").first()
                 self.assertEqual(client.fullname, "august")
+
+                replacement = align_df_to_iceberg_schema(
+                    spark,
+                    spark.createDataFrame([(8, "bulk replacement")], ["id", "fullname"]),
+                    catalog="iceberg_bronze",
+                    schema="bronze",
+                    table="clients",
+                    logger=logger,
+                )
+                replacement.writeTo(dimension_table).overwrite(F.lit(True))
+                self.assertEqual(
+                    [(row.id, row.fullname) for row in spark.table(dimension_table).collect()],
+                    [(8, "bulk replacement")],
+                )
 
                 # Raw lineage uses input_file_name(), which Spark treats as a
                 # non-deterministic source for Iceberg MERGE. The checkpointed
