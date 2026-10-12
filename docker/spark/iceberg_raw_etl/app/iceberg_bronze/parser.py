@@ -19,7 +19,7 @@ def parse_iceberg_bronze_args() -> argparse.Namespace:
     parser.add_argument("--partition-key", default="snapshot_date")
     parser.add_argument("--event-date-column", default="")
     parser.add_argument("--lookback-days", type=int, default=0)
-    parser.add_argument("--raw-bucket", default="ampere-raw")
+    parser.add_argument("--raw-bucket", default="ampere-iceberg-raw")
     parser.add_argument("--raw-prefix", default="postgres-pre-raw")
     parser.add_argument("--source-system", default="postgres-pre-raw")
     parser.add_argument("--shuffle-partitions", type=int, default=0)

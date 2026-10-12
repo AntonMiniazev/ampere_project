@@ -45,13 +45,13 @@ def build_table_plan(
     - table: Source table name to plan, such as `clients` or `orders`. No default.
     - args: Parsed raw CLI args namespace. Relevant defaults come from `parse_raw_args()`, for example:
       - `schema`: default `source`
-      - `bucket`: default `ampere-raw`
+      - `bucket`: default `ampere-iceberg-raw`
       - `source_system`: default `postgres-pre-raw`
       - `watermark_from`: default `""`
       - `watermark_to`: default `""`
       - `run_date`: default `None`
     - run_date: Business date already normalized by the caller into `datetime.date`. No default.
-    - output_base: Landing base path for the current table, for example `s3a://ampere-raw/postgres-pre-raw/source/orders`. No default.
+    - output_base: Landing base path for the current table, for example `s3a://ampere-iceberg-raw/postgres-pre-raw/source/orders`. No default.
 
     Returns:
     - RawTablePlan: normalized per-table extraction plan consumed by `write_table()`.
@@ -82,14 +82,14 @@ def build_table_plan(
         table="clients",
         args=SimpleNamespace(
             schema="source",
-            bucket="ampere-raw",
+            bucket="ampere-iceberg-raw",
             source_system="postgres-pre-raw",
             watermark_from="",
             watermark_to="",
             run_date="2026-03-28",
         ),
         run_date=date(2026, 3, 28),
-        output_base="s3a://ampere-raw/postgres-pre-raw/source/clients",
+        output_base="s3a://ampere-iceberg-raw/postgres-pre-raw/source/clients",
     )
     ```
     """
@@ -226,13 +226,13 @@ def write_table(
             group_mode="incremental",
             group_partition_key="extract_date",
             snapshot_partitioned=True,
-            output_base="s3a://ampere-raw/postgres-pre-raw/source/clients",
+            output_base="s3a://ampere-iceberg-raw/postgres-pre-raw/source/clients",
             table_event_col=None,
             table_lookback_days=0,
             table_watermark_col="updated_at",
             table_created_col="created_at",
             table_cursor_granularity="date",
-            state_path_value="s3a://ampere-raw/postgres-pre-raw/source/_state/_state_clients.json",
+            state_path_value="s3a://ampere-iceberg-raw/postgres-pre-raw/source/_state/_state_clients.json",
             table_watermark_from=datetime(2026, 3, 27, 0, 0, tzinfo=timezone.utc),
             table_created_from=datetime(2026, 3, 27, 0, 0, tzinfo=timezone.utc),
             table_watermark_to=datetime(2026, 3, 28, 0, 0, tzinfo=timezone.utc),

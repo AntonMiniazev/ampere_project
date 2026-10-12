@@ -453,16 +453,16 @@ class BoundedBronzeReplayTests(unittest.TestCase):
         changes.write.mode.return_value.parquet.return_value = None
         session.read.schema.return_value.parquet.return_value = materialized
 
-        result = _materialize_bounded_merge_source(changes, "s3a://ampere-raw/test/merge-source")
+        result = _materialize_bounded_merge_source(changes, "s3a://ampere-iceberg-raw/test/merge-source")
 
         self.assertIs(result, materialized)
         changes.write.mode.assert_called_once_with("errorifexists")
         changes.write.mode.return_value.parquet.assert_called_once_with(
-            "s3a://ampere-raw/test/merge-source"
+            "s3a://ampere-iceberg-raw/test/merge-source"
         )
         session.read.schema.assert_called_once_with(schema)
         session.read.schema.return_value.parquet.assert_called_once_with(
-            "s3a://ampere-raw/test/merge-source"
+            "s3a://ampere-iceberg-raw/test/merge-source"
         )
 
     def test_delete_metadata_maps_raw_ordering_columns_to_bronze_names(self) -> None:

@@ -42,11 +42,11 @@ def _list_partitions(
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+        base_path: Table base path, e.g. "s3a://ampere-iceberg-raw/postgres-pre-raw/source/orders".
         partition_key: Partition type, e.g. "snapshot_date" or "event_date".
 
     Examples:
-        _list_partitions(spark, "s3a://ampere-raw/.../orders", "event_date")
+        _list_partitions(spark, "s3a://ampere-iceberg-raw/.../orders", "event_date")
     """
     mode_path = (
         f"{base_path}/mode=snapshot"
@@ -120,7 +120,7 @@ def _candidate_runs(
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        base_path: Table base path, e.g. "s3a://ampere-raw/postgres-pre-raw/source/orders".
+        base_path: Table base path, e.g. "s3a://ampere-iceberg-raw/postgres-pre-raw/source/orders".
         partition_key: Partition type, e.g. "snapshot_date".
         search_start: Earliest date to consider, e.g. date(2026, 1, 20) or None.
         latest_only: Inspect only the newest partition. Full snapshot rebuilds
@@ -128,7 +128,7 @@ def _candidate_runs(
             snapshots, not their daily copies.
 
     Examples:
-        _candidate_runs(spark, "s3a://ampere-raw/.../orders", "event_date", date(2026, 1, 20))
+        _candidate_runs(spark, "s3a://ampere-iceberg-raw/.../orders", "event_date", date(2026, 1, 20))
     """
     candidates = []
     partitions = _list_partitions(spark, base_path, partition_key)

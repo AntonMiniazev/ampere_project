@@ -28,7 +28,7 @@ class RawClientsFullScanTests(unittest.TestCase):
 
     def test_full_scan_ignores_existing_watermark_state(self) -> None:
         args = SimpleNamespace(
-            bucket="ampere-raw",
+            bucket="ampere-iceberg-raw",
             source_system="postgres-pre-raw",
             schema="source",
             watermark_from="",
@@ -49,7 +49,7 @@ class RawClientsFullScanTests(unittest.TestCase):
                 group_mode="incremental",
                 group_partition_key="extract_date",
                 snapshot_partitioned=True,
-                output_base="s3a://ampere-raw/postgres-pre-raw/source/clients",
+                output_base="s3a://ampere-iceberg-raw/postgres-pre-raw/source/clients",
                 table="clients",
                 table_meta={
                     "watermark_column": "updated_at",

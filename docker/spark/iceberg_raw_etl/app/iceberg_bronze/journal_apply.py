@@ -40,7 +40,7 @@ def _pg_connect():
         dbname=settings.database,
         user=settings.user,
         password=settings.password,
-        application_name="ampere-raw-to-bronze",
+        application_name="ampere-iceberg-raw-to-bronze",
     )
 
 
@@ -345,7 +345,7 @@ def _materialize_bounded_merge_source(changes: DataFrame, staging_path: str) -> 
 
 
 def _merge_scratch_root(transfer: dict) -> str:
-    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-raw")
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-iceberg-raw")
     return f"s3a://{bucket}/_spark_scratch/bronze_merge/{transfer['transfer_id']}"
 
 
@@ -732,7 +732,7 @@ def run_cli() -> None:
     parser.add_argument("--lakekeeper-uri", required=True)
     parser.add_argument("--oauth-uri", required=True)
     parser.add_argument("--scope", required=True)
-    parser.add_argument("--app-name", default="ampere-raw-to-bronze")
+    parser.add_argument("--app-name", default="ampere-iceberg-raw-to-bronze")
     setup_logging()
     args = parser.parse_args()
     LOGGER.info(

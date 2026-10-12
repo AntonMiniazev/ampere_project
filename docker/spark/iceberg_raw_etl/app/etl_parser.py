@@ -32,7 +32,7 @@ def parse_raw_args() -> argparse.Namespace:
     - --shuffle-partitions: Override for `spark.sql.shuffle.partitions`; `0` keeps Spark default. Default `0`.
     - --run-id: Explicit run identifier written into raw metadata and paths. Default `""`.
     - --source-system: Source-system identifier written into manifests and paths. Default `postgres-pre-raw`.
-    - --bucket: Target raw landing bucket name. Default `ampere-raw`.
+    - --bucket: Target raw landing bucket name. Default `ampere-iceberg-raw`.
     - --output-prefix: Prefix inside the raw bucket. Default `postgres-pre-raw`.
     - --app-name: Spark application name. Default `source-to-raw-etl`.
     - --image: Container image reference written into the manifest producer block. Default `""`.
@@ -114,7 +114,7 @@ def parse_raw_args() -> argparse.Namespace:
         default="postgres-pre-raw",
         help="Source system identifier",
     )
-    parser.add_argument("--bucket", default="ampere-raw", help="MinIO bucket name")
+    parser.add_argument("--bucket", default="ampere-iceberg-raw", help="MinIO bucket name")
     parser.add_argument(
         "--output-prefix",
         default="postgres-pre-raw",

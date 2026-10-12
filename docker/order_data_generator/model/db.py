@@ -13,7 +13,7 @@ from order_data_generator.logging_utils import APP_NAME
 from tools.source_batch_staging import StagedChangeBatch
 
 logger = logging.getLogger(APP_NAME)
-MUTATION_RETURNING_BATCH_ROWS = 5_000
+MUTATION_RETURNING_BATCH_ROWS = 50_000
 
 
 def _capture_frame(connection, table: str, frame: pl.DataFrame, operation: str) -> int:

@@ -67,7 +67,7 @@ with DAG(
         "MKL_NUM_THREADS": "1",
         "AMPERE_SOURCE_CODE_VERSION": DAG_CONFIG.image,
         "MINIO_S3_ENDPOINT": resolve_minio_endpoint(),
-        "MINIO_STAGING_BUCKET": get_optional_variable("minio_raw_bucket") or "ampere-raw",
+        "MINIO_STAGING_BUCKET": get_optional_variable("minio_raw_bucket") or "ampere-iceberg-raw",
         "MINIO_STAGING_PREFIX": get_optional_variable("ampere_staging_prefix") or "ampere/source-batches/v1",
         "AMPERE_STAGING_TARGET_FILE_BYTES": get_optional_variable("ampere_staging_target_file_bytes") or str(128 * 1024 * 1024),
     }

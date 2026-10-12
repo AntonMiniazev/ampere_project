@@ -135,7 +135,7 @@ def reserve_transfer(max_batches: int = 32) -> dict | None:
             last_sequence = int(batches[-1][1])
             transfer_id = uuid.uuid5(
                 uuid.NAMESPACE_URL,
-                f"ampere-raw:{dataset_id}:{first_sequence}:{last_sequence}:contract-v6",
+                f"ampere-iceberg-raw:{dataset_id}:{first_sequence}:{last_sequence}:contract-v6",
             )
             cursor.execute(
                 "INSERT INTO pipeline.raw_transfers "
@@ -209,7 +209,7 @@ def _staging_client():
 def _load_eligible_manifests(transfer: dict) -> dict:
     """Validate DB-completed batches and their exact immutable manifests."""
     client = _staging_client()
-    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-raw")
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-iceberg-raw")
     prefix = os.getenv("MINIO_STAGING_PREFIX", DEFAULT_STAGING_PREFIX).strip("/")
     manifests = {}
     previous_sequence = 0
@@ -299,7 +299,7 @@ def _merge_staged_changes(spark: SparkSession, transfer: dict, table: str, manif
     file_groups: list[tuple[list[str], int]] = []
     active: list[str] = []
     active_bytes = 0
-    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-raw")
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-iceberg-raw")
     for _batch_id, table_info in batch_table:
         for item in table_info["files"]:
             active.append(f"s3a://{bucket}/{item['key']}")
@@ -334,7 +334,7 @@ def _merge_staged_changes(spark: SparkSession, transfer: dict, table: str, manif
         source = (
             source
             .withColumn("_transfer_id", F.lit(transfer["transfer_id"]))
-            .withColumn("_ingest_run_id", F.lit("ampere-raw-transfer"))
+            .withColumn("_ingest_run_id", F.lit("ampere-iceberg-raw-transfer"))
             .withColumn("_ingest_ts", F.current_timestamp())
             .withColumn("_source_system", F.lit("postgres-pre-raw"))
             .withColumn("_source_table", F.lit(table))
@@ -398,7 +398,7 @@ def cleanup_acknowledged_staging(*, retention_days: int | None = None) -> int:
     )
     if not 7 <= retention <= 14:
         raise ValueError("AMPERE_STAGING_RETENTION_DAYS must be between 7 and 14")
-    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-raw")
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-iceberg-raw")
     prefix = os.getenv("MINIO_STAGING_PREFIX", DEFAULT_STAGING_PREFIX).strip("/")
     client = _staging_client()
     with _connect_postgres() as connection, connection.cursor() as cursor:
@@ -449,7 +449,7 @@ def cleanup_orphaned_staging(*, retention_days: int = 14, limit_batches: int = 5
     """
     if retention_days < 14 or limit_batches < 1:
         raise ValueError("Orphan cleanup requires at least 14 days retention and a positive batch limit")
-    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-raw")
+    bucket = os.getenv("MINIO_STAGING_BUCKET", "ampere-iceberg-raw")
     prefix = os.getenv("MINIO_STAGING_PREFIX", DEFAULT_STAGING_PREFIX).strip("/")
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     client = _staging_client()

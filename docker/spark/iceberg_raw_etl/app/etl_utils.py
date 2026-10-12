@@ -252,7 +252,7 @@ def s3_path(bucket: str, *parts: str) -> str:
     """Build an s3a:// path from a bucket and optional path parts.
 
     Args:
-        bucket: Bucket name, e.g. "ampere-raw".
+        bucket: Bucket name, e.g. "ampere-iceberg-raw".
         parts: Path segments, e.g. "postgres-pre-raw", "source", "orders".
     """
     cleaned = [part.strip("/") for part in parts if part]
@@ -265,7 +265,7 @@ def table_base_path(bucket: str, prefix: str, schema: str, table: str) -> str:
     """Return the base path for a table under bucket/prefix/schema.
 
     Args:
-        bucket: Bucket name, e.g. "ampere-raw".
+        bucket: Bucket name, e.g. "ampere-iceberg-raw".
         prefix: Optional prefix, e.g. "postgres-pre-raw".
         schema: Source schema, e.g. "source".
         table: Table name, e.g. "orders".
@@ -280,7 +280,7 @@ def state_path(bucket: str, source_system: str, schema: str, table: str) -> str:
     """Return the landing _state JSON path for a given table.
 
     Args:
-        bucket: Bucket name, e.g. "ampere-raw".
+        bucket: Bucket name, e.g. "ampere-iceberg-raw".
         source_system: Source system id, e.g. "postgres-pre-raw".
         schema: Source schema, e.g. "source".
         table: Table name, e.g. "orders".
@@ -298,7 +298,7 @@ def list_dirs(spark: SparkSession, path_str: str) -> list[str]:
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: Directory path, e.g. "s3a://ampere-raw/source/orders".
+        path_str: Directory path, e.g. "s3a://ampere-iceberg-raw/source/orders".
     """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
@@ -314,7 +314,7 @@ def exists(spark: SparkSession, path_str: str) -> bool:
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: Path to check, e.g. "s3a://ampere-raw/.../_manifest.json".
+        path_str: Path to check, e.g. "s3a://ampere-iceberg-raw/.../_manifest.json".
     """
     jvm = spark._jvm
     path = jvm.org.apache.hadoop.fs.Path(path_str)
@@ -327,7 +327,7 @@ def write_bytes(spark: SparkSession, path_str: str, content: bytes) -> None:
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: Target path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        path_str: Target path, e.g. "s3a://ampere-iceberg-raw/.../_manifest.json".
         content: File payload, e.g. b"{\"ok\": true}".
     """
     jvm = spark._jvm
@@ -345,7 +345,7 @@ def write_marker(
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        output_path: Directory path, e.g. "s3a://ampere-raw/.../run_id=xyz".
+        output_path: Directory path, e.g. "s3a://ampere-iceberg-raw/.../run_id=xyz".
         filename: Marker name, e.g. "_SUCCESS".
         content: Marker payload, e.g. b"".
     """
@@ -366,7 +366,7 @@ def read_json(
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: JSON path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        path_str: JSON path, e.g. "s3a://ampere-iceberg-raw/.../_manifest.json".
         logger: Logger override, e.g. logging.getLogger("raw-to-bronze").
     """
     logger = logger or logging.getLogger(__name__)
@@ -410,7 +410,7 @@ def _read_bytes_hadoop(
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: File path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        path_str: File path, e.g. "s3a://ampere-iceberg-raw/.../_manifest.json".
         logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
     """
     jvm = spark._jvm
@@ -446,7 +446,7 @@ def _read_bytes_spark(
 
     Args:
         spark: Active SparkSession, e.g. SparkSession.builder.getOrCreate().
-        path_str: File path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        path_str: File path, e.g. "s3a://ampere-iceberg-raw/.../_manifest.json".
         logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
     """
     try:
@@ -471,7 +471,7 @@ def _read_bytes_boto3(
     """Read raw bytes from s3a:// paths using boto3.
 
     Args:
-        path_str: File path, e.g. "s3a://ampere-raw/.../_manifest.json".
+        path_str: File path, e.g. "s3a://ampere-iceberg-raw/.../_manifest.json".
         logger: Logger instance, e.g. logging.getLogger("raw-to-bronze").
     """
     try:

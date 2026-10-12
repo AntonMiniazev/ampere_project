@@ -24,7 +24,7 @@ from botocore.exceptions import ClientError
 
 LOGGER = logging.getLogger("ampere-source-batch")
 DEFAULT_PREFIX = "ampere/source-batches/v1"
-DEFAULT_BUCKET = "ampere-raw"
+DEFAULT_BUCKET = "ampere-iceberg-raw"
 DEFAULT_CHUNK_ROWS = 50_000
 DEFAULT_TARGET_FILE_BYTES = 128 * 1024 * 1024
 _CONTRACT_PATH = Path(__file__).parent / "contracts" / "ampere_tables.json"
