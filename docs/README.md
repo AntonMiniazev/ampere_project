@@ -10,7 +10,7 @@ After the cache release is validated, it checks the Europe/Budapest weekday and 
 1. **Source:** Python generators create orders, clients, products, payments, delivery activity, and costs in PostgreSQL.
 2. **Raw:** Init and generators capture typed INSERT, UPDATE, DELETE, and baseline rows at mutation time into bounded immutable MinIO Parquet. PostgreSQL holds compact dataset/batch controls, not row events. Spark validates committed manifests, merges them into the separate Raw Lakekeeper warehouse, and acknowledges each table only after its Iceberg commit. A stable transfer identity makes commit-before-ack retries idempotent.
 3. **Bronze:** Daily Spark applies version-guarded changes by dataset ID and stable source-row ID. Full rebuild computes each mutable table's latest operation across the complete frozen history, then replaces the whole Iceberg table in one commit. Proven insert-only `order_product` rows use a direct bulk write. Both jobs run snapshots/mutable dimensions first, then facts/events in separate Spark applications; the second application advances the PostgreSQL transfer checkpoint only after all table acknowledgments exist.
-4. **Silver:** An isolated dbt/DuckDB pod stages, cleans, joins, tests, and publishes reusable entities.
+4. **Silver:** An isolated dbt/DuckDB pod stages, cleans, joins, tests, and publishes reusable entities. Staging excludes delivery-tracking placeholders that have no status or timestamp.
 5. **Gold:** A separate dbt/DuckDB pod reads published Silver tables and publishes sales, delivery, cost, and margin marts.
 6. **Serving:** Curie refreshes its cache after successful Gold publication.
 

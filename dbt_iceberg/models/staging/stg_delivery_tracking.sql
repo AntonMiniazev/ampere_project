@@ -4,6 +4,10 @@ with source_data as (
     select *
     from {{ source('bronze', 'delivery_tracking') }}
     where {{ ampere_silver_related_order_predicate('order_id') }}
+      -- The generator seeds active orders with rows that reserve a courier,
+      -- but these rows have no delivery status and are not tracking events.
+      and status is not null
+      and status_datetime is not null
 ),
 deduped as (
     select

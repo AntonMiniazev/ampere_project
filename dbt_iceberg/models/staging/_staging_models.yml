@@ -220,7 +220,7 @@ models:
     description: Narrow Bronze projection used as a disk-backed input during full-history event deduplication.
 
   - name: stg_delivery_tracking
-    description: Delivery tracking events deduplicated to order and status timestamp grain.
+    description: Delivery tracking events deduplicated to order and status timestamp grain; pre-delivery placeholder rows without a status or timestamp are excluded.
     columns:
       - name: order_id
         tests:

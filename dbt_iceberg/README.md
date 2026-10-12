@@ -25,6 +25,10 @@ history and stages complete snapshots of all eight aggregates. Daily and
 full-history Gold publication both delete keys missing from the validated
 snapshot; an empty complete Gold model fails before any table is changed.
 
+The generator seeds active orders with delivery-tracking placeholders that
+contain a courier but no status or timestamp. `stg_delivery_tracking` excludes
+these rows so full-history Silver builds publish only actual tracking events.
+
 The Gold Iceberg tables are `marketing_sales_budget_monthly_store`,
 `marketing_product_sales_monthly_store`,
 `marketing_category_sales_monthly_store`,
@@ -69,12 +73,12 @@ Airflow DAGs:
 - `ampere__iceberg__silver__dbt_duckdb__full_rebuild`
 - `ampere__iceberg__gold__dbt_duckdb__full_rebuild`
 
-The daily Silver DAG triggers daily Gold. The full-history Silver DAG triggers
-full-history Gold. Gold triggers Curie cache refresh only after successful
-publication. Catalog initialization, Bronze/Silver/Gold publication, and
-housekeeping share the one-slot Airflow pool `iceberg_pipeline_mutation`. It
-must be provisioned before deploying the DAGs; it serializes all table writes
-and maintenance.
+The daily Silver DAG triggers daily Gold. Full-history rebuild DAGs are manual
+entrypoints and do not start the next layer. The daily Gold DAG triggers Curie
+cache refresh only after successful publication. Catalog initialization,
+Bronze/Silver/Gold publication, and housekeeping share the one-slot Airflow
+pool `iceberg_pipeline_mutation`. It must be provisioned before deploying the
+DAGs; it serializes all table writes and maintenance.
 
 ## Runtime settings
 
