@@ -23,8 +23,8 @@ layers:
   bronze:
     title: Bronze
     status: implemented
-    responsibility: Maintain current state from accepted Raw changes; Daily Bronze uses versioned merges and full rebuild publishes each reconstructed table in one atomic overwrite commit.
-    diagram_note: Reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.
+    responsibility: Maintain current state from accepted Raw changes; daily apply resumes one frozen transfer across two sequential Spark groups, using versioned merges, while full rebuild publishes each reconstructed table in one atomic overwrite commit.
+    diagram_note: Resume the accepted transfer across both application groups, reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.
     engine: [Spark, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper

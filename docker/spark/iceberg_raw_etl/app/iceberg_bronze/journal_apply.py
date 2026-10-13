@@ -148,6 +148,8 @@ def reserve_incremental_transfer() -> dict | None:
                 "VALUES (%s,%s,%s,%s,'started') ON CONFLICT (transfer_id) DO NOTHING",
                 (transfer_id, dataset_id, first_sequence, last_sequence),
             )
+        else:
+            transfer_id, dataset_id, first_sequence, last_sequence = transfer
         cursor.execute(
             "SELECT count(*) FROM pipeline.raw_transfer_tables "
             "WHERE transfer_id=%s AND status='completed'",
