@@ -213,7 +213,8 @@ class DuckDBCatalogTests(unittest.TestCase):
                         self.assertNotIn("interval '1 month'", silver_sql)
                         self.assertNotIn("where", silver_sql)
                     else:
-                        self.assertIn("interval '1 month'", silver_sql)
+                        self.assertIn("in (select order_id from", silver_sql)
+                        self.assertIn("affected_order_ids", silver_sql)
                     for table in (
                         "stg_order_product", "stg_payments",
                         "stg_order_status_history", "stg_delivery_tracking",
@@ -262,7 +263,8 @@ class DuckDBCatalogTests(unittest.TestCase):
                         target_path / "compiled/ampere_iceberg_project/models/staging/"
                         "stg_order_product.sql"
                     ).read_text(encoding="utf-8").lower()
-                    self.assertIn("stg_orders", product_sql)
+                    self.assertIn("affected_order_ids", product_sql)
+                    self.assertIn("where order_id in (select order_id from", product_sql)
         finally:
             server.shutdown()
             server.server_close()
