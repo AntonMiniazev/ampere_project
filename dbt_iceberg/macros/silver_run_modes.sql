@@ -35,3 +35,11 @@
     {{ exceptions.raise_compiler_error('Unsupported Iceberg Silver run mode: ' ~ ampere_silver_run_mode()) }}
   {%- endif -%}
 {%- endmacro %}
+
+{% macro ampere_silver_fact_order_predicate(order_expression, scope_flag) -%}
+  {% if ampere_silver_run_mode() == 'daily_refresh' %}
+    {{ order_expression }} in (select order_id from {{ ref('affected_order_ids') }} where {{ scope_flag }})
+  {% else %}
+    true
+  {% endif %}
+{%- endmacro %}

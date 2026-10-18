@@ -15,3 +15,4 @@ left join {{ ref('fact_orders') }} as fo
     on osh.order_id = fo.order_id
 left join {{ ref('dim_order_statuses') }} as os
     on osh.order_status_id = os.order_status_id
+where {{ ampere_silver_fact_order_predicate('osh.order_id', 'update_status_history') }}

@@ -18,3 +18,4 @@ left join {{ ref('fact_orders') }} as fo
     on dt.order_id = fo.order_id
 left join {{ ref('dim_delivery_resource') }} as dr
     on dt.courier_id = dr.delivery_resource_id
+where {{ ampere_silver_fact_order_predicate('dt.order_id', 'update_delivery_tracking') }}

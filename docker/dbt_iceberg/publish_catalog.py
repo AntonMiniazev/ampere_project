@@ -213,15 +213,29 @@ def merge_upsert(
     return predicate
 
 
-def affected_order_relation(layer: str) -> str:
-    return ".".join(
+FACT_SCOPE_FLAGS = {
+    'fact_order_product': 'update_order_product',
+    'fact_delivery_tracking': 'update_delivery_tracking',
+    'fact_order_status_history': 'update_status_history',
+    'fact_payments': 'update_payments',
+    'gold': 'update_gold',
+}
+
+
+def affected_order_relation(layer: str, table: str | None = None) -> str:
+    relation = ".".join(
         map(identifier, ("ampere_work", "silver_control", "affected_order_ids"))
     )
+    if table in FACT_SCOPE_FLAGS:
+        return f'(SELECT order_id FROM {relation} WHERE {FACT_SCOPE_FLAGS[table]})'
+    return relation
 
 
 def _period_bounds(value, grain: str) -> tuple[str, str]:
     start = value.date() if hasattr(value, "date") else value
-    if grain == "week":
+    if grain == "day":
+        stop = start + timedelta(days=1)
+    elif grain == "week":
         stop = start + timedelta(days=7)
     elif grain == "month":
         stop = date(start.year + (start.month == 12), 1 if start.month == 12 else start.month + 1, 1)
@@ -249,17 +263,23 @@ def publish_partitioned_order_fact(
         raise ValueError(f"Staged relation {source} has null order_id")
     if con.execute(f"SELECT 1 FROM {source} WHERE {identifier(partition_column)} IS NULL LIMIT 1").fetchone():
         raise ValueError(f"Staged relation {source} has null {partition_column}")
-    changed_ids = affected_order_relation("silver")
+    changed_ids = affected_order_relation("silver", table)
     if daily:
+        if not con.execute(f'SELECT 1 FROM {changed_ids} LIMIT 1').fetchone():
+            print(f'silver.{table}: unchanged (no affected fact rows)', flush=True)
+            return
         where_changed = f"order_id IN (SELECT order_id FROM {changed_ids})"
     else:
         where_changed = "true"
+    # Published orders retain the old order date until every dependent fact is
+    # committed. Discover dates there, without scanning the wide line table.
+    bounds_target = '"publish_silver"."silver"."fact_orders"' if daily else target
     bounds_rows = execute_measured(con,
         f"SELECT DISTINCT date_trunc('{partition_grain}', {identifier(partition_column)})::date "
-        f"FROM (SELECT {identifier(partition_column)} FROM {target} WHERE {where_changed} "
+        f"FROM (SELECT {identifier(partition_column)} FROM {bounds_target} WHERE {where_changed} "
         f"UNION ALL SELECT {identifier(partition_column)} FROM {source} WHERE {where_changed}) "
         f"WHERE {identifier(partition_column)} IS NOT NULL ORDER BY 1",
-        f"old_and_new_partition_bounds:{table}",
+        f"old_and_new_order_dates:{table}" if daily else f"old_and_new_partition_bounds:{table}",
     )
     for index, (week_start,) in enumerate(bounds_rows, 1):
         start, stop = _period_bounds(week_start, partition_grain)
@@ -303,7 +323,7 @@ def publish_changed_order_fact(
     con, table: str, source: str, target: str, keys: tuple[str, ...], row_count: int
 ) -> None:
     """Bound the merge hash by affected IDs; unpartitioned targets still scan files."""
-    changed_ids = affected_order_relation("silver")
+    changed_ids = affected_order_relation("silver", table)
     minimum, maximum = con.execute(f"SELECT min(order_id),max(order_id) FROM {changed_ids}").fetchone()
     if minimum is None:
         return
@@ -325,15 +345,13 @@ def publish_changed_order_fact(
 
 def affected_months_for_silver(con) -> set:
     """Capture old and new month grains before Silver tables are mutated."""
-    changed_ids = affected_order_relation("silver")
+    changed_ids = affected_order_relation("silver", 'gold')
     where_changed = ('true' if os.getenv('ICEBERG_RUN_MODE') == 'full_history'
                      else f'order_id IN (SELECT order_id FROM {changed_ids})')
     months = set()
-    for table, date_column in (
-        ("fact_orders", "order_date"),
-        ("fact_order_product", "order_date"),
-        ("fact_delivery_tracking", "status_datetime"),
-    ):
+    # Gold uses the order month. Client-only dimension changes are handled by
+    # effective preference intervals below, rather than rewriting past months.
+    for table, date_column in (("fact_orders", "order_date"),):
         source = ".".join(map(identifier, ("staged_silver", "silver", table)))
         target = ".".join(map(identifier, ("publish_silver", "silver", table)))
         for relation in (source, target):
@@ -594,7 +612,7 @@ def publish_table(
                 keys,
                 row_count,
                 partition_column="order_date",
-                partition_grain="week",
+                partition_grain="day",
                 daily=True,
             )
         else:

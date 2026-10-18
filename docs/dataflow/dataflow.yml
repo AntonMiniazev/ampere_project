@@ -33,7 +33,7 @@ layers:
   silver:
     title: Silver
     status: implemented
-    responsibility: Scope Raw deltas to the active dataset and checkpoint, rebuild complete affected orders, and persist retry-safe month invalidations before Silver publication.
+    responsibility: Scope Raw deltas by dataset and checkpoint, select affected rows by each fact dependency, publish line changes with literal old/new day bounds from order metadata, and preserve retry-safe Gold month invalidations.
     diagram_note: Preserve history and skip unchanged rows; visit old and new dates for moved orders.
     engine: [DuckDB, dbt, Iceberg]
     storage: [MinIO, Iceberg]

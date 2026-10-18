@@ -114,9 +114,17 @@ class IncrementalSQLTests(unittest.TestCase):
         ):
             self.con.execute(f'CREATE TABLE bronze.{table} ({columns}); INSERT INTO bronze.{table} VALUES {rows}')
         sql = render('intermediate/affected_order_ids.sql')
-        self.assertEqual(self.con.execute(sql).fetchall(), [(101,)])
+        self.assertEqual([r[0] for r in self.con.execute(sql).fetchall()], [101])
         self.con.execute("INSERT INTO raw.product_categories VALUES (1,'active',2)")
-        self.assertEqual(set(self.con.execute(sql).fetchall()), {(101,), (1,)})
+        self.assertEqual({r[0] for r in self.con.execute(sql).fetchall()}, {101, 1})
+        self.con.execute('DELETE FROM raw.product_categories')
+        self.con.execute("INSERT INTO raw.clients VALUES (1,'active',2)")
+        scoped = {r[0]: r[1:] for r in self.con.execute(sql).fetchall()}
+        self.assertEqual(scoped[1], (False, False, False, False, False))
+        self.assertEqual(scoped[101], (True, True, True, True, True))
+        self.con.execute("INSERT INTO raw.payments VALUES (1,'active',2)")
+        scoped = {r[0]: r[1:] for r in self.con.execute(sql).fetchall()}
+        self.assertEqual(scoped[1], (False, False, False, True, False))
 
     def test_preference_history_excludes_retired_and_future_records(self):
         self.con.execute('CREATE SCHEMA raw')

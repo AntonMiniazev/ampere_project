@@ -45,7 +45,7 @@ class PublishTests(unittest.TestCase):
         )
         self.con.execute(
             "CREATE TABLE ampere_work.silver_control.affected_order_ids "
-            "(order_id INTEGER)"
+            "(order_id INTEGER, update_order_product BOOLEAN DEFAULT true, update_delivery_tracking BOOLEAN DEFAULT true, update_status_history BOOLEAN DEFAULT true, update_payments BOOLEAN DEFAULT true, update_gold BOOLEAN DEFAULT true)"
         )
         for alias in ('staged_silver', 'publish_silver'):
             self.con.execute(f'CREATE TABLE {alias}.silver.budget_orders_sales '
@@ -61,7 +61,7 @@ class PublishTests(unittest.TestCase):
         """Mirror the model's affected order IDs for local publisher tests."""
         self.con.execute("DELETE FROM ampere_work.silver_control.affected_order_ids")
         self.con.execute(
-            "INSERT INTO ampere_work.silver_control.affected_order_ids "
+            "INSERT INTO ampere_work.silver_control.affected_order_ids (order_id) "
             f"SELECT DISTINCT order_id FROM {relation} WHERE order_id IS NOT NULL"
         )
 
@@ -192,7 +192,7 @@ class PublishTests(unittest.TestCase):
             "(1, DATE '2026-02-15', NULL), (2, DATE '2026-03-15', NULL)"
         )
         self.con.execute(
-            "INSERT INTO ampere_work.silver_control.affected_order_ids VALUES (1)"
+            "INSERT INTO ampere_work.silver_control.affected_order_ids (order_id) VALUES (1)"
         )
         self.con.execute(
             "CREATE TABLE staged_silver.silver.dim_client_preference_history "
@@ -270,10 +270,27 @@ class PublishTests(unittest.TestCase):
         self.con.execute("INSERT INTO publish_silver.silver.fact_order_product VALUES ('1|line',1,'2026-01-10',10),('untouched',2,'2026-01-10',20)")
         self.con.execute("INSERT INTO staged_silver.silver.fact_order_product VALUES ('1|line',1,'2026-02-10',11)")
         self.set_affected_orders_from('staged_silver.silver.fact_order_product')
+        self.con.execute("INSERT INTO publish_silver.silver.fact_orders VALUES (1,'2026-01-10',10)")
+        self.con.execute("INSERT INTO staged_silver.silver.fact_orders VALUES (1,'2026-02-10',11)")
         self.assertEqual(publish_catalog.affected_months_for_silver(self.con), {date(2026,1,1),date(2026,2,1)})
         for _ in range(2):
             publish_catalog.publish_table(self.con,'silver','fact_order_product','daily_refresh')
         self.assertEqual(self.con.execute('SELECT * FROM publish_silver.silver.fact_order_product ORDER BY order_id').fetchall(), [('1|line',1,date(2026,2,10),11),('untouched',2,date(2026,1,10),20)])
+
+    def test_client_only_changes_skip_line_publication_and_old_gold_months(self):
+        self.month_inputs()
+        self.con.execute("INSERT INTO publish_silver.silver.fact_orders VALUES (1,'2026-01-10',10)")
+        self.con.execute("INSERT INTO staged_silver.silver.fact_orders VALUES (1,'2026-01-10',10)")
+        self.con.execute('INSERT INTO ampere_work.silver_control.affected_order_ids (order_id,update_order_product,update_gold) VALUES (1,false,false)')
+        self.assertEqual(publish_catalog.affected_months_for_silver(self.con), set())
+        class NoLineScan:
+            def execute(_, statement):
+                if 'FROM "publish_silver"."silver"."fact_order_product"' in statement:
+                    raise AssertionError('client-only changes must not scan the line table')
+                return self.con.execute(statement)
+        publish_catalog.publish_partitioned_order_fact(NoLineScan(), 'fact_order_product',
+            'staged_silver.silver.fact_order_product','publish_silver.silver.fact_order_product',
+            ('order_id',),0,partition_column='order_date',partition_grain='day',daily=True)
 
     def test_gold_daily_replaces_one_complete_month_including_empty_month(self) -> None:
         """Gold daily publication replaces one affected month and preserves others."""

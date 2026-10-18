@@ -50,14 +50,10 @@ NULL if any contributing cost is unknown. Budget-only months with no actual
 orders still have zero actuals. Tariff history absent from the existing source
 cannot be reconstructed by this change.
 
-## Isolated execution
+## Daily execution and reference validation
 
-Normal daily runs retain their existing downstream handoffs. For an isolated
-Silver or Gold daily run, set DAG-run configuration:
-
-```json
-{"trigger_downstream": false}
-```
+Daily Silver and Gold DAGs trigger their downstream DAG immediately after a
+successful build. There is no intermediate handoff-check task or isolation flag.
 
 Use the existing Silver and Gold full-rebuild DAGs with the following configuration
 to build a local full-history reference from existing inputs and compare it to
@@ -69,7 +65,7 @@ published tables:
 
 This mode issues only SELECTs to published Iceberg tables and PostgreSQL metadata.
 It writes local staged DuckDB files, never publishes tables or advances a
-checkpoint, and suppresses downstream triggers. It requires existing metadata and
+checkpoint, and runs on the full-rebuild DAGs, which have no downstream triggers. It requires existing metadata and
 published target tables; missing infrastructure is a blocker, not permission to
 initialize upstream data. Each table reports exact missing/extra business-row
 counts and differences in month/store/product aggregate signatures. Excluded
@@ -97,3 +93,22 @@ development machine for before/after upstream snapshot checks, source mutation
 counters, input cardinality summaries and untouched Gold month signatures. Only
 aggregates are transferred locally. Fixture results, reference parity and live
 resource measurements are separate acceptance evidence.
+
+## Fact dependencies and partition discovery
+
+The internal affected-order table carries flags for each dependent fact and Gold.
+Client churn updates flattened client attributes in fact_orders and effective
+client history, without rebuilding historical order-product, status, tracking or
+payment facts. Product/category labels select the line fact; resource changes
+select tracking; status changes select status history and payment status labels.
+Order changes select all dependent facts, preserving moved/deleted-order handling.
+Gold month invalidation uses order dates and Gold-relevant changes; client history
+invalidates its effective month and later months, rather than past order months.
+
+Daily line publication gets old dates from published fact_orders and new dates
+from staged lines. It never scans fact_order_product to discover dates. Literal
+day bounds constrain each target MERGE and cleanup. Full rebuilds retain complete
+history with weekly slices. The publisher orders dependent facts before
+fact_orders so old dates remain available until the dependent commits finish.
+Retries preserve pending invalidations from interrupted publications, including
+any wider month set prepared by an earlier version.

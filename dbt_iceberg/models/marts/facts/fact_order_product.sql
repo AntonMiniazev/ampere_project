@@ -17,3 +17,4 @@ left join {{ ref('fact_orders') }} as fo
     on op.order_id = fo.order_id
 left join {{ ref('dim_products') }} as p
     on op.product_id = p.product_id
+where {{ ampere_silver_fact_order_predicate('op.order_id', 'update_order_product') }}

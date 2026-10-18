@@ -6,7 +6,6 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.providers.standard.operators.python import ShortCircuitOperator
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
 from airflow.sdk import Variable
@@ -31,16 +30,6 @@ from utils.ampere_dag_config import (
 
 def _secret(key: str, deployment: str, env_name: str) -> Secret:
     return Secret(deploy_type="env", deploy_target=env_name, secret=deployment, key=key)
-
-
-def should_trigger_downstream(dag_run=None, **_context) -> bool:
-    """Allow isolated Silver/Gold validation while preserving normal daily handoffs."""
-    enabled = ((dag_run.conf or {}) if dag_run else {}).get('trigger_downstream', True)
-    if dag_run and (dag_run.conf or {}).get('validation_only', False):
-        return False
-    if not isinstance(enabled, bool):
-        raise ValueError('trigger_downstream must be a JSON boolean')
-    return enabled
 
 
 def build_layer_dag(
@@ -216,10 +205,6 @@ def build_layer_dag(
             log_events_on_failure=True,
         )
         if trigger_dag_id:
-            guard = ShortCircuitOperator(
-                task_id='check__downstream_enabled',
-                python_callable=should_trigger_downstream,
-            )
             handoff = TriggerDagRunOperator(
                 task_id=trigger_task_id,
                 trigger_dag_id=trigger_dag_id,
@@ -227,5 +212,5 @@ def build_layer_dag(
                 reset_dag_run=True,
                 wait_for_completion=wait_for_completion,
             )
-            build >> guard >> handoff
+            build >> handoff
     return dag

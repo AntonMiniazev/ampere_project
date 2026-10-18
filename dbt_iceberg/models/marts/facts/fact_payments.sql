@@ -13,3 +13,4 @@ select
 from {{ ref('stg_payments') }} as p
 left join {{ ref('fact_orders') }} as fo
     on p.order_id = fo.order_id
+where {{ ampere_silver_fact_order_predicate('p.order_id', 'update_payments') }}

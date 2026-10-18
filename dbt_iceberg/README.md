@@ -25,8 +25,10 @@ records and event rows only for affected order IDs, including orders touched by
 late events or relevant dimension changes. PostgreSQL checkpoints advance only
 after all Silver tables publish. MERGE change detection ignores volatile Silver
 lineage columns, so unchanged replays do not rewrite rows. The large
-`fact_order_product` publication visits both old and new `order_date` weeks,
-including moved and removed rows. Delivery tracking is unpartitioned and uses
+`fact_order_product` daily publication visits only old and new order dates,
+read from order metadata and staged lines, with literal day bounds. Full rebuilds
+retain weekly slices. Per-fact dependency flags exclude client-only churn from
+historical line/event rewrites; effective client history scopes Gold separately. Delivery tracking is unpartitioned and uses
 bounded affected-order ID ranges. Executed query profiles report scans; a date
 predicate does not establish Iceberg file pruning. Complete dimensions
 still synchronize their full source snapshots.
@@ -58,7 +60,7 @@ reported and remain NULL in cost/profit totals; they are never replaced by zero.
 No source, Raw or Bronze data/schema changes are required for this correction.
 The contract change is limited to Silver preference-history publication policy.
 See [downstream validation](../docs/dataflow/silver_gold_incremental_validation.md)
-for isolated runs, reference comparison and memory evidence.
+for daily execution, reference comparison and memory evidence.
 
 The generator seeds active orders with delivery-tracking placeholders that
 contain a courier but no status or timestamp. `stg_delivery_tracking` excludes
