@@ -1,0 +1,11 @@
+version: 2
+models:
+  - name: int_delivery_order_costs
+    description: One delivery cost per order from its selected store and courier type, requiring complete and identical tariffs across all covered zones. No order-specific zone is required.
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+  - name: int_product_line_costs
+    columns:
+      - name: fact_order_product_key
+        tests: [not_null, unique]

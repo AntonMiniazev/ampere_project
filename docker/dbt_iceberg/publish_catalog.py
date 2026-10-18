@@ -5,15 +5,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 from datetime import date, timedelta
-import json
 from pathlib import Path
 from time import monotonic
 
 import duckdb
 
 from duckdb_runtime import runtime_settings
+from query_metrics import execute_measured
 from tools.contracts.ampere_contract import load_contract
 
 
@@ -158,7 +157,7 @@ def validate_table(
     complete_source = is_complete_source(layer, table, run_mode)
     affected_month_source = is_affected_month_source(layer, table, run_mode)
     if complete_source:
-        if row_count == 0:
+        if row_count == 0 and not (layer == 'silver' and table in {'budget_orders_sales', 'dim_client_preference_history'}):
             raise ValueError(f"Refusing to synchronize {target} from an empty table")
     keys = CONTRACT.table(layer, table).publication["merge_keys"]
     if row_count:
@@ -204,11 +203,12 @@ def merge_upsert(
         else ""
     )
     target_condition = f" AND ({target_predicate})" if target_predicate else ""
-    con.execute(
+    execute_measured(con,
         f"MERGE INTO {target} AS target "
         f"USING {source_relation or source} AS source "
         f"ON ({predicate}){target_condition} {matched_action}"
-        "WHEN NOT MATCHED THEN INSERT BY NAME"
+        "WHEN NOT MATCHED THEN INSERT BY NAME",
+        f"merge:{target}",
     )
     return predicate
 
@@ -230,42 +230,6 @@ def _period_bounds(value, grain: str) -> tuple[str, str]:
     return start.isoformat(), stop.isoformat()
 
 
-def _explain_partition_filter(con, target: str, column: str, start: str, stop: str) -> None:
-    plan = "\n".join(
-        str(row[-1])
-        for row in con.execute(
-            f"EXPLAIN SELECT {identifier(column)} FROM {target} "
-            f"WHERE {identifier(column)} >= DATE '{start}' "
-            f"AND {identifier(column)} < DATE '{stop}'"
-        ).fetchall()
-    )
-    has_partition_filter = (
-        column.casefold() in plan.casefold() and "filter" in plan.casefold()
-    )
-    if not has_partition_filter:
-        estimate = re.search(r"~\s*([\d,]+)\s+rows?", plan, re.IGNORECASE)
-        estimated_rows = (
-            int(estimate.group(1).replace(",", "")) if estimate else None
-        )
-        # DuckDB can fold a selective predicate away on a tiny table. Avoid
-        # running COUNT(*) on an Iceberg target just to classify that plan.
-        if estimated_rows is None or estimated_rows > 1_000:
-            raise RuntimeError(
-                f"DuckDB EXPLAIN did not retain the {column} partition filter "
-                f"for {target} (estimated rows={estimated_rows}): {plan}"
-            )
-        print(
-            f"DuckDB EXPLAIN optimized {column} filter on small target "
-            f"(estimated rows={estimated_rows}); no large scan to bound",
-            flush=True,
-        )
-        return
-    print(
-        f"Validated {column} pruning predicate for {target}: [{start},{stop})",
-        flush=True,
-    )
-
-
 def publish_partitioned_order_fact(
     con,
     table: str,
@@ -278,25 +242,27 @@ def publish_partitioned_order_fact(
     partition_grain: str,
     daily: bool,
 ) -> None:
-    """Publish order facts in week slices aligned with date partition pruning."""
+    """Publish old and new date slices; measure scans instead of assuming pruning."""
     if not target_exists(con, target):
         raise ValueError(f"Published table {target} is missing; run catalog initialization first")
     if con.execute(f"SELECT 1 FROM {source} WHERE order_id IS NULL LIMIT 1").fetchone():
         raise ValueError(f"Staged relation {source} has null order_id")
+    if con.execute(f"SELECT 1 FROM {source} WHERE {identifier(partition_column)} IS NULL LIMIT 1").fetchone():
+        raise ValueError(f"Staged relation {source} has null {partition_column}")
     changed_ids = affected_order_relation("silver")
     if daily:
         where_changed = f"order_id IN (SELECT order_id FROM {changed_ids})"
     else:
         where_changed = "true"
-    bounds_rows = con.execute(
+    bounds_rows = execute_measured(con,
         f"SELECT DISTINCT date_trunc('{partition_grain}', {identifier(partition_column)})::date "
         f"FROM (SELECT {identifier(partition_column)} FROM {target} WHERE {where_changed} "
         f"UNION ALL SELECT {identifier(partition_column)} FROM {source} WHERE {where_changed}) "
-        f"WHERE {identifier(partition_column)} IS NOT NULL ORDER BY 1"
-    ).fetchall()
+        f"WHERE {identifier(partition_column)} IS NOT NULL ORDER BY 1",
+        f"old_and_new_partition_bounds:{table}",
+    )
     for index, (week_start,) in enumerate(bounds_rows, 1):
         start, stop = _period_bounds(week_start, partition_grain)
-        _explain_partition_filter(con, target, partition_column, start, stop)
         target_filter = (
             f"target.{identifier(partition_column)} >= DATE '{start}' AND "
             f"target.{identifier(partition_column)} < DATE '{stop}'"
@@ -321,9 +287,10 @@ def publish_partitioned_order_fact(
         delete_filter = target_filter
         if daily:
             delete_filter += f" AND target.order_id IN (SELECT order_id FROM {changed_ids})"
-        con.execute(
+        execute_measured(con,
             f"DELETE FROM {target} AS target WHERE {delete_filter} "
-            f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source WHERE {predicate})"
+            f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source WHERE {predicate})",
+            f"delete_obsolete_partition:{table}:{start}",
         )
         print(
             f"silver.{table}: slice {index}/{len(bounds_rows)} "
@@ -335,30 +302,32 @@ def publish_partitioned_order_fact(
 def publish_changed_order_fact(
     con, table: str, source: str, target: str, keys: tuple[str, ...], row_count: int
 ) -> None:
-    """Merge a complete changed-order slice and remove stale rows for those orders."""
+    """Bound the merge hash by affected IDs; unpartitioned targets still scan files."""
     changed_ids = affected_order_relation("silver")
-    selected = f"(SELECT * FROM {source} WHERE order_id IN (SELECT order_id FROM {changed_ids}))"
-    count = int(con.execute(f"SELECT count(*) FROM {selected}").fetchone()[0])
-    predicate = None
-    if count:
-        predicate = merge_upsert(con, source, target, keys, selected)
-    if target_exists(con, target):
-        if predicate is None:
-            predicate = " AND ".join(
-                f"target.{identifier(key)} IS NOT DISTINCT FROM source.{identifier(key)}"
-                for key in keys
-            )
-        con.execute(
-            f"DELETE FROM {target} AS target "
-            f"WHERE target.order_id IN (SELECT order_id FROM {changed_ids}) "
-            f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source WHERE {predicate})"
+    minimum, maximum = con.execute(f"SELECT min(order_id),max(order_id) FROM {changed_ids}").fetchone()
+    if minimum is None:
+        return
+    batches = DAILY_FACT_BATCHES.get(table, 1)
+    width = max(1, (maximum - minimum + batches) // batches)
+    for start in range(minimum, maximum + 1, width):
+        stop = min(start + width, maximum + 1)
+        scope = f'order_id >= {start} AND order_id < {stop} AND order_id IN (SELECT order_id FROM {changed_ids})'
+        target_scope = f'target.order_id >= {start} AND target.order_id < {stop} AND target.order_id IN (SELECT order_id FROM {changed_ids})'
+        selected = f"(SELECT * FROM {source} WHERE {scope})"
+        predicate = merge_upsert(con, source, target, keys, selected, target_predicate=target_scope)
+        execute_measured(con,
+            f"DELETE FROM {target} AS target WHERE {target_scope} "
+            f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source WHERE {predicate})",
+            f"delete_changed_orders:{table}:{start}:{stop}",
         )
-    print(f"silver.{table}: merged complete changed-order slice {count} rows", flush=True)
+    print(f"silver.{table}: changed-order ID ranges={batches}; file pruning requires scan metrics", flush=True)
 
 
 def affected_months_for_silver(con) -> set:
     """Capture old and new month grains before Silver tables are mutated."""
     changed_ids = affected_order_relation("silver")
+    where_changed = ('true' if os.getenv('ICEBERG_RUN_MODE') == 'full_history'
+                     else f'order_id IN (SELECT order_id FROM {changed_ids})')
     months = set()
     for table, date_column in (
         ("fact_orders", "order_date"),
@@ -370,10 +339,35 @@ def affected_months_for_silver(con) -> set:
         for relation in (source, target):
             rows = con.execute(
                 f"SELECT DISTINCT date_trunc('month', {identifier(date_column)})::date "
-                f"FROM {relation} WHERE order_id IN (SELECT order_id FROM {changed_ids}) "
+                f"FROM {relation} WHERE {where_changed} "
                 f"AND {identifier(date_column)} IS NOT NULL"
             ).fetchall()
             months.update(row[0].replace(day=1) for row in rows)
+    # Compare complete budget snapshots before publication: both sides of a
+    # moved/deleted row contribute months, even when no orders changed.
+    budget_source = '"staged_silver"."silver"."budget_orders_sales"'
+    budget_target = '"publish_silver"."silver"."budget_orders_sales"'
+    budget_columns = ', '.join(identifier(column['name']) for column in CONTRACT.table('silver', 'budget_orders_sales').columns)
+    changed_budgets = (
+        f'((SELECT {budget_columns} FROM {budget_source} EXCEPT SELECT {budget_columns} FROM {budget_target}) '
+        f'UNION ALL (SELECT {budget_columns} FROM {budget_target} EXCEPT SELECT {budget_columns} FROM {budget_source}))'
+    )
+    months.update(row[0] for row in con.execute(
+        f"SELECT DISTINCT date_trunc('month', budget_date)::date FROM {changed_budgets} WHERE budget_date IS NOT NULL"
+    ).fetchall())
+    # Store labels also appear on budget-only Gold rows. Raw order expansion
+    # cannot discover those months when the store has no orders.
+    changed_stores = (
+        '(SELECT store_id, store_name, city FROM "staged_silver"."silver"."dim_stores" '
+        'EXCEPT SELECT store_id, store_name, city FROM "publish_silver"."silver"."dim_stores") '
+        'UNION (SELECT store_id, store_name, city FROM "publish_silver"."silver"."dim_stores" '
+        'EXCEPT SELECT store_id, store_name, city FROM "staged_silver"."silver"."dim_stores")'
+    )
+    for relation in (budget_source, budget_target):
+        months.update(row[0] for row in con.execute(
+            f"SELECT DISTINCT date_trunc('month', budget_date)::date FROM {relation} "
+            f"WHERE store_id IN (SELECT store_id FROM ({changed_stores})) AND budget_date IS NOT NULL"
+        ).fetchall())
     history = ".".join(map(identifier, ("staged_silver", "silver", "dim_client_preference_history")))
     lower = int(os.getenv("SILVER_DELTA_FROM_SEQUENCE", "0"))
     upper = int(os.getenv("SILVER_DELTA_TO_SEQUENCE", "0"))
@@ -400,6 +394,16 @@ def affected_months_for_silver(con) -> set:
                 ).fetchall()
             )
         starts = [row[0].replace(day=1) for row in changed_effective]
+        for relation in (budget_source, budget_target):
+            all_months.update(row[0] for row in con.execute(
+                f"SELECT DISTINCT date_trunc('month', budget_date)::date FROM {relation} WHERE budget_date IS NOT NULL"
+            ).fetchall())
+        for relation in (history, '"publish_silver"."silver"."dim_client_preference_history"'):
+            all_months.update(row[0] for row in con.execute(
+                f"SELECT DISTINCT date_trunc('month', day)::date FROM {relation}, "
+                "LATERAL unnest([registration_date,updated_at,effective_from]) AS dates(day) WHERE day IS NOT NULL"
+            ).fetchall())
+        all_months.update(starts)
         months.update(month for month in all_months if any(month >= start for start in starts))
     return months
 
@@ -438,9 +442,10 @@ def publish_gold_months(
                 f"target.{identifier(key)} IS NOT DISTINCT FROM source.{identifier(key)}"
                 for key in keys
             )
-        con.execute(
+        execute_measured(con,
             f"DELETE FROM {target} AS target WHERE {target_filter} "
-            f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source WHERE {predicate})"
+            f"AND NOT EXISTS (SELECT 1 FROM {selected} AS source WHERE {predicate})",
+            f"delete_gold_month:{table}:{month_sql}",
         )
         print(f"gold.{table}: synchronized month={month_sql} rows={count}", flush=True)
 
@@ -570,7 +575,7 @@ def publish_table(
             partition_grain="week",
             daily=False,
         )
-        action = "synchronized partition-pruned history"
+        action = "synchronized date slices"
     elif layer == "silver" and run_mode == "full_history" and table in FULL_REBUILD_FACT_BATCHES:
         publish_fact_in_batches(
             con, table, source, target,
@@ -592,22 +597,10 @@ def publish_table(
                 partition_grain="week",
                 daily=True,
             )
-        elif table == "fact_delivery_tracking":
-            publish_partitioned_order_fact(
-                con,
-                table,
-                source,
-                target,
-                keys,
-                row_count,
-                partition_column="status_datetime",
-                partition_grain="month",
-                daily=True,
-            )
         else:
             publish_changed_order_fact(con, table, source, target, keys, row_count)
         action = "merged complete changed-order slice"
-    elif row_count == 0:
+    elif row_count == 0 and not complete_source:
         action = "unchanged (empty source slice)"
     else:
         # Replays leave unchanged Iceberg rows alone instead of writing
@@ -694,6 +687,10 @@ def publish(layer: str) -> None:
             row_counts[table] = validate_table(con, layer, table, run_mode)
         if layer == "silver":
             silver_affected_months = affected_months_for_silver(con)
+            # Persist invalidations BEFORE independent Iceberg commits. A retry
+            # must retain old months after a budget/date move already published.
+            from incremental_state import stage_silver_publication
+            silver_affected_months = stage_silver_publication(silver_affected_months)
             print(
                 f"Prepared Silver affected-month set: {sorted(silver_affected_months)}",
                 flush=True,

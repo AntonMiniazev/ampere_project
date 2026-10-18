@@ -51,6 +51,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
 class DuckDBCatalogTests(unittest.TestCase):
     """Check secret and profile compatibility with the dbt ADBC driver."""
 
+    @patch.dict(os.environ, {'ICEBERG_DATASET_ID': '00000000-0000-0000-0000-000000000001'})
     def test_prepare_and_attach_catalogs(self) -> None:
         """Prepare pod-local secrets and attach three mock warehouses."""
         server = ThreadingHTTPServer(("127.0.0.1", 0), CatalogHandler)
@@ -67,6 +68,7 @@ class DuckDBCatalogTests(unittest.TestCase):
                     "DUCKDB_PRESERVE_INSERTION_ORDER": "false",
                     "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": "2GB",
                     "ICEBERG_LAYER": "silver",
+                    "ICEBERG_DATASET_ID": "00000000-0000-0000-0000-000000000001",
                     "ICEBERG_PUBLISH_MODE": "staged",
                     "MINIO_S3_ENDPOINT": "http://127.0.0.1:9000",
                     "MINIO_ACCESS_KEY": "dummy-access",
@@ -174,6 +176,17 @@ class DuckDBCatalogTests(unittest.TestCase):
                             str(target_path),
                             "--select",
                             "stg_orders",
+                            "affected_order_ids",
+                            "dim_client_preference_history",
+                            "fact_orders",
+                            "silver_budget_orders_sales",
+                            "budget_snapshot_valid",
+                            "order_zone_store_coverage",
+                            "int_delivery_order_costs",
+                            "int_product_line_costs",
+                            "financial_performance_monthly_store",
+                            "delivery_courier_performance_monthly_store",
+                            "marketing_client_metrics_monthly_store",
                             "stg_order_product",
                             "stg_payments",
                             "stg_order_status_history_source",

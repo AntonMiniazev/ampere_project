@@ -13,6 +13,7 @@ on:
       - tools/budget_generation/budget_parameters_daily.csv
       - tests/test_iceberg_dbt_catalog.py
       - tests/test_iceberg_publish.py
+      - tests/test_silver_gold_incremental.py
       - .github/workflows/build-ampere-dbt-iceberg.yml
 
 permissions:
@@ -30,6 +31,7 @@ jobs:
       - name: Install dbt v2 and DuckDB driver
         run: |
           python -m pip install -r docker/dbt_iceberg/requirements.txt
+          python -m pip install Jinja2==3.1.6
           dbc install --level user 'duckdb=1.5.6'
           python -c "import duckdb; c=duckdb.connect(); c.execute('INSTALL iceberg'); c.execute('INSTALL httpfs')"
       - name: Attach mock Lakekeeper warehouses
@@ -39,6 +41,7 @@ jobs:
           python -m unittest discover -s tests -p test_iceberg_dbt_catalog.py -v
           python -m unittest discover -s tests -p test_iceberg_publish.py -v
           python -m unittest discover -s tests -p test_silver_history_batching.py -v
+          python -m unittest discover -s tests -p test_silver_gold_incremental.py -v
           python tools/contracts/ampere_contract.py
 
   build-and-push:

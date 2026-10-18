@@ -33,8 +33,8 @@ layers:
   silver:
     title: Silver
     status: implemented
-    responsibility: Use Raw batch metadata to rebuild complete records for affected orders, validate them with dbt, and publish reusable Iceberg tables after the last successful sequence checkpoint.
-    diagram_note: Preserve full history while applying only changed orders; unchanged replays skip Iceberg updates.
+    responsibility: Scope Raw deltas to the active dataset and checkpoint, rebuild complete affected orders, and persist retry-safe month invalidations before Silver publication.
+    diagram_note: Preserve history and skip unchanged rows; visit old and new dates for moved orders.
     engine: [DuckDB, dbt, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -43,8 +43,8 @@ layers:
   gold:
     title: Gold
     status: implemented
-    responsibility: Recompute complete affected-month slices for eight Curie report aggregates and retain full-history rebuild mode.
-    diagram_note: Replace only months recorded by successful Silver publications and preserve untouched months.
+    responsibility: Recompute complete affected months for eight Curie aggregates, resolve delivery cost once per order using identical tariffs across its store's zones for the courier type, and retain missing inputs as NULL.
+    diagram_note: Consume completed publications for the active dataset; preserve untouched months and retain separate full-history validation.
     engine: [DuckDB, dbt, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -75,7 +75,7 @@ flows:
     to: silver
     engine: DuckDB + dbt
     artifact: Silver Iceberg tables
-    description: Select affected order IDs from immutable Raw changes since the successful Silver sequence checkpoint, rebuild their complete records and events, then advance the checkpoint only after publication.
+    description: Select dataset-scoped affected order IDs within a frozen batch range, retain old/new order and budget months across partial commits, and advance the checkpoint after publication.
 
   - from: silver
     to: gold

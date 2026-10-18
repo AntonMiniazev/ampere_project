@@ -6,8 +6,6 @@ select
     c.is_churned as client_is_churned,
     o.store_id,
     s.store_name,
-    o.order_zone_id,
-    o.preferred_zone_id_at_order,
     o.order_source_id,
     o.total_amount,
     cast(coalesce(v.ordered_quantity, 0) as decimal(38, 2)) as ordered_quantity,
@@ -17,7 +15,9 @@ select
     ls.latest_order_status,
     ls.latest_status_datetime,
     cast(abs(o.total_amount - coalesce(v.line_sales_amount, 0)) < 0.01 as boolean) as amount_matches_lines,
-    {{ ampere_silver_lineage_columns() }}
+    {{ ampere_silver_lineage_columns() }},
+    o.order_zone_id,
+    cast(null as integer) as preferred_zone_id_at_order
 from {{ ref('stg_orders') }} as o
 left join {{ ref('dim_clients') }} as c
     on o.client_id = c.client_id

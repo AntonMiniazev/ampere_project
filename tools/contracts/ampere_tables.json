@@ -6064,7 +6064,7 @@
                 "source_change_id"
               ],
               "source_completeness": {
-                "daily_refresh": "full_snapshot",
+                "daily_refresh": "partial",
                 "full_history": "full_snapshot"
               }
             }

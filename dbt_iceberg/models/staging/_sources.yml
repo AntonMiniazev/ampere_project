@@ -14,9 +14,11 @@ sources:
       - name: delivery_tracking
       - name: order_product
       - name: order_status_history
+      - name: order_statuses
       - name: orders
       - name: payments
       - name: products
+      - name: product_categories
       - name: stores
       - name: zones
   - name: bronze

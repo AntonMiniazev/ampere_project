@@ -7,4 +7,3 @@ select
     cast(orders_budget_daily as decimal(12, 4)) as orders_budget_daily,
     cast(sales_amount_daily as decimal(12, 4)) as sales_amount_daily
 from read_csv('{{ env_var("BUDGET_DAILY_CSV_PATH", "/app/budget_parameters_daily.csv") }}', header = true)
-where nullif(trim(budget_name), '') is not null

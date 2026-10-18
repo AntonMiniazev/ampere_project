@@ -19,28 +19,46 @@ published table, then publishes that layer. A Silver run reads Bronze through
 Lakekeeper. A Gold run reads published Silver through Lakekeeper and stages
 only Gold output locally. Gold never reads a local Silver workspace.
 
-Silver daily runs read the immutable Raw change journal from the last
-successfully published Bronze batch sequence. They rebuild complete order
+Silver daily runs read the immutable Raw change journal for the active dataset,
+bounded by the successful Silver checkpoint and the applied Bronze batch sequence. They rebuild complete order
 records and event rows only for affected order IDs, including orders touched by
 late events or relevant dimension changes. PostgreSQL checkpoints advance only
 after all Silver tables publish. MERGE change detection ignores volatile Silver
 lineage columns, so unchanged replays do not rewrite rows. The large
-`fact_order_product` publication is split by `order_date` weeks and includes a
-partition-pruning check; delivery events use month slices. Complete dimensions
+`fact_order_product` publication visits both old and new `order_date` weeks,
+including moved and removed rows. Delivery tracking is unpartitioned and uses
+bounded affected-order ID ranges. Executed query profiles report scans; a date
+predicate does not establish Iceberg file pruning. Complete dimensions
 still synchronize their full source snapshots.
 
-Gold daily runs consume the affected-month list recorded by successful Silver
-publications. Each selected month is rebuilt as a complete slice and replaces
+Silver persists pending month invalidations before any Iceberg commits and
+retains them on retries. Budget snapshot comparison includes old/new dates,
+deleted rows, empty budgets and store labels on budget-only months. Preference
+history merges only current-dataset delta records daily and synchronizes the
+complete current-dataset history during a full rebuild.
+
+Gold daily runs consume only completed publications for the active dataset,
+up to a frozen publication sequence. Each selected month is rebuilt as a complete slice and replaces
 only that month, including explicit deletion when the month becomes empty.
 Untouched months remain unchanged. Full-history Gold still reads full Silver
 history. The preference-history model derives as-of client preference from
 Raw records and returns NULL for preference-based historical metrics before
-that history begins. A store may cover multiple delivery zones. Orders carry
-`order_zone_id` separately from `preferred_zone_id_at_order`; the generator
-selects an order zone from the store's covered zones and leaves the preferred
-zone NULL because the source currently records preferred stores, not preferred
-zones. Delivery costing uses the order zone. Zone and delivery tariff
-uniqueness checks run with the layer build.
+that history begins, including partial first months. Daily client histories are
+collapsed to effective intervals before joining selected month start/end dates.
+Clients prefer stores, and a store may cover multiple delivery zones. Existing
+order zones are never inferred from stores. Known zones must belong to the
+selected store; `preferred_zone_id_at_order` is unsupported and always NULL in
+Silver. Gold delivery costs use the order's selected store and the final courier's
+delivery type; `order_zone_id` is not required. Every zone covered by that store
+must have exactly one non-null tariff for that type, and all amounts must agree.
+The common amount is charged once per order. Duplicate or conflicting tariffs
+fail checks. Missing coverage or tariffs are
+reported and remain NULL in cost/profit totals; they are never replaced by zero.
+
+No source, Raw or Bronze data/schema changes are required for this correction.
+The contract change is limited to Silver preference-history publication policy.
+See [downstream validation](../docs/dataflow/silver_gold_incremental_validation.md)
+for isolated runs, reference comparison and memory evidence.
 
 The generator seeds active orders with delivery-tracking placeholders that
 contain a courier but no status or timestamp. `stg_delivery_tracking` excludes
@@ -59,8 +77,8 @@ Large Silver fact tables are bounded during full-history publication.
 pruned by the Iceberg partition key; `fact_delivery_tracking` and
 `fact_order_status_history` use deterministic order-ID ranges. Each slice is
 its own Iceberg commit and retries converge by replaying committed slices.
-Catalog initialization must run first; the publisher does not replace target
-tables.
+Targets must already exist; missing targets block publication. The downstream
+recovery does not initialize or replace upstream tables.
 
 The full-history `stg_order_status_history` model first copies only its required
 Bronze columns to the disk-backed DuckDB workspace, then deduplicates four

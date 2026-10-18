@@ -12,3 +12,8 @@ select
     cast(_op = 'D' as boolean) as is_deleted,
     {{ ampere_silver_lineage_columns() }}
 from {{ source('raw', 'clients') }}
+where {{ ampere_raw_dataset_predicate() }}
+  and _batch_sequence <= {{ env_var('SILVER_DELTA_TO_SEQUENCE', '0') | int }}
+{% if ampere_silver_run_mode() == 'daily_refresh' %}
+  and _batch_sequence > {{ env_var('SILVER_DELTA_FROM_SEQUENCE', '0') | int }}
+{% endif %}

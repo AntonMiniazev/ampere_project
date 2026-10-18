@@ -46,18 +46,26 @@ def ensure_tables(cursor) -> None:
             CHECK (to_batch_sequence >= from_batch_sequence)
         )"""
     )
+    cursor.execute(
+        "ALTER TABLE pipeline.silver_publications ADD COLUMN IF NOT EXISTS "
+        "status text NOT NULL DEFAULT 'completed'"
+    )
+    cursor.execute('ALTER TABLE pipeline.silver_publications ALTER COLUMN completed_at DROP NOT NULL')
 
 
 def _state_input(layer: str, run_mode: str) -> dict[str, str]:
     with connect() as connection, connection.cursor() as cursor:
-        ensure_tables(cursor)
+        if os.getenv('ICEBERG_VALIDATION_ONLY', 'false') == 'true':
+            connection.read_only = True
+        else:
+            ensure_tables(cursor)
         cursor.execute(
             "SELECT dataset_id,last_batch_sequence FROM pipeline.bronze_apply_state "
             "WHERE state_key=true"
         )
         bronze = cursor.fetchone()
         if bronze is None:
-            raise RuntimeError("Bronze has no applied-batch checkpoint; complete a Bronze rebuild first")
+            raise RuntimeError("Existing Bronze checkpoint is missing; stop downstream execution and inspect metadata without rewriting upstream data")
         dataset_id, bronze_sequence = bronze
 
         if layer == "silver":
@@ -81,17 +89,34 @@ def _state_input(layer: str, run_mode: str) -> dict[str, str]:
             }
         else:
             cursor.execute(
+                "SELECT dataset_id,last_batch_sequence FROM pipeline.iceberg_layer_state WHERE layer='silver'"
+            )
+            silver = cursor.fetchone()
+            if silver is None or silver[0] != dataset_id:
+                raise RuntimeError("Gold requires a successful Silver baseline for the active dataset")
+            cursor.execute(
+                "SELECT 1 FROM pipeline.silver_publications WHERE dataset_id=%s AND status='pending' LIMIT 1",
+                (dataset_id,),
+            )
+            if cursor.fetchone() is not None:
+                raise RuntimeError('Silver has an incomplete publication; retry Silver before reading it in Gold')
+            cursor.execute(
                 "SELECT dataset_id,last_silver_publication_sequence "
                 "FROM pipeline.iceberg_layer_state WHERE layer='gold'"
             )
             state = cursor.fetchone()
-            cursor.execute("SELECT coalesce(max(publication_sequence),0) FROM pipeline.silver_publications")
+            cursor.execute(
+                "SELECT coalesce(max(publication_sequence),0) FROM pipeline.silver_publications "
+                "WHERE dataset_id=%s AND status='completed'", (dataset_id,)
+            )
             latest_publication = int(cursor.fetchone()[0])
             if run_mode == "daily_refresh" and state is None:
                 raise RuntimeError("Gold has no checkpoint; complete a Gold full rebuild before daily processing")
             if state is not None and state[0] != dataset_id and run_mode == "daily_refresh":
                 raise RuntimeError("Source dataset changed; run the explicit Gold full rebuild")
             consumed = 0 if state is None else int(state[1])
+            if run_mode == 'daily_refresh' and consumed > latest_publication:
+                raise RuntimeError('Gold checkpoint is ahead of completed Silver publications')
             if run_mode == "full_history":
                 months = "*"
                 consumed = 0
@@ -99,14 +124,16 @@ def _state_input(layer: str, run_mode: str) -> dict[str, str]:
                 cursor.execute(
                     "SELECT DISTINCT affected_month FROM pipeline.silver_publications p "
                     "CROSS JOIN LATERAL unnest(p.affected_months) AS affected(affected_month) "
-                    "WHERE p.publication_sequence > %s AND p.dataset_id=%s ORDER BY affected_month",
-                    (consumed, dataset_id),
+                    "WHERE p.publication_sequence > %s AND p.publication_sequence <= %s "
+                    "AND p.dataset_id=%s AND p.status='completed' ORDER BY affected_month",
+                    (consumed, latest_publication, dataset_id),
                 )
                 months = sorted({row[0].replace(day=1) for row in cursor.fetchall()})
             values = {
                 "GOLD_AFFECTED_MONTHS": "*" if months == "*" else ",".join(value.isoformat() for value in months),
                 "GOLD_SILVER_PUBLICATION_FROM": str(consumed),
                 "GOLD_SILVER_PUBLICATION_TO": str(latest_publication),
+                "GOLD_SILVER_BATCH_SEQUENCE": str(silver[1]),
                 "ICEBERG_PUBLICATION_ID": str(uuid.uuid4()),
             }
     values["ICEBERG_DATASET_ID"] = str(dataset_id)
@@ -132,6 +159,44 @@ def prepare() -> None:
     )
 
 
+def stage_silver_publication(months: set[date]) -> set[date]:
+    """Retain invalidations across retries that partially committed Iceberg tables."""
+    dataset = uuid.UUID(os.environ['ICEBERG_DATASET_ID'])
+    start = int(os.environ['SILVER_DELTA_FROM_SEQUENCE'])
+    end = int(os.environ['SILVER_DELTA_TO_SEQUENCE'])
+    with connect() as connection, connection.cursor() as cursor:
+        ensure_tables(cursor)
+        cursor.execute(
+            "SELECT publication_id,affected_months FROM pipeline.silver_publications "
+            "WHERE dataset_id=%s AND (from_batch_sequence=%s OR %s) AND to_batch_sequence<=%s "
+            "AND status='pending' ORDER BY publication_sequence FOR UPDATE",
+            (dataset, start, os.getenv('ICEBERG_RUN_MODE') == 'full_history', end),
+        )
+        pending = cursor.fetchall()
+        if pending:
+            publication_id = pending[0][0]
+            months = months | {month for _, previous in pending for month in previous}
+            if len(pending) > 1:
+                cursor.execute(
+                    "UPDATE pipeline.silver_publications SET status='superseded' WHERE publication_id=ANY(%s)",
+                    ([row[0] for row in pending[1:]],),
+                )
+            cursor.execute(
+                "UPDATE pipeline.silver_publications SET affected_months=%s,from_batch_sequence=%s,to_batch_sequence=%s WHERE publication_id=%s",
+                (sorted(months), start, end, publication_id),
+            )
+        else:
+            publication_id = uuid.UUID(os.environ['ICEBERG_PUBLICATION_ID'])
+            cursor.execute(
+                "INSERT INTO pipeline.silver_publications "
+                "(publication_id,dataset_id,from_batch_sequence,to_batch_sequence,affected_months,status,completed_at) "
+                "VALUES (%s,%s,%s,%s,%s,'pending',NULL)",
+                (publication_id, dataset, start, end, sorted(months)),
+            )
+    os.environ['ICEBERG_PUBLICATION_ID'] = str(publication_id)
+    return months
+
+
 def record_silver_publication(months: set[date]) -> None:
     dataset_id = uuid.UUID(os.environ["ICEBERG_DATASET_ID"])
     publication_id = uuid.UUID(os.environ["ICEBERG_PUBLICATION_ID"])
@@ -143,7 +208,8 @@ def record_silver_publication(months: set[date]) -> None:
         cursor.execute(
             "INSERT INTO pipeline.silver_publications "
             "(publication_id,dataset_id,from_batch_sequence,to_batch_sequence,affected_months) "
-            "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (publication_id) DO NOTHING "
+            "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (publication_id) DO UPDATE "
+            "SET status='completed',completed_at=clock_timestamp() "
             "RETURNING publication_sequence",
             (publication_id, dataset_id, start, end, sorted_months),
         )
@@ -180,10 +246,7 @@ def record_gold_publication() -> None:
         silver_state = cursor.fetchone()
         if silver_state is None or silver_state[0] != dataset_id:
             raise RuntimeError("Cannot checkpoint Gold without Silver published for the active source dataset")
-        bronze_sequence = int(silver_state[1])
-        if os.getenv("ICEBERG_RUN_MODE") == "full_history":
-            cursor.execute("SELECT coalesce(max(publication_sequence),0) FROM pipeline.silver_publications")
-            publication_sequence = int(cursor.fetchone()[0])
+        bronze_sequence = int(os.environ['GOLD_SILVER_BATCH_SEQUENCE'])
         cursor.execute(
             "INSERT INTO pipeline.iceberg_layer_state "
             "(layer,dataset_id,last_batch_sequence,last_silver_publication_sequence) "

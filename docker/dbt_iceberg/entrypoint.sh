@@ -5,6 +5,15 @@ started="$SECONDS"
 export ICEBERG_RUNTIME_STATE_FILE="${ICEBERG_RUNTIME_STATE_FILE:-/tmp/iceberg-runtime-state.sh}"
 python /app/incremental_state.py prepare
 source "$ICEBERG_RUNTIME_STATE_FILE"
+if [[ "${ICEBERG_VALIDATION_ONLY:-false}" == "true" && "${ICEBERG_RUN_MODE:-daily_refresh}" != "full_history" ]]; then
+  echo 'validation_only requires a full-rebuild DAG' >&2
+  exit 2
+fi
+if [[ "${ICEBERG_LAYER}" == "gold" && "${ICEBERG_RUN_MODE:-daily_refresh}" == "daily_refresh" && -z "${GOLD_AFFECTED_MONTHS}" ]]; then
+  python -c 'from incremental_state import record_gold_publication; record_gold_publication()'
+  echo 'phase=gold_noop affected_months=0'
+  exit 0
+fi
 if [[ "${ICEBERG_PUBLISH_MODE:-staged}" == "staged" ]]; then
   scratch_root="${DUCKDB_SCRATCH_ROOT:-/app/artifacts}"
   mkdir -p "$scratch_root"
@@ -71,7 +80,7 @@ run_dbt() {
   local started="$SECONDS"
   active_phase="$phase"
   reset_memory_peak
-  dbt "$@" --project-dir "${DBT_PROJECT_DIR}" --profiles-dir "${DBT_PROFILES_DIR}" --threads "${DBT_THREADS:-2}"
+  python /app/phase_metrics.py "$phase" dbt "$@" --project-dir "${DBT_PROJECT_DIR}" --profiles-dir "${DBT_PROFILES_DIR}" --threads "${DBT_THREADS:-2}"
   echo "phase=${phase} elapsed_seconds=$((SECONDS - started))"
   report_resources "$phase"
   active_phase=""
@@ -104,9 +113,14 @@ fi
 run_dbt "${layer}_build" build --select "tag:${layer}"
 
 active_phase="iceberg_publish"
+runner="/app/publish_catalog.py"
+if [[ "${ICEBERG_VALIDATION_ONLY:-false}" == "true" ]]; then
+  active_phase="iceberg_validate"
+  runner="/app/validate_staged.py"
+fi
 reset_memory_peak
 started="$SECONDS"
-python /app/publish_catalog.py --layer "$layer"
-echo "phase=iceberg_publish elapsed_seconds=$((SECONDS - started))"
-report_resources iceberg_publish
+python /app/phase_metrics.py "$active_phase" python "$runner" --layer "$layer"
+echo "phase=${active_phase} elapsed_seconds=$((SECONDS - started))"
+report_resources "$active_phase"
 active_phase=""

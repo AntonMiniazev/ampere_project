@@ -9,13 +9,9 @@ select
     coalesce(products.product_name, 'Unknown') as product_name,
     products.category_name,
     cast(sum(lines.line_sales_amount) as decimal(14, 4)) as revenue_amount,
-    cast(coalesce(sum(lines.quantity * costing.avg_cost), 0) as decimal(14, 4)) as product_cost_amount
-from {{ ref('fact_order_product') }} as lines
-left join {{ ref('dim_costing') }} as costing
-    on lines.product_id = costing.product_id
-   and lines.store_id = costing.store_id
-   and lines.order_date >= costing.valid_from
-   and (costing.valid_to is null or lines.order_date < costing.valid_to)
+    cast(case when count(lines.product_cost_amount) = count(*)
+              then sum(lines.product_cost_amount) end as decimal(14, 4)) as product_cost_amount
+from {{ ref('int_product_line_costs') }} as lines
 left join {{ ref('dim_products') }} as products on lines.product_id = products.product_id
 left join {{ ref('dim_stores') }} as stores on lines.store_id = stores.store_id
 where lines.order_date is not null

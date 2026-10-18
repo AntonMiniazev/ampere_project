@@ -47,6 +47,12 @@ class PublishTests(unittest.TestCase):
             "CREATE TABLE ampere_work.silver_control.affected_order_ids "
             "(order_id INTEGER)"
         )
+        for alias in ('staged_silver', 'publish_silver'):
+            self.con.execute(f'CREATE TABLE {alias}.silver.budget_orders_sales '
+                             '(budget_name VARCHAR,budget_date DATE,store_id INTEGER,'
+                             'orders_budget_daily DECIMAL(12,4),sales_amount_daily DECIMAL(12,4))')
+            self.con.execute(f'CREATE TABLE {alias}.silver.dim_stores '
+                             '(store_id INTEGER,store_name VARCHAR,city VARCHAR)')
         gold_months = patch.dict(os.environ, {"GOLD_AFFECTED_MONTHS": "2026-10-01"})
         gold_months.start()
         self.addCleanup(gold_months.stop)
@@ -190,11 +196,13 @@ class PublishTests(unittest.TestCase):
         )
         self.con.execute(
             "CREATE TABLE staged_silver.silver.dim_client_preference_history "
-            "(effective_from DATE, source_batch_sequence BIGINT)"
+            "(effective_from DATE, source_batch_sequence BIGINT, registration_date DATE, updated_at DATE)"
         )
+        self.con.execute('CREATE TABLE publish_silver.silver.dim_client_preference_history AS '
+                         'SELECT * FROM staged_silver.silver.dim_client_preference_history')
         self.con.execute(
             "INSERT INTO staged_silver.silver.dim_client_preference_history VALUES "
-            "(DATE '2026-02-01', 5)"
+            "(DATE '2026-02-01', 5, DATE '2026-02-01', NULL)"
         )
 
         with patch.dict(
@@ -228,6 +236,44 @@ class PublishTests(unittest.TestCase):
             ).fetchone(),
             (10,),
         )
+
+    def month_inputs(self):
+        for alias in ('staged_silver', 'publish_silver'):
+            for table, columns in (
+                ('fact_order_product', 'order_id INTEGER,order_date DATE'),
+                ('fact_delivery_tracking', 'order_id INTEGER,status_datetime TIMESTAMP'),
+                ('dim_client_preference_history', 'effective_from DATE,source_batch_sequence BIGINT,registration_date DATE,updated_at DATE'),
+            ):
+                self.con.execute(f'CREATE TABLE IF NOT EXISTS {alias}.silver.{table} ({columns})')
+
+    def test_deleted_and_moved_budgets_invalidate_old_and_new_months_without_orders(self):
+        self.month_inputs()
+        self.con.execute("INSERT INTO publish_silver.silver.budget_orders_sales VALUES ('moved','2026-01-10',1,1,10),('deleted','2026-03-01',1,2,20)")
+        self.con.execute("INSERT INTO staged_silver.silver.budget_orders_sales VALUES ('moved','2026-02-10',1,1,10)")
+        months = publish_catalog.affected_months_for_silver(self.con)
+        self.assertEqual(months, {date(2026,1,1),date(2026,2,1),date(2026,3,1)})
+        for _ in range(2):
+            publish_catalog.publish_table(self.con,'silver','budget_orders_sales','daily_refresh')
+        self.assertEqual(self.con.execute('SELECT budget_date FROM publish_silver.silver.budget_orders_sales').fetchall(), [(date(2026,2,10),)])
+        self.con.execute("INSERT INTO publish_silver.silver.dim_stores VALUES (1,'Old name','City')")
+        self.con.execute("INSERT INTO staged_silver.silver.dim_stores VALUES (1,'New name','City')")
+        self.assertEqual(publish_catalog.affected_months_for_silver(self.con), {date(2026,2,1)})
+        self.con.execute('DELETE FROM staged_silver.silver.budget_orders_sales')
+        self.assertEqual(publish_catalog.affected_months_for_silver(self.con), {date(2026,2,1)})
+        publish_catalog.publish_table(self.con,'silver','budget_orders_sales','daily_refresh')
+        self.assertEqual(self.con.execute('SELECT count(*) FROM publish_silver.silver.budget_orders_sales').fetchone(), (0,))
+
+    def test_moved_order_cleans_old_week_and_preserves_other_orders_on_retry(self):
+        for alias in ('staged_silver', 'publish_silver'):
+            self.con.execute(f'CREATE TABLE {alias}.silver.fact_order_product (fact_order_product_key VARCHAR,order_id INTEGER,order_date DATE,amount INTEGER)')
+        self.month_inputs()
+        self.con.execute("INSERT INTO publish_silver.silver.fact_order_product VALUES ('1|line',1,'2026-01-10',10),('untouched',2,'2026-01-10',20)")
+        self.con.execute("INSERT INTO staged_silver.silver.fact_order_product VALUES ('1|line',1,'2026-02-10',11)")
+        self.set_affected_orders_from('staged_silver.silver.fact_order_product')
+        self.assertEqual(publish_catalog.affected_months_for_silver(self.con), {date(2026,1,1),date(2026,2,1)})
+        for _ in range(2):
+            publish_catalog.publish_table(self.con,'silver','fact_order_product','daily_refresh')
+        self.assertEqual(self.con.execute('SELECT * FROM publish_silver.silver.fact_order_product ORDER BY order_id').fetchall(), [('1|line',1,date(2026,2,10),11),('untouched',2,date(2026,1,10),20)])
 
     def test_gold_daily_replaces_one_complete_month_including_empty_month(self) -> None:
         """Gold daily publication replaces one affected month and preserves others."""
@@ -505,7 +551,7 @@ class PublishTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     sum(sql.startswith("MERGE INTO") for sql in recording.statements),
-                    2,
+                    2 * (publish_catalog.DAILY_FACT_BATCHES[table] if table == 'fact_delivery_tracking' else 1),
                 )
                 self.assertEqual(
                     self.con.execute(

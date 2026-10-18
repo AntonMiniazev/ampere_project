@@ -22,6 +22,10 @@ models:
                 field: store_id
       - name: total_amount
         tests: [not_null, positive_number]
+      - name: order_zone_id
+        description: Existing order delivery zone; NULL means unknown. Known zones must belong to the selected store.
+      - name: preferred_zone_id_at_order
+        description: Deprecated unsupported preference field; always NULL. Clients prefer stores, not zones.
 
   - name: fact_order_product
     description: Curated order-line fact enriched with order and product context.

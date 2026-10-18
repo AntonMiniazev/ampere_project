@@ -24,6 +24,9 @@ COPY docker/dbt_iceberg/prepare_catalog.py /app/prepare_catalog.py
 COPY docker/dbt_iceberg/duckdb_runtime.py /app/duckdb_runtime.py
 COPY docker/dbt_iceberg/publish_catalog.py /app/publish_catalog.py
 COPY docker/dbt_iceberg/incremental_state.py /app/incremental_state.py
+COPY docker/dbt_iceberg/query_metrics.py /app/query_metrics.py
+COPY docker/dbt_iceberg/phase_metrics.py /app/phase_metrics.py
+COPY docker/dbt_iceberg/validate_staged.py /app/validate_staged.py
 COPY docker/dbt_iceberg/entrypoint.sh /usr/local/bin/ampere_dbt_iceberg_entrypoint.sh
 RUN chmod +x /usr/local/bin/ampere_dbt_iceberg_entrypoint.sh \
     && mkdir -p /app/artifacts /app/profiles /app/secret_store

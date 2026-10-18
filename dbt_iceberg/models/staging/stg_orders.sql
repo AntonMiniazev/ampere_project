@@ -17,7 +17,7 @@ deduped as (
         cast(order_source_id as integer) as order_source_id,
         cast(store_id as integer) as store_id,
         cast(order_zone_id as integer) as order_zone_id,
-        cast(preferred_zone_id_at_order as integer) as preferred_zone_id_at_order,
+        cast(null as integer) as preferred_zone_id_at_order,
         cast(total_amount as decimal(12, 4)) as total_amount,
         {{ ampere_bronze_lineage_columns() }}
     from source_data
