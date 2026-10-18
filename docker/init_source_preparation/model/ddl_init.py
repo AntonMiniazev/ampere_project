@@ -120,6 +120,8 @@ CREATE TABLE "{schema}"."orders"(
     order_date date,
     order_source_id smallint,
     store_id smallint,
+    order_zone_id smallint,
+    preferred_zone_id_at_order smallint,
     total_amount numeric(12,4)
 )
 """

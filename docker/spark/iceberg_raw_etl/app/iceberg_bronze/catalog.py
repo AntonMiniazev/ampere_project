@@ -74,7 +74,7 @@ def ensure_iceberg_table(
     table: str,
     logger: logging.Logger,
 ) -> str:
-    """Require a pre-initialized Bronze table to match contract v6."""
+    """Require a pre-initialized Bronze table to match the canonical contract."""
     spec = _table_spec(schema, table)
     fq_schema = f"{quote_ident(catalog)}.{quote_ident(schema)}"
     fqtn = f"{fq_schema}.{quote_ident(table)}"

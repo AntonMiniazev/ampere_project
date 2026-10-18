@@ -12,6 +12,7 @@ with product_costs as (
        and lines.store_id = costing.store_id
        and lines.order_date >= costing.valid_from
        and (costing.valid_to is null or lines.order_date < costing.valid_to)
+    where {{ ampere_gold_month_predicate("date_trunc('month', lines.order_date)") }}
     group by 1, 2, 3
 ),
 delivery_costs as (
@@ -20,10 +21,10 @@ delivery_costs as (
     inner join {{ ref('fact_orders') }} as orders on tracking.order_id = orders.order_id
     left join {{ ref('dim_delivery_resource') }} as resource
         on tracking.courier_id = resource.delivery_resource_id
-    left join {{ ref('dim_zones') }} as zones on orders.store_id = zones.store_id
     left join {{ ref('dim_delivery_costing') }} as costing
-        on zones.zone_id = costing.zone_id and resource.delivery_type_id = costing.delivery_type_id
+        on orders.order_zone_id = costing.zone_id and resource.delivery_type_id = costing.delivery_type_id
     where tracking.delivery_status_id = 2
+      and {{ ampere_gold_month_predicate("date_trunc('month', orders.order_date)") }}
     group by tracking.order_id
 ),
 actuals as (
@@ -43,6 +44,7 @@ actuals as (
     left join delivery_costs on orders.order_id = delivery_costs.order_id
     where orders.latest_order_status_id = 3
       and orders.order_date is not null
+      and {{ ampere_gold_month_predicate("date_trunc('month', orders.order_date)") }}
     group by 1, 2
 ),
 budgets as (
@@ -52,6 +54,7 @@ budgets as (
         cast(sum(sales_amount_daily) as decimal(14, 4)) as budget_revenue_amount
     from {{ ref('silver_budget_orders_sales') }}
     where budget_date is not null
+      and {{ ampere_gold_month_predicate("date_trunc('month', budget_date)") }}
     group by 1, 2
 )
 select

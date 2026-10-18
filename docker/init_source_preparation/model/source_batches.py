@@ -14,7 +14,7 @@ from init_source_preparation.ddl_init import table_queries
 from tools.source_batch_staging import StagedChangeBatch
 
 SOURCE_TABLES = tuple(name for name, entry in table_queries.items() if entry["type"] != "index")
-CONTRACT_VERSION = 6
+CONTRACT_VERSION = 7
 LOCK_KEY = 724614902631
 
 

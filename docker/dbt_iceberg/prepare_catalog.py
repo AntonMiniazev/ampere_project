@@ -91,6 +91,15 @@ def prepare() -> None:
             "alias": f"iceberg_{layer}",
         },
     ]
+    if layer == "silver":
+        attach.insert(
+            0,
+            {
+                "path": os.getenv("ICEBERG_RAW_WAREHOUSE", "raw"),
+                "alias": "iceberg_raw",
+                "type": "iceberg",
+            },
+        )
     profile = {
         "ampere_iceberg_project": {
             "target": "prod",

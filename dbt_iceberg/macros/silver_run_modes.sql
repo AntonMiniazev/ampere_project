@@ -28,7 +28,7 @@
 
 {% macro ampere_silver_related_order_predicate(order_expression) -%}
   {%- if ampere_silver_run_mode() == 'daily_refresh' -%}
-    {{ order_expression }} in (select order_id from {{ ref('stg_orders') }})
+    {{ order_expression }} in (select order_id from {{ ref('affected_order_ids') }})
   {%- elif ampere_silver_run_mode() == 'full_history' -%}
     true
   {%- else -%}

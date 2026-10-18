@@ -435,7 +435,7 @@ def start_generation_batch(
                 batch_id=str(existing["batch_id"]),
                 batch_sequence=int(existing["batch_sequence"]),
                 business_date=business_date,
-                contract_version=6,
+                contract_version=7,
                 source_tables=tuple(connection.execute(
                     text("SELECT source_table FROM pipeline.source_tables WHERE enabled ORDER BY source_table")
                 ).scalars().all()),
@@ -507,7 +507,7 @@ def start_generation_batch(
         batch_id=str(batch_id),
         batch_sequence=int(batch_sequence),
         business_date=business_date,
-        contract_version=6,
+        contract_version=7,
         source_tables=tables,
     )
     connection.info["ampere_source_batch_stager"] = stager

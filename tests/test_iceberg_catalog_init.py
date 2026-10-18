@@ -79,6 +79,42 @@ class CatalogInitTests(unittest.TestCase):
                 spark, "`iceberg_bronze`.`bronze`.`delivery_tracking`", table
             )
 
+    def test_v7_order_zone_migration_adds_nullable_columns(self) -> None:
+        contract = initialize_catalog.load_contract()
+        table = contract.table("silver", "fact_orders")
+        spark = MagicMock()
+        spark.table.return_value.schema.fields = [
+            SimpleNamespace(
+                name="order_id",
+                dataType=SimpleNamespace(simpleString=lambda: "int"),
+            )
+        ]
+
+        initialize_catalog._evolve_order_zone_columns(
+            spark, "`iceberg_silver`.`silver`.`fact_orders`", table
+        )
+
+        statement = spark.sql.call_args.args[0]
+        self.assertIn("ADD COLUMNS", statement)
+        self.assertIn("`order_zone_id` int", statement)
+        self.assertIn("`preferred_zone_id_at_order` int", statement)
+
+    def test_v7_order_zone_migration_rejects_wrong_existing_type(self) -> None:
+        contract = initialize_catalog.load_contract()
+        table = contract.table("raw", "orders")
+        spark = MagicMock()
+        spark.table.return_value.schema.fields = [
+            SimpleNamespace(
+                name="order_zone_id",
+                dataType=SimpleNamespace(simpleString=lambda: "string"),
+            )
+        ]
+
+        with self.assertRaisesRegex(ValueError, "order_zone_id has type string"):
+            initialize_catalog._evolve_order_zone_columns(
+                spark, "`iceberg_raw`.`raw`.`orders`", table
+            )
+
     def test_initialize_uses_existing_spark_connect_session(self) -> None:
         session = MagicMock()
         builder = MagicMock()

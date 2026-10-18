@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -32,6 +33,8 @@ class PublishTests(unittest.TestCase):
         for alias in ("staged_silver", "publish_silver"):
             self.con.execute(f"ATTACH ':memory:' AS {alias}")
             self.con.execute(f"CREATE SCHEMA {alias}.silver")
+        self.con.execute("ATTACH ':memory:' AS ampere_work")
+        self.con.execute("CREATE SCHEMA ampere_work.silver_control")
         self.con.execute(
             "CREATE TABLE staged_silver.silver.fact_orders "
             "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
@@ -39,6 +42,21 @@ class PublishTests(unittest.TestCase):
         self.con.execute(
             "CREATE TABLE publish_silver.silver.fact_orders "
             "(order_id INTEGER, order_date DATE, total_amount INTEGER)"
+        )
+        self.con.execute(
+            "CREATE TABLE ampere_work.silver_control.affected_order_ids "
+            "(order_id INTEGER)"
+        )
+        gold_months = patch.dict(os.environ, {"GOLD_AFFECTED_MONTHS": "2026-10-01"})
+        gold_months.start()
+        self.addCleanup(gold_months.stop)
+
+    def set_affected_orders_from(self, relation: str) -> None:
+        """Mirror the model's affected order IDs for local publisher tests."""
+        self.con.execute("DELETE FROM ampere_work.silver_control.affected_order_ids")
+        self.con.execute(
+            "INSERT INTO ampere_work.silver_control.affected_order_ids "
+            f"SELECT DISTINCT order_id FROM {relation} WHERE order_id IS NOT NULL"
         )
 
     def tearDown(self) -> None:
@@ -55,6 +73,7 @@ class PublishTests(unittest.TestCase):
             "INSERT INTO staged_silver.silver.fact_orders VALUES "
             "(1, DATE '2025-12-16', 11), (3, DATE '2026-10-06', 30)"
         )
+        self.set_affected_orders_from("staged_silver.silver.fact_orders")
         for _ in range(2):
             publish_catalog.publish_table(
                 self.con, "silver", "fact_orders", "daily_refresh"
@@ -75,6 +94,7 @@ class PublishTests(unittest.TestCase):
             "INSERT INTO staged_silver.silver.fact_orders VALUES "
             "(1, DATE '2025-12-16', 10), (2, DATE '2026-10-07', 20)"
         )
+        self.set_affected_orders_from("staged_silver.silver.fact_orders")
 
         class CountMergeActions:
             """Record the update and insert actions of local DuckDB merges."""
@@ -105,6 +125,89 @@ class PublishTests(unittest.TestCase):
         publish_catalog.publish_table(recording, "silver", "fact_orders", "daily_refresh")
         self.assertEqual(recording.actions[-1], [("UPDATE",)])
 
+    def test_silver_lineage_only_change_does_not_update_target(self) -> None:
+        """Run IDs and build timestamps do not make business rows look changed."""
+        self.con.execute(
+            "CREATE TABLE lineage_source (id INTEGER, amount INTEGER, "
+            "_silver_build_ts TIMESTAMP, _silver_run_id VARCHAR)"
+        )
+        self.con.execute(
+            "CREATE TABLE lineage_target (id INTEGER, amount INTEGER, "
+            "_silver_build_ts TIMESTAMP, _silver_run_id VARCHAR)"
+        )
+        self.con.execute(
+            "INSERT INTO lineage_target VALUES "
+            "(1, 10, TIMESTAMP '2026-10-01 00:00:00', 'old-run')"
+        )
+        self.con.execute(
+            "INSERT INTO lineage_source VALUES "
+            "(1, 10, TIMESTAMP '2026-10-02 00:00:00', 'new-run')"
+        )
+
+        class CountActions:
+            def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+                self.connection = connection
+                self.actions: list[list[tuple[str]]] = []
+
+            def execute(self, statement: str) -> duckdb.DuckDBPyConnection:
+                if statement.startswith("MERGE INTO"):
+                    result = self.connection.execute(statement + " RETURNING merge_action")
+                    self.actions.append(result.fetchall())
+                    return result
+                return self.connection.execute(statement)
+
+        recording = CountActions(self.con)
+        publish_catalog.merge_upsert(
+            recording, "lineage_source", "lineage_target", ("id",)
+        )
+        self.assertEqual(recording.actions, [[]])
+        lineage = self.con.execute(
+            "SELECT _silver_build_ts, _silver_run_id FROM lineage_target"
+        ).fetchone()
+        self.assertEqual((lineage[0].date(), lineage[1]), (date(2026, 10, 1), "old-run"))
+
+    def test_silver_affected_months_include_corrections_and_later_preference_months(self) -> None:
+        """Old/new order months and future preference-affected months are retained."""
+        for alias in ("staged_silver", "publish_silver"):
+            self.con.execute(
+                f"CREATE TABLE {alias}.silver.fact_order_product "
+                "(order_id INTEGER, order_date DATE)"
+            )
+            self.con.execute(
+                f"CREATE TABLE {alias}.silver.fact_delivery_tracking "
+                "(order_id INTEGER, status_datetime TIMESTAMP)"
+            )
+        self.con.execute(
+            "INSERT INTO publish_silver.silver.fact_orders VALUES "
+            "(1, DATE '2026-01-15', NULL), (2, DATE '2026-03-15', NULL)"
+        )
+        self.con.execute(
+            "INSERT INTO staged_silver.silver.fact_orders VALUES "
+            "(1, DATE '2026-02-15', NULL), (2, DATE '2026-03-15', NULL)"
+        )
+        self.con.execute(
+            "INSERT INTO ampere_work.silver_control.affected_order_ids VALUES (1)"
+        )
+        self.con.execute(
+            "CREATE TABLE staged_silver.silver.dim_client_preference_history "
+            "(effective_from DATE, source_batch_sequence BIGINT)"
+        )
+        self.con.execute(
+            "INSERT INTO staged_silver.silver.dim_client_preference_history VALUES "
+            "(DATE '2026-02-01', 5)"
+        )
+
+        with patch.dict(
+            os.environ,
+            {"SILVER_DELTA_FROM_SEQUENCE": "0", "SILVER_DELTA_TO_SEQUENCE": "10"},
+        ):
+            months = publish_catalog.affected_months_for_silver(self.con)
+
+        self.assertEqual(
+            months,
+            {date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)},
+        )
+
     def test_duplicate_source_keys_fail_before_publish(self) -> None:
         """Ambiguous updates leave published history untouched."""
         self.con.execute(
@@ -126,8 +229,8 @@ class PublishTests(unittest.TestCase):
             (10,),
         )
 
-    def test_gold_daily_snapshot_removes_missing_keys_and_rejects_empty_source(self) -> None:
-        """Gold daily publication synchronizes a full snapshot safely."""
+    def test_gold_daily_replaces_one_complete_month_including_empty_month(self) -> None:
+        """Gold daily publication replaces one affected month and preserves others."""
         for alias in ("staged_gold", "publish_gold"):
             self.con.execute(f"ATTACH ':memory:' AS {alias}")
             self.con.execute(f"CREATE SCHEMA {alias}.gold")
@@ -153,22 +256,25 @@ class PublishTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual(
             rows,
-            [(date(2026, 10, 1), 1, 25), (date(2026, 10, 1), 2, 30)],
+            [
+                (date(2025, 12, 1), 1, 10),
+                (date(2026, 10, 1), 1, 25),
+                (date(2026, 10, 1), 2, 30),
+            ],
         )
         self.con.execute(
             "DELETE FROM staged_gold.gold.marketing_sales_budget_monthly_store"
         )
-        with self.assertRaisesRegex(ValueError, "empty table"):
-            publish_catalog.publish_table(
-                self.con, "gold", "marketing_sales_budget_monthly_store", "daily_refresh"
-            )
+        publish_catalog.publish_table(
+            self.con, "gold", "marketing_sales_budget_monthly_store", "daily_refresh"
+        )
         self.assertEqual(
             self.con.execute(
                 "SELECT month, store_id, sales_amount "
                 "FROM publish_gold.gold.marketing_sales_budget_monthly_store "
                 "ORDER BY month, store_id"
             ).fetchall(),
-            [(date(2026, 10, 1), 1, 25), (date(2026, 10, 1), 2, 30)],
+            [(date(2025, 12, 1), 1, 10)],
         )
 
     def test_complete_dimension_synchronizes_missing_and_changed_keys(self) -> None:
@@ -359,19 +465,28 @@ class PublishTests(unittest.TestCase):
         for table in publish_catalog.DAILY_FACT_BATCHES:
             with self.subTest(table=table):
                 key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
+                date_column = (
+                    "order_date DATE"
+                    if table == "fact_order_product"
+                    else "status_datetime TIMESTAMP"
+                )
                 for alias in ("staged_silver", "publish_silver"):
                     self.con.execute(
                         f"CREATE TABLE {alias}.silver.{table} "
-                        f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+                        f"({key} VARCHAR, order_id INTEGER, {date_column}, amount INTEGER)"
                     )
                 self.con.execute(
                     f"INSERT INTO staged_silver.silver.{table} VALUES "
-                    "('1|row', 1, 11), ('5|row', 5, 50), "
-                    "('9|row', 9, 90), ('12|row', 12, 120)"
+                    "('1|row', 1, TIMESTAMP '2026-10-03 10:00:00', 11), "
+                    "('5|row', 5, TIMESTAMP '2026-10-03 11:00:00', 50), "
+                    "('9|row', 9, TIMESTAMP '2026-10-03 12:00:00', 90), "
+                    "('12|row', 12, TIMESTAMP '2026-10-03 13:00:00', 120)"
                 )
+                self.set_affected_orders_from(f"staged_silver.silver.{table}")
                 self.con.execute(
                     f"INSERT INTO publish_silver.silver.{table} VALUES "
-                    "('1|row', 1, 10), ('20|old', 20, 200)"
+                    "('1|row', 1, TIMESTAMP '2026-10-03 10:00:00', 10), "
+                    "('20|old', 20, TIMESTAMP '2025-12-03 10:00:00', 200)"
                 )
 
                 class RecordStatements:
@@ -390,10 +505,7 @@ class PublishTests(unittest.TestCase):
                     )
                 self.assertEqual(
                     sum(sql.startswith("MERGE INTO") for sql in recording.statements),
-                    publish_catalog.DAILY_FACT_BATCHES[table] * 2,
-                )
-                self.assertFalse(
-                    any(sql.startswith("DELETE FROM") for sql in recording.statements)
+                    2,
                 )
                 self.assertEqual(
                     self.con.execute(
@@ -408,6 +520,10 @@ class PublishTests(unittest.TestCase):
     def test_large_full_history_facts_use_configured_complete_ranges(self) -> None:
         """Configured merges update, insert, and remove keys across both endpoints."""
         for table in publish_catalog.FULL_REBUILD_FACT_BATCHES:
+            if table == "fact_order_product":
+                # This table now uses order_date partition slices rather than
+                # order_id ranges.
+                continue
             with self.subTest(table=table):
                 key = publish_catalog.CONTRACT.table("silver", table).publication["merge_keys"][0]
                 for alias in ("staged_silver", "publish_silver"):
@@ -503,15 +619,19 @@ class PublishTests(unittest.TestCase):
         for alias in ("staged_silver", "publish_silver"):
             self.con.execute(
                 f"CREATE TABLE {alias}.silver.{table} "
-                f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+                f"({key} VARCHAR, order_id INTEGER, order_date DATE, amount INTEGER)"
             )
         self.con.execute(
             f"INSERT INTO staged_silver.silver.{table} VALUES "
-            "('1|a', 1, 11), ('4|a', 4, 40), ('7|a', 7, 70)"
+            "('1|a', 1, DATE '2026-10-01', 11), "
+            "('4|a', 4, DATE '2026-10-10', 40), "
+            "('7|a', 7, DATE '2026-10-20', 70)"
         )
         self.con.execute(
             f"INSERT INTO publish_silver.silver.{table} VALUES "
-            "('1|a', 1, 10), ('4|old', 4, 4), ('7|old', 7, 7)"
+            "('1|a', 1, DATE '2026-10-01', 10), "
+            "('4|old', 4, DATE '2026-10-10', 4), "
+            "('7|old', 7, DATE '2026-10-20', 7)"
         )
 
         class FailSecondMerge:
@@ -546,13 +666,16 @@ class PublishTests(unittest.TestCase):
         for alias in ("staged_silver", "publish_silver"):
             self.con.execute(
                 f"CREATE TABLE {alias}.silver.{table} "
-                f"({key} VARCHAR, order_id INTEGER, amount INTEGER)"
+                f"({key} VARCHAR, order_id INTEGER, order_date DATE, amount INTEGER)"
             )
         self.con.execute(
-            f"INSERT INTO staged_silver.silver.{table} VALUES ('2|a', 2, 20)"
+            f"INSERT INTO staged_silver.silver.{table} VALUES "
+            "('2|a', 2, DATE '2026-10-03', 20)"
         )
+        self.set_affected_orders_from(f"staged_silver.silver.{table}")
         self.con.execute(
-            f"INSERT INTO publish_silver.silver.{table} VALUES ('1|a', 1, 10)"
+            f"INSERT INTO publish_silver.silver.{table} VALUES "
+            "('1|a', 1, DATE '2026-10-02', 10)"
         )
         with patch.object(
             publish_catalog, "merge_upsert", wraps=publish_catalog.merge_upsert

@@ -8,3 +8,4 @@ from {{ ref('fact_orders') }}
 where latest_order_status_id = 3
   and order_date is not null
   and client_id is not null
+  and {{ ampere_gold_month_predicate("date_trunc('month', order_date)") }}

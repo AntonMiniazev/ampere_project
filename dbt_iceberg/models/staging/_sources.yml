@@ -1,6 +1,24 @@
 version: 2
 
 sources:
+  - name: raw
+    description: Immutable Raw change rows used to derive retry-safe Silver deltas.
+    database: iceberg_raw
+    schema: raw
+    tables:
+      - name: clients
+      - name: costing
+      - name: delivery_costing
+      - name: delivery_resource
+      - name: delivery_type
+      - name: delivery_tracking
+      - name: order_product
+      - name: order_status_history
+      - name: orders
+      - name: payments
+      - name: products
+      - name: stores
+      - name: zones
   - name: bronze
     description: Bronze Iceberg tables in the Lakekeeper Bronze warehouse.
     database: iceberg_bronze

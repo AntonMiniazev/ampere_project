@@ -93,7 +93,7 @@ def initialize_data_sources() -> None:
                     batch_id=str(existing["batch_id"]),
                     batch_sequence=int(existing["batch_sequence"]),
                     business_date=existing["project_start_date"],
-                    contract_version=6,
+                    contract_version=7,
                     source_tables=tables,
                 )
                 logger.info("Recovered already-committed init dataset_id=%s run_id=%s", existing["dataset_id"], initialization_run_id)

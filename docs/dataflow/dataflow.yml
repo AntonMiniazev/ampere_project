@@ -33,8 +33,8 @@ layers:
   silver:
     title: Silver
     status: implemented
-    responsibility: Build tested analytical entities from Bronze with dbt and DuckDB.
-    diagram_note: Clean types, join entities, test relationships, and publish reusable Iceberg tables.
+    responsibility: Use Raw batch metadata to rebuild complete records for affected orders, validate them with dbt, and publish reusable Iceberg tables after the last successful sequence checkpoint.
+    diagram_note: Preserve full history while applying only changed orders; unchanged replays skip Iceberg updates.
     engine: [DuckDB, dbt, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -43,8 +43,8 @@ layers:
   gold:
     title: Gold
     status: implemented
-    responsibility: Publish eight monthly Curie report aggregates for Marketing, Financial, and Delivery.
-    diagram_note: Preserve month and store keys, additive measures, and domain-specific report fields.
+    responsibility: Recompute complete affected-month slices for eight Curie report aggregates and retain full-history rebuild mode.
+    diagram_note: Replace only months recorded by successful Silver publications and preserve untouched months.
     engine: [DuckDB, dbt, Iceberg]
     storage: [MinIO, Iceberg]
     catalog: Lakekeeper
@@ -75,13 +75,13 @@ flows:
     to: silver
     engine: DuckDB + dbt
     artifact: Silver Iceberg tables
-    description: Build and publish reusable analytical entities.
+    description: Select affected order IDs from immutable Raw changes since the successful Silver sequence checkpoint, rebuild their complete records and events, then advance the checkpoint only after publication.
 
   - from: silver
     to: gold
     engine: DuckDB + dbt
     artifact: Eight domain-specific Gold aggregates
-    description: Aggregate current and previous month from Silver and synchronize full history on rebuild.
+    description: Rebuild complete months listed by successful Silver publications, synchronize only those month keys, and preserve untouched history.
 
   - from: gold
     to: serving

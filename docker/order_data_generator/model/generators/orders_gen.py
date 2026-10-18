@@ -22,6 +22,29 @@ from order_data_generator.logging_utils import APP_NAME
 logger = logging.getLogger(APP_NAME)
 
 
+def load_store_zone_map(schema: str, *, connection=None) -> dict[int, int]:
+    """Load the one-zone-per-store map and reject missing or ambiguous stores."""
+    mapping = read_sql(
+        f'SELECT store_id, id AS zone_id FROM "{schema}"."zones" ORDER BY store_id, id',
+        connection=connection,
+    )
+    if mapping.is_empty():
+        raise ValueError("Cannot generate orders without store-zone mappings")
+    duplicates = mapping.group_by("store_id").len().filter(pl.col("len") != 1)
+    stores = read_sql(f'SELECT id AS store_id FROM "{schema}"."stores"', connection=connection)
+    missing = stores.join(mapping.select("store_id").unique(), on="store_id", how="anti")
+    if duplicates.height or missing.height:
+        raise ValueError(
+            "Each store must map to exactly one zone; "
+            f"ambiguous stores={duplicates.get_column('store_id').to_list()}, "
+            f"missing stores={missing.get_column('store_id').to_list()}"
+        )
+    return {
+        int(row["store_id"]): int(row["zone_id"])
+        for row in mapping.iter_rows(named=True)
+    }
+
+
 def _normalize_date(value) -> date:
     """Convert datetime-like values to a plain date for branching logic.
 
@@ -143,6 +166,7 @@ def clients_to_orders(
     created_status_id: int,
     packing_status_id: int,
     delivered_status_id: int,
+    store_zone_by_id: dict[int, int],
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Generate the base order rows and order-product rows for the business day.
 
@@ -162,6 +186,8 @@ def clients_to_orders(
 
         if store_clients.height == 0 or store_couriers.height == 0:
             continue
+        if store_id not in store_zone_by_id:
+            raise ValueError(f"Store {store_id} has no unique zone mapping")
 
         n_clients = store_clients.height
         # Scale weekly order rate down to daily volume per active client base.
@@ -240,6 +266,8 @@ def clients_to_orders(
                 "courier_id": courier_id,
                 "delivery_type_id": int(dtype),
                 "store_id": int(store_id),
+                "order_zone_id": int(store_zone_by_id[store_id]),
+                "preferred_zone_id_at_order": int(store_zone_by_id[store_id]),
                 "order_source_id": order_source_id,
                 "status_id": int(status),
                 "order_date": today,
@@ -764,6 +792,7 @@ def prepare_orders_statuses(
         created_status_id=created_status_id,
         packing_status_id=packing_status_id,
         delivered_status_id=delivered_status_id,
+        store_zone_by_id=load_store_zone_map(config.schema, connection=connection),
     )
     logger.info(
         "Generated new orders: orders=%s order_products=%s",
@@ -784,6 +813,8 @@ def prepare_orders_statuses(
                     "order_source_id",
                     "courier_id",
                     "status_id",
+                    "order_zone_id",
+                    "preferred_zone_id_at_order",
                 ]
             ),
             on="order_key",
@@ -801,6 +832,8 @@ def prepare_orders_statuses(
                     pl.first("order_date").alias("order_date"),
                     pl.first("order_source_id").alias("order_source_id"),
                     pl.first("store_id").alias("store_id"),
+                    pl.first("order_zone_id").alias("order_zone_id"),
+                    pl.first("preferred_zone_id_at_order").alias("preferred_zone_id_at_order"),
                     pl.sum("total_amount").alias("total_amount"),
                 ]
             )

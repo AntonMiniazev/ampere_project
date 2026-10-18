@@ -1,6 +1,6 @@
 # Iceberg dbt runtime
 
-The project builds Silver and Gold with dbt v2 and DuckDB. Contract v3 in
+The project builds Silver and Gold with dbt v2 and DuckDB. Contract v7 in
 `tools/contracts/ampere_tables.json` defines the schema, Iceberg partition
 specification, writer profile, and maintenance policy for every layer table.
 The shared resolver is packaged into the Spark and dbt images from the same
@@ -15,15 +15,25 @@ published table, then publishes that layer. A Silver run reads Bronze through
 Lakekeeper. A Gold run reads published Silver through Lakekeeper and stages
 only Gold output locally. Gold never reads a local Silver workspace.
 
-Silver daily runs use the current and previous month window for their fact
-inputs. Daily `fact_delivery_tracking` and `fact_order_product` publication
-splits the staged rows into three deterministic `order_id` ranges per table.
-Each range is an independent keyed merge; it preserves target-only history
-outside the partial daily input, and retries converge by replaying the ranges.
-Complete Silver dimensions and budgets also remove keys absent from their staged source. Every Gold run reads all published Silver
-history and stages complete snapshots of all eight aggregates. Daily and
-full-history Gold publication both delete keys missing from the validated
-snapshot; an empty complete Gold model fails before any table is changed.
+Silver daily runs read the immutable Raw change journal from the last
+successfully published Bronze batch sequence. They rebuild complete order
+records and event rows only for affected order IDs, including orders touched by
+late events or relevant dimension changes. PostgreSQL checkpoints advance only
+after all Silver tables publish. MERGE change detection ignores volatile Silver
+lineage columns, so unchanged replays do not rewrite rows. The large
+`fact_order_product` publication is split by `order_date` weeks and includes a
+partition-pruning check; delivery events use month slices. Complete dimensions
+still synchronize their full source snapshots.
+
+Gold daily runs consume the affected-month list recorded by successful Silver
+publications. Each selected month is rebuilt as a complete slice and replaces
+only that month, including explicit deletion when the month becomes empty.
+Untouched months remain unchanged. Full-history Gold still reads full Silver
+history. The preference-history model derives as-of client preference from
+Raw records and returns NULL for preference-based historical metrics before
+that history begins. Orders carry `order_zone_id` and
+`preferred_zone_id_at_order` separately; delivery costing uses the order zone.
+Zone and delivery tariff uniqueness checks run with the layer build.
 
 The generator seeds active orders with delivery-tracking placeholders that
 contain a courier but no status or timestamp. `stg_delivery_tracking` excludes
@@ -37,13 +47,13 @@ The Gold Iceberg tables are `marketing_sales_budget_monthly_store`,
 `financial_product_margin_monthly_store`, and
 `delivery_courier_performance_monthly_store`.
 
-Three large Silver fact tables use deterministic `order_id` ranges during a
-full-history publish: `fact_delivery_tracking`, `fact_order_product`, and
-`fact_order_status_history`. `fact_order_product` uses 50 ranges to keep its
-large MERGE working set within the full-rebuild pod's DuckDB memory limit; the
-other two use three. Each range is its own Iceberg commit; a retry converges by
-merging each range again. Catalog initialization must run first; the publisher
-does not create or replace target tables.
+Large Silver fact tables are bounded during full-history publication.
+`fact_order_product` uses `order_date` week slices so target scans can be
+pruned by the Iceberg partition key; `fact_delivery_tracking` and
+`fact_order_status_history` use deterministic order-ID ranges. Each slice is
+its own Iceberg commit and retries converge by replaying committed slices.
+Catalog initialization must run first; the publisher does not replace target
+tables.
 
 The full-history `stg_order_status_history` model first copies only its required
 Bronze columns to the disk-backed DuckDB workspace, then deduplicates four

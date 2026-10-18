@@ -362,6 +362,14 @@ models:
         description: Selling store identifier.
         data_type: smallint        
 
+      - name: order_zone_id
+        description: Zone of the store where this order was placed.
+        data_type: smallint
+
+      - name: preferred_zone_id_at_order
+        description: Client preferred zone captured when this order was created; null for legacy orders without history.
+        data_type: smallint
+
       - name: total_amount
         description: Total order amount.
         data_type: numeric(12,4)

@@ -6,6 +6,7 @@ with delivered_orders as (
         tracking.courier_id,
         orders.order_date,
         orders.store_id,
+        orders.order_zone_id,
         orders.store_name,
         row_number() over (
             partition by tracking.order_id
@@ -17,6 +18,7 @@ with delivered_orders as (
       and tracking.courier_id is not null
       and orders.latest_order_status_id = 3
       and orders.order_date is not null
+      and {{ ampere_gold_month_predicate("date_trunc('month', orders.order_date)") }}
     qualify assignment_rank = 1
 ),
 order_tariffs as (
@@ -24,9 +26,9 @@ order_tariffs as (
     from delivered_orders
     left join {{ ref('dim_delivery_resource') }} as resource
         on delivered_orders.courier_id = resource.delivery_resource_id
-    left join {{ ref('dim_zones') }} as zones on delivered_orders.store_id = zones.store_id
     left join {{ ref('dim_delivery_costing') }} as costing
-        on zones.zone_id = costing.zone_id and resource.delivery_type_id = costing.delivery_type_id
+        on delivered_orders.order_zone_id = costing.zone_id
+       and resource.delivery_type_id = costing.delivery_type_id
     group by delivered_orders.order_id
 )
 select

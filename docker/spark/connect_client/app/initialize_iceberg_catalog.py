@@ -81,6 +81,49 @@ def _evolve_bronze_lineage_columns(
         )
 
 
+def _evolve_order_zone_columns(
+    spark: SparkSession, target: str, table: ResolvedTable
+) -> None:
+    """Add the nullable v7 order-time zone fields to existing tables."""
+    if (table.layer, table.name) not in {
+        ("raw", "orders"),
+        ("bronze", "orders"),
+        ("silver", "fact_orders"),
+    }:
+        return
+
+    names = {"order_zone_id", "preferred_zone_id_at_order"}
+    expected = [column for column in table.columns if column["name"] in names]
+    observed_schema = spark.table(target).schema
+    observed = {
+        field.name: spark_type(field.dataType.simpleString())
+        for field in observed_schema.fields
+    }
+    missing = []
+    for column in expected:
+        name = column["name"]
+        expected_type = spark_type(column["type_text"])
+        if name in observed:
+            if observed[name] != expected_type:
+                raise ValueError(
+                    f"Cannot evolve {target}: order-time column {name} has type "
+                    f"{observed[name]}, expected {expected_type}"
+                )
+        else:
+            missing.append(column)
+    if missing:
+        additions = ", ".join(
+            f"{quote_identifier(column['name'])} {column['type_text']}"
+            for column in missing
+        )
+        spark.sql(f"ALTER TABLE {target} ADD COLUMNS ({additions})")
+        logging.info(
+            "Added nullable v7 order-time columns to %s: %s",
+            target,
+            ", ".join(column["name"] for column in missing),
+        )
+
+
 def _create_table(spark: SparkSession, contract: AmpereContract, table: ResolvedTable) -> None:
     catalog = _catalog_name(table.layer)
     namespace = table.namespace
@@ -113,6 +156,7 @@ def _create_table(spark: SparkSession, contract: AmpereContract, table: Resolved
         f"{partitions} TBLPROPERTIES ({properties_sql})"
     )
     _evolve_bronze_lineage_columns(spark, target, table)
+    _evolve_order_zone_columns(spark, target, table)
     if table.sort_order:
         ordering = ", ".join(
             f"{quote_identifier(item['source'])} {item.get('direction', 'asc').upper()}"

@@ -1,4 +1,4 @@
-"""Load and resolve Ampere's canonical Iceberg contract v6."""
+"""Load and resolve Ampere's canonical Iceberg contract."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-CONTRACT_VERSION = 6
+CONTRACT_VERSION = 7
 LAYERS = ("raw", "bronze", "silver", "gold")
 DEFAULT_CONTRACT_PATH = Path(__file__).with_name("ampere_tables.json")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -26,7 +26,7 @@ _DELETE_POLICIES = {"rewrite_on_threshold", "none"}
 _MANIFEST_POLICIES = {"on_threshold", "always", "none"}
 _DUCKDB_PARTITION_TRANSFORMS = {"identity", "bucket", "truncate"}
 _MIN_RETENTION_DAYS = 14
-_SOURCE_COMPLETENESS = {"partial", "full_snapshot"}
+_SOURCE_COMPLETENESS = {"partial", "full_snapshot", "affected_month_snapshot"}
 
 
 class ContractError(ValueError):
@@ -176,10 +176,10 @@ def _validate_publication(layer: str, table_path: str, raw: Any, columns: set[st
             f"{table_path}.publication.source_completeness.full_history",
             "full-history publication must be a full_snapshot",
         )
-    if layer == "gold" and completeness["daily_refresh"] != "full_snapshot":
+    if layer == "gold" and completeness["daily_refresh"] != "affected_month_snapshot":
         _fail(
             f"{table_path}.publication.source_completeness.daily_refresh",
-            "Gold daily publication must be a full_snapshot",
+            "Gold daily publication must be an affected_month_snapshot",
         )
     return {"merge_keys": tuple(keys), "source_completeness": dict(completeness)}
 

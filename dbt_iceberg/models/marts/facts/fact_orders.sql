@@ -6,6 +6,8 @@ select
     c.is_churned as client_is_churned,
     o.store_id,
     s.store_name,
+    o.order_zone_id,
+    o.preferred_zone_id_at_order,
     o.order_source_id,
     o.total_amount,
     cast(coalesce(v.ordered_quantity, 0) as decimal(38, 2)) as ordered_quantity,

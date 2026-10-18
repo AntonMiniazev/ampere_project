@@ -59,6 +59,9 @@ def build_layer_dag(
     env = {
         "DUCKDB_CA_CERT_FILE": "/etc/ampere-ca-bundle/ca.crt",
         "MINIO_S3_ENDPOINT": config.minio_endpoint,
+        "PGHOST": Variable.get("pg_host", default="postgres-service"),
+        "PGPORT": Variable.get("pg_port", default="5432"),
+        "PGDATABASE": Variable.get("pg_database", default="ampere_db"),
         "LAKEKEEPER_CATALOG_URI": Variable.get(
             "iceberg_lakekeeper_uri", default="http://lakekeeper.ampere.svc.cluster.local:8181/catalog"
         ),
@@ -71,6 +74,7 @@ def build_layer_dag(
             default="api://4120baf5-d479-464e-8c83-a96b5d475fdf/.default",
         ),
         "ICEBERG_BRONZE_WAREHOUSE": Variable.get("iceberg_bronze_warehouse", default="bronze"),
+        "ICEBERG_RAW_WAREHOUSE": Variable.get("iceberg_raw_warehouse", default="raw"),
         "ICEBERG_SILVER_WAREHOUSE": Variable.get("iceberg_silver_warehouse", default="silver"),
         "ICEBERG_GOLD_WAREHOUSE": Variable.get("iceberg_gold_warehouse", default="gold"),
         "ICEBERG_LAYER": layer,
@@ -117,11 +121,13 @@ def build_layer_dag(
         daily_memory_default = "7GB" if layer == "silver" else "4GB"
         env.update(
             {
-                "DBT_THREADS": Variable.get("iceberg_dbt_threads", default="2"),
+                # Temporary diagnostic ceiling after the daily DuckDB pods were
+                # OOM-killed: serialize dbt models and keep DuckDB query fan-out low.
+                "DBT_THREADS": "1",
                 "DUCKDB_MEMORY_LIMIT": Variable.get(
                     "iceberg_dbt_duckdb_memory_limit", default=daily_memory_default
                 ),
-                "DUCKDB_WORKER_THREADS": Variable.get("iceberg_dbt_duckdb_threads", default="3"),
+                "DUCKDB_WORKER_THREADS": "2",
                 "DUCKDB_MAX_TEMP_DIRECTORY_SIZE": Variable.get("iceberg_dbt_duckdb_max_temp_directory_size", default=""),
             }
         )
@@ -182,6 +188,8 @@ def build_layer_dag(
                 V1VolumeMount(name="dbt-scratch", mount_path="/app/artifacts"),
             ],
             secrets=[
+                _secret("pguser", "pguser", "PGUSER"),
+                _secret("pgpass", "pgpass", "PGPASSWORD"),
                 _secret("MINIO_ACCESS_KEY", "minio-creds", "MINIO_ACCESS_KEY"),
                 _secret("MINIO_SECRET_KEY", "minio-creds", "MINIO_SECRET_KEY"),
                 _secret("client-id", "lakekeeper-dbt-client", "LAKEKEEPER_CLIENT_ID"),
