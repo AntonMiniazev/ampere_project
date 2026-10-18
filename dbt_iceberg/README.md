@@ -35,9 +35,12 @@ only that month, including explicit deletion when the month becomes empty.
 Untouched months remain unchanged. Full-history Gold still reads full Silver
 history. The preference-history model derives as-of client preference from
 Raw records and returns NULL for preference-based historical metrics before
-that history begins. Orders carry `order_zone_id` and
-`preferred_zone_id_at_order` separately; delivery costing uses the order zone.
-Zone and delivery tariff uniqueness checks run with the layer build.
+that history begins. A store may cover multiple delivery zones. Orders carry
+`order_zone_id` separately from `preferred_zone_id_at_order`; the generator
+selects an order zone from the store's covered zones and leaves the preferred
+zone NULL because the source currently records preferred stores, not preferred
+zones. Delivery costing uses the order zone. Zone and delivery tariff
+uniqueness checks run with the layer build.
 
 The generator seeds active orders with delivery-tracking placeholders that
 contain a courier but no status or timestamp. `stg_delivery_tracking` excludes

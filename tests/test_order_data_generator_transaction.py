@@ -19,6 +19,8 @@ sys.modules["order_data_generator"] = package
 
 from order_data_generator import db, main  # noqa: E402
 from order_data_generator.config import load_config  # noqa: E402
+from order_data_generator.generators import orders_gen  # noqa: E402
+import polars as pl  # noqa: E402
 
 
 class GeneratorTransactionTests(unittest.TestCase):
@@ -54,6 +56,23 @@ class GeneratorTransactionTests(unittest.TestCase):
         for call_args in connection.execute.call_args_list:
             self.assertIn("SELECT *", str(call_args.args[0]))
             self.assertIn("source_row_id=ANY", str(call_args.args[0]))
+
+    def test_store_zone_map_accepts_multiple_zones_per_store(self) -> None:
+        mapping = pl.DataFrame({"store_id": [1, 1, 2], "zone_id": [10, 11, 20]})
+        stores = pl.DataFrame({"store_id": [1, 2]})
+        with patch.object(orders_gen, "read_sql", side_effect=[mapping, stores]):
+            zones_by_store = orders_gen.load_store_zone_map("source")
+
+        self.assertEqual(zones_by_store, {1: (10, 11), 2: (20,)})
+
+    def test_store_zone_map_rejects_stores_without_zones(self) -> None:
+        mapping = pl.DataFrame({"store_id": [1], "zone_id": [10]})
+        stores = pl.DataFrame({"store_id": [1, 2]})
+        with (
+            patch.object(orders_gen, "read_sql", side_effect=[mapping, stores]),
+            self.assertRaisesRegex(ValueError, r"missing stores=\[2\]"),
+        ):
+            orders_gen.load_store_zone_map("source")
 
     def test_generation_holds_one_advisory_locked_transaction_for_the_day(self) -> None:
         connection = MagicMock()
