@@ -1800,87 +1800,87 @@
                 "position": 5
               },
               {
-                "name": "order_zone_id",
-                "type_text": "int",
-                "position": 6
-              },
-              {
-                "name": "preferred_zone_id_at_order",
-                "type_text": "int",
-                "position": 7
-              },
-              {
                 "name": "total_amount",
                 "type_text": "decimal(12,4)",
-                "position": 8
+                "position": 6
               },
               {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "_batch_id",
                 "type_text": "string",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "_batch_sequence",
                 "type_text": "bigint",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "_change_id",
                 "type_text": "bigint",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "_business_date",
                 "type_text": "date",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "_captured_at",
                 "type_text": "timestamp",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "_transfer_id",
                 "type_text": "string",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 18
+                "position": 16
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 19
+                "position": 17
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 20
+                "position": 18
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 21
+                "position": 19
               },
               {
                 "name": "_contract_version",
+                "type_text": "int",
+                "position": 20
+              },
+              {
+                "name": "order_zone_id",
+                "type_text": "int",
+                "position": 21
+              },
+              {
+                "name": "preferred_zone_id_at_order",
                 "type_text": "int",
                 "position": 22
               }
@@ -3989,88 +3989,88 @@
                 "position": 5
               },
               {
-                "name": "order_zone_id",
-                "type_text": "int",
-                "position": 6
-              },
-              {
-                "name": "preferred_zone_id_at_order",
-                "type_text": "int",
-                "position": 7
-              },
-              {
                 "name": "total_amount",
                 "type_text": "decimal(12,4)",
-                "position": 8
+                "position": 6
               },
               {
                 "name": "_row_hash",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "_ingest_run_id",
                 "type_text": "string",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "_ingest_ts",
                 "type_text": "timestamp",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "_source_system",
                 "type_text": "string",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "_source_table",
                 "type_text": "string",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "_op",
                 "type_text": "string",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "_bronze_last_run_id",
                 "type_text": "string",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "_bronze_last_apply_ts",
                 "type_text": "string",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "_bronze_last_manifest_path",
                 "type_text": "string",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "event_date",
                 "type_text": "string",
-                "position": 18
+                "position": 16
               },
               {
                 "name": "_dataset_id",
                 "type_text": "string",
-                "position": 19
+                "position": 17
               },
               {
                 "name": "_source_row_id",
                 "type_text": "string",
-                "position": 20
+                "position": 18
               },
               {
                 "name": "_source_batch_sequence",
                 "type_text": "bigint",
-                "position": 21
+                "position": 19
               },
               {
                 "name": "_source_change_id",
                 "type_text": "bigint",
+                "position": 20
+              },
+              {
+                "name": "order_zone_id",
+                "type_text": "int",
+                "position": 21
+              },
+              {
+                "name": "preferred_zone_id_at_order",
+                "type_text": "int",
                 "position": 22
               }
             ],
@@ -5540,78 +5540,78 @@
                 "position": 6
               },
               {
-                "name": "order_zone_id",
-                "type_text": "int",
-                "position": 7
-              },
-              {
-                "name": "preferred_zone_id_at_order",
-                "type_text": "int",
-                "position": 8
-              },
-              {
                 "name": "store_name",
                 "type_text": "string",
-                "position": 9
+                "position": 7
               },
               {
                 "name": "order_source_id",
                 "type_text": "int",
-                "position": 10
+                "position": 8
               },
               {
                 "name": "total_amount",
                 "type_text": "decimal(12,4)",
-                "position": 11
+                "position": 9
               },
               {
                 "name": "ordered_quantity",
                 "type_text": "decimal(38,2)",
-                "position": 12
+                "position": 10
               },
               {
                 "name": "line_sales_amount",
                 "type_text": "decimal(14,4)",
-                "position": 13
+                "position": 11
               },
               {
                 "name": "line_count",
                 "type_text": "bigint",
-                "position": 14
+                "position": 12
               },
               {
                 "name": "latest_order_status_id",
                 "type_text": "int",
-                "position": 15
+                "position": 13
               },
               {
                 "name": "latest_order_status",
                 "type_text": "string",
-                "position": 16
+                "position": 14
               },
               {
                 "name": "latest_status_datetime",
                 "type_text": "timestamp_ntz",
-                "position": 17
+                "position": 15
               },
               {
                 "name": "amount_matches_lines",
                 "type_text": "boolean",
-                "position": 18
+                "position": 16
               },
               {
                 "name": "_silver_build_ts",
                 "type_text": "timestamp_ntz",
-                "position": 19
+                "position": 17
               },
               {
                 "name": "_silver_model_name",
                 "type_text": "string",
-                "position": 20
+                "position": 18
               },
               {
                 "name": "_silver_run_id",
                 "type_text": "string",
+                "position": 19
+              },
+              {
+                "name": "order_zone_id",
+                "type_text": "int",
+                "position": 20
+              },
+              {
+                "name": "preferred_zone_id_at_order",
+                "type_text": "int",
                 "position": 21
               }
             ],

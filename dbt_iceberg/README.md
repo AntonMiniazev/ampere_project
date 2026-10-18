@@ -6,6 +6,10 @@ specification, writer profile, and maintenance policy for every layer table.
 The shared resolver is packaged into the Spark and dbt images from the same
 repository revision.
 
+For v7 order-time fields, catalog initialization appends nullable columns to
+existing Raw, Bronze, and Silver tables. The contract keeps these columns at
+the end of those table schemas so schema validation matches Iceberg evolution.
+
 ## Layer execution
 
 Silver and Gold each run in a separate Kubernetes pod with a private DuckDB

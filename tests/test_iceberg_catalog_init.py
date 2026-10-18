@@ -24,6 +24,18 @@ SPEC.loader.exec_module(initialize_catalog)
 
 
 class CatalogInitTests(unittest.TestCase):
+    def test_v7_order_zone_columns_follow_existing_columns_for_additive_evolution(self) -> None:
+        contract = initialize_catalog.load_contract()
+        expected_suffix = ("order_zone_id", "preferred_zone_id_at_order")
+
+        for layer, name in (
+            ("raw", "orders"),
+            ("bronze", "orders"),
+            ("silver", "fact_orders"),
+        ):
+            with self.subTest(layer=layer, name=name):
+                self.assertEqual(contract.table(layer, name).column_names[-2:], expected_suffix)
+
     def test_table_ddl_preserves_bronze_month_partition_and_sort_order(self) -> None:
         contract = initialize_catalog.load_contract()
         table = contract.table("bronze", "delivery_tracking")
