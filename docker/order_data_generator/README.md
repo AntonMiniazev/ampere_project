@@ -26,6 +26,26 @@ List values are comma-separated, e.g. `CHURN_RATES=0.004,0.007`.
 
 The generator can run as a Python module in a local environment or as the container image used by Airflow. Runtime arguments control the generation date, deterministic seed, and optional volume overrides; environment variables define PostgreSQL connectivity and default generation settings.
 
+Every new daily Airflow run creates a distinct source batch, even for a date
+already generated. The daily DAG passes `dag_id:run_id` as
+`--generation-request-id`; clearing/retrying that run reuses its completed batch
+instead of generating duplicates. Use a new DAG run to add more data. Each new
+batch applies the normal client churn/acquisition, order, status and payment
+workflow. Repeated runs therefore increase that day's volume and client changes.
+
+New generation requests may use the latest generated date or the next date.
+Older dates and calendar gaps are rejected. Backfills retain their date-based
+resume behavior. CLI daily invocations create a fresh request ID by default;
+pass an explicit `--generation-request-id` to retry an invocation safely.
+
+The first daily request migrates only `pipeline.batches` metadata in its existing
+locked transaction: request IDs become unique within a dataset, while multiple
+additional (`manual`) batches can share a business date. Existing completed
+batches and their manifests remain intact. Raw and Bronze consume the additional
+batch sequences through their normal daily flow. Existing PostgreSQL order
+schemas without optional zone columns are supported; staged compatibility
+columns are NULL instead of requiring source initialization.
+
 The container pins NumPy to 2.3.4, which is compatible with the CPUs used by the
 cluster. Its image build checks the expected NumPy version and imports the
 generator module before the image is published.

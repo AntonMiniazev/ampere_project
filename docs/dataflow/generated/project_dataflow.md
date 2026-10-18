@@ -4,7 +4,7 @@ This flowchart shows the high-level layer transitions, the main logic inside eac
 
 ```mermaid
 flowchart LR
-    L_SOURCE["Python generator + PostgreSQL<br/>Logic: PostgreSQL owns current state and compact batch controls; MinIO holds typed, replayable event files and commit manifests.<br/>Python, PostgreSQL<br/>PostgreSQL"]
+    L_SOURCE["Python generator + PostgreSQL<br/>Logic: Airflow run identities distinguish additional same-day generation from retries; PostgreSQL owns current state and controls, while MinIO holds immutable event files and manifests.<br/>Python, PostgreSQL<br/>PostgreSQL"]
     L_RAW["Raw Iceberg change history<br/>Logic: Typed event files and commit markers, ordered by dataset batch and change sequence.<br/>Spark<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_BRONZE["Bronze<br/>Logic: Resume the accepted transfer across both application groups, reduce changes in source order, apply stable-key inserts and updates, and delete source rows without stale replay.<br/>Spark, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]
     L_SILVER["Silver<br/>Logic: Preserve history and skip unchanged rows; visit old and new dates for moved orders.<br/>DuckDB, dbt, Iceberg<br/>MinIO, Iceberg<br/>Lakekeeper"]

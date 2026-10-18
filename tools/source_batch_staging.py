@@ -190,6 +190,13 @@ class StagedChangeBatch:
             )
 
         business_schema = BUSINESS_SCHEMAS[table]
+        if table == 'orders':
+            # Compatibility columns may be absent from existing PostgreSQL rows.
+            frame = frame.with_columns(
+                pl.lit(None, dtype=business_schema[name]).alias(name)
+                for name in ('order_zone_id', 'preferred_zone_id_at_order')
+                if name not in frame.columns
+            )
         missing = set(business_schema) - set(frame.columns)
         if missing:
             raise ValueError(f"Mutation image for {table} is missing business columns: {sorted(missing)}")

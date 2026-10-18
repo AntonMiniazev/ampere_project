@@ -75,6 +75,8 @@ with DAG(
         arguments=[
             "--run-date",
             "{{ (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+            '--generation-request-id',
+            '{{ dag.dag_id }}:{{ dag_run.run_id }}',
         ],
         container_resources=V1ResourceRequirements(
             requests={"cpu": "3", "memory": "4Gi"},

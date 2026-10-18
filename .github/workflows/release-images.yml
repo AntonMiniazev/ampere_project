@@ -114,6 +114,7 @@ jobs:
                   "paths": [
                       "docker/order_data_generator/",
                       "tools/source_batch_staging.py",
+                      "tools/source_batch_requests.py",
                   ],
               },
           ]

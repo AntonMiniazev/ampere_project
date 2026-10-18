@@ -11,6 +11,7 @@ from sqlalchemy.engine import make_url
 from order_data_generator.config import load_config
 from order_data_generator.logging_utils import APP_NAME
 from tools.source_batch_staging import StagedChangeBatch
+from tools.source_batch_requests import ensure_generation_request_schema
 
 logger = logging.getLogger(APP_NAME)
 MUTATION_RETURNING_BATCH_ROWS = 50_000
@@ -315,6 +316,10 @@ def insert_orders_returning_ids(orders: list[dict], schema: str, *, connection=N
     orders_table = Table("orders", metadata, autoload_with=engine)
     for order in orders:
         order.setdefault("source_row_id", str(uuid4()))
+        # Existing source schemas need no migration for nullable zone lineage.
+        for name in ('order_zone_id', 'preferred_zone_id_at_order'):
+            if name not in orders_table.c:
+                order.pop(name, None)
     # SQLAlchemy correlates each returned ID with the original parameter order;
     # downstream generated rows consume this list positionally.
     stmt = orders_table.insert().returning(
@@ -383,10 +388,11 @@ def start_generation_batch(
     config_fingerprint: str,
     source_code_version: str,
     allow_completed_mismatch: bool = False,
+    generation_request_id: str | None = None,
 ) -> dict | None:
     """Start a dataset-scoped source batch inside the caller's transaction.
 
-    Completed dates are idempotently skipped. A new date must continue directly
+    Completed requests are idempotently skipped. A new date must continue directly
     after the last completed generation date; the first generated date equals
     the dataset's bootstrap date. The active batch writer is attached to the
     SQLAlchemy connection so mutation helpers can stage exact event images.
@@ -405,15 +411,27 @@ def start_generation_batch(
         )
     dataset_id = dataset["dataset_id"]
 
+    if generation_request_id is not None:
+        if not generation_request_id.strip():
+            raise ValueError('generation_request_id must not be blank')
+        ensure_generation_request_schema(connection)
+
+    identity_filter = (
+        "generation_request_id=:generation_request_id"
+        if generation_request_id is not None
+        else "business_date=:business_date AND batch_kind='generation'"
+    )
     existing = connection.execute(
         text(
-            "SELECT batch_id, batch_sequence, status, scenario_seed, config_fingerprint FROM pipeline.batches "
-            "WHERE dataset_id=:dataset AND business_date=:business_date "
-            "AND batch_kind='generation'"
+            "SELECT batch_id, batch_sequence, business_date, status, scenario_seed, config_fingerprint FROM pipeline.batches "
+            "WHERE dataset_id=:dataset AND " + identity_filter
         ),
-        {"dataset": dataset_id, "business_date": business_date},
+        {"dataset": dataset_id, "business_date": business_date,
+         "generation_request_id": generation_request_id},
     ).mappings().one_or_none()
     if existing is not None:
+        if generation_request_id is not None and existing['business_date'] != business_date:
+            raise ValueError('Generation request already belongs to another business date')
         if existing["status"] == "completed":
             configuration_mismatch = (
                 existing["scenario_seed"] != scenario_seed
@@ -447,12 +465,13 @@ def start_generation_batch(
     latest_date = connection.execute(
         text(
             "SELECT MAX(business_date) FROM pipeline.batches "
-            "WHERE dataset_id=:dataset AND batch_kind='generation' AND status='completed'"
+            "WHERE dataset_id=:dataset AND batch_kind IN ('generation','manual') AND status='completed'"
         ),
         {"dataset": dataset_id},
     ).scalar_one()
     expected_date = latest_date + timedelta(days=1) if latest_date else dataset["project_start_date"]
-    if business_date != expected_date:
+    same_day_request = generation_request_id is not None and business_date == latest_date
+    if business_date != expected_date and not same_day_request:
         raise ValueError(
             f"Generation must follow the dataset timeline: next date is "
             f"{expected_date}, requested {business_date}"
@@ -461,13 +480,15 @@ def start_generation_batch(
     from uuid import uuid4
 
     batch_id = uuid4()
+    request_column = ', generation_request_id' if generation_request_id is not None else ''
+    request_value = ', :generation_request_id' if generation_request_id is not None else ''
     batch_sequence = connection.execute(
         text(
             "INSERT INTO pipeline.batches "
             "(batch_id, dataset_id, business_date, batch_kind, status, scenario_seed, "
-            "config_fingerprint, source_code_version) "
-            "VALUES (:batch, :dataset, :business_date, 'generation', 'started', :seed, "
-            ":fingerprint, :source_code_version) RETURNING batch_sequence"
+            f"config_fingerprint, source_code_version{request_column}) "
+            "VALUES (:batch, :dataset, :business_date, :batch_kind, 'started', :seed, "
+            f":fingerprint, :source_code_version{request_value}) RETURNING batch_sequence"
         ),
         {
             "batch": batch_id,
@@ -476,6 +497,8 @@ def start_generation_batch(
             "seed": scenario_seed,
             "fingerprint": config_fingerprint,
             "source_code_version": source_code_version,
+            "generation_request_id": generation_request_id,
+            "batch_kind": 'manual' if same_day_request else 'generation',
         },
     ).scalar_one()
     connection.execute(

@@ -4,8 +4,8 @@ layers:
   source:
     title: Python generator + PostgreSQL
     status: implemented
-    responsibility: Generate current operational data in PostgreSQL and capture exact mutation-time event images as bounded immutable Parquet batches in MinIO.
-    diagram_note: PostgreSQL owns current state and compact batch controls; MinIO holds typed, replayable event files and commit manifests.
+    responsibility: Generate a distinct operational batch per daily Airflow run, support multiple batches on the latest business date, reuse request identities on retries, and capture exact mutation images in MinIO.
+    diagram_note: Airflow run identities distinguish additional same-day generation from retries; PostgreSQL owns current state and controls, while MinIO holds immutable event files and manifests.
     engine: [Python, PostgreSQL]
     storage: [PostgreSQL]
 

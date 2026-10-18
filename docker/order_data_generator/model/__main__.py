@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument("--end-date", type=_parse_date, help="Inclusive range end, YYYY-MM-DD")
     # Fixes RNG to make output deterministic for the same inputs.
     parser.add_argument("--seed", type=int, help="Random seed for deterministic output")
+    parser.add_argument('--generation-request-id', help='Stable identity for one daily run; reuse it for retries')
     # Overrides average weekly orders per client (daily rate is avg/7).
     parser.add_argument("--avg-orders", type=float)
     # Lower bound for per-client orders.
@@ -68,6 +69,8 @@ def parse_args():
         parser.error("--start-date and --end-date must be provided together")
     if args.run_date is not None and args.start_date is not None:
         parser.error("use --run-date or --start-date/--end-date, not both")
+    if args.start_date is not None and args.generation_request_id is not None:
+        parser.error('--generation-request-id is for daily runs only')
     return args
 
 
@@ -155,7 +158,10 @@ def main() -> None:
     else:
         run_date = args.run_date or datetime.utcnow().date()
         logger.info("Running generator for date=%s", run_date)
-        run_generation(run_date, config)
+        from uuid import uuid4
+        request_id = args.generation_request_id or str(uuid4())
+        logger.info('Generation request=%s', request_id)
+        run_generation(run_date, config, scenario_seed=args.seed, generation_request_id=request_id)
     logger.info("Order data generator completed")
 
 

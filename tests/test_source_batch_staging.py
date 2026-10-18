@@ -77,6 +77,8 @@ class StagedChangeBatchTests(unittest.TestCase):
             for item in files
         ]
         changes = pl.concat(chunks).sort("_change_id")
+        self.assertEqual(changes.get_column('order_zone_id').null_count(), 4)
+        self.assertEqual(changes.get_column('preferred_zone_id_at_order').null_count(), 4)
         self.assertEqual(changes.get_column("_change_id").to_list(), [1, 2, 3, 4])
         self.assertEqual(changes.get_column("_op").to_list(), ["I", "I", "I", "U"])
         self.assertEqual(changes.get_column("_source_row_id").to_list(), ["row-1", "row-2", "row-3", "row-1"])

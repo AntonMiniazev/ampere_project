@@ -24,6 +24,67 @@ import polars as pl  # noqa: E402
 
 
 class GeneratorTransactionTests(unittest.TestCase):
+    def test_new_request_on_latest_date_creates_an_additional_batch(self):
+        connection = MagicMock()
+        connection.info = {}
+        latest, inserted, tables = MagicMock(), MagicMock(), MagicMock()
+        latest.scalar_one.return_value = date(2026, 10, 18)
+        inserted.scalar_one.return_value = 293
+        tables.scalars.return_value.all.return_value = ['orders']
+        connection.execute.side_effect = [
+            self._mapping_result({'dataset_id':'dataset','project_start_date':date(2026,1,1)}),
+            self._mapping_result(None), latest, inserted, MagicMock(),
+            *[MagicMock() for _ in range(4)], tables,
+        ]
+        with patch.object(db, 'ensure_generation_request_schema'), patch.object(db, 'StagedChangeBatch') as writer:
+            batch = db.start_generation_batch(connection, date(2026,10,18),
+                scenario_seed=None, config_fingerprint='config', source_code_version='image',
+                generation_request_id='dag:second-run')
+        self.assertEqual(batch['batch_sequence'], 293)
+        params = connection.execute.call_args_list[3].args[1]
+        self.assertEqual(params['batch_kind'], 'manual')
+        self.assertEqual(params['generation_request_id'], 'dag:second-run')
+        writer.assert_called_once()
+
+    def test_request_retry_reuses_its_completed_batch(self):
+        connection = MagicMock()
+        tables = MagicMock()
+        tables.scalars.return_value.all.return_value = ['orders']
+        connection.execute.side_effect = [
+            self._mapping_result({'dataset_id':'dataset','project_start_date':date(2026,1,1)}),
+            self._mapping_result({'batch_id':'batch','batch_sequence':293,'business_date':date(2026,10,18),
+                'status':'completed','scenario_seed':None,'config_fingerprint':'config'}), tables,
+        ]
+        with patch.object(db, 'ensure_generation_request_schema'), patch.object(db.StagedChangeBatch, 'recover_committed') as recover:
+            result = db.start_generation_batch(connection,date(2026,10,18),scenario_seed=None,
+                config_fingerprint='config',source_code_version='image',generation_request_id='dag:run')
+        self.assertIsNone(result)
+        recover.assert_called_once()
+        self.assertTrue(all('INSERT' not in str(c.args[0]) for c in connection.execute.call_args_list))
+
+    def test_new_request_cannot_generate_an_older_date(self):
+        connection = MagicMock()
+        latest = MagicMock()
+        latest.scalar_one.return_value = date(2026,10,19)
+        connection.execute.side_effect = [
+            self._mapping_result({'dataset_id':'dataset','project_start_date':date(2026,1,1)}),
+            self._mapping_result(None), latest,
+        ]
+        with patch.object(db, 'ensure_generation_request_schema'), self.assertRaisesRegex(ValueError,'timeline'):
+            db.start_generation_batch(connection,date(2026,10,18),scenario_seed=None,
+                config_fingerprint='config',source_code_version='image',generation_request_id='dag:run')
+        self.assertTrue(all('INSERT' not in str(c.args[0]) for c in connection.execute.call_args_list))
+
+    def test_request_cannot_be_reused_for_another_date(self):
+        connection = MagicMock()
+        connection.execute.side_effect = [
+            self._mapping_result({'dataset_id':'dataset','project_start_date':date(2026,1,1)}),
+            self._mapping_result({'business_date':date(2026,10,18)}),
+        ]
+        with patch.object(db, 'ensure_generation_request_schema'), self.assertRaisesRegex(ValueError,'another business date'):
+            db.start_generation_batch(connection,date(2026,10,19),scenario_seed=None,
+                config_fingerprint='config',source_code_version='image',generation_request_id='dag:run')
+
     @staticmethod
     def _config():
         return replace(load_config(), schema="source")
@@ -105,13 +166,15 @@ class GeneratorTransactionTests(unittest.TestCase):
                 main, "complete_generation_batch", return_value={"orders": 1}
             ) as complete_batch,
         ):
-            generated = main.run_generation(date(2026, 10, 10), self._config())
+            generated = main.run_generation(date(2026, 10, 10), self._config(),
+                generation_request_id='dag:daily-run')
 
         self.assertTrue(generated)
         engine.begin.assert_called_once_with()
         self.assertGreaterEqual(connection.execute.call_count, 2)
         self.assertEqual(start_batch.call_args.args[0], connection)
         self.assertTrue(start_batch.call_args.kwargs["allow_completed_mismatch"])
+        self.assertEqual(start_batch.call_args.kwargs['generation_request_id'], 'dag:daily-run')
         self.assertEqual(complete_batch.call_args.args, (connection, batch, {"orders": 1}))
         self.assertEqual(prepare_clients.call_args.kwargs["connection"], connection)
         self.assertEqual(update_churned.call_args.kwargs["connection"], connection)

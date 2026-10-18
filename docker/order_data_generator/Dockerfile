@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir uv
 
 COPY docker/order_data_generator/pyproject.toml /app/pyproject.toml
 COPY docker/order_data_generator/model /app/model
-COPY tools/__init__.py tools/source_batch_staging.py /app/tools/
+COPY tools/__init__.py tools/source_batch_staging.py tools/source_batch_requests.py /app/tools/
 COPY tools/contracts/ampere_tables.json /app/tools/contracts/ampere_tables.json
 
 RUN uv pip install --system --no-cache-dir . \
