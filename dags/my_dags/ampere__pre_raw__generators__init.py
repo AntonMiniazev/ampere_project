@@ -48,15 +48,14 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     description=(
-        "Initial data source creation and dictionary population with data stored in "
-        "excel tables. Executed one time only; daily generation happens in "
-        "ampere__pre_raw__generators__daily."
+        "Reset and seed the selected PostgreSQL source dataset and stage its baseline."
     ),
     tags=["layer:pre_raw", "system:postgres", "mode:init"],
 ) as dag:
     env_vars = {
         # A destructive source reset is available only when explicitly requested.
         "SOURCE_INIT_MODE": "{{ dag_run.conf.get('source_init_mode', '') if dag_run.conf else '' }}",
+        "SCHEMA_INIT": "{{ var.value.get('ampere_bootstrap_schema', 'source') }}",
         "AMPERE_AIRFLOW_RUN_ID": "{{ run_id }}",
         # Allow a one-off historical source timeline while preserving the
         # current-date default for ordinary initialization runs.

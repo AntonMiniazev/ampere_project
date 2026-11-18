@@ -1,49 +1,24 @@
 import logging
-import os
 
-from init_source_preparation.config import (
-    n_delivery_resource,
-    n_of_init_clients,
-    schema_init,
-    source_db_host,
-    source_db_name,
-    source_db_port,
-)
-from init_source_preparation.data_source_initialization import (
-    initialize_data_sources,
-)
+from init_source_preparation.config import load_policy
+from init_source_preparation.data_source_initialization import initialize_data_sources
 from init_source_preparation.logging_utils import APP_NAME, setup_logging
+from init_source_preparation.settings import BootstrapSettings
 
 
 def main() -> None:
-    """Run the one-time source bootstrap container entrypoint.
-
-    This function is intentionally small: it prepares logging, reports which
-    schema/database will be touched, and then hands control to the real
-    initialization workflow. In the overall pipeline this is the very first
-    executable step, because it creates the source tables and seeds the initial
-    rows that later daily generators and Spark jobs depend on.
-    """
     setup_logging()
     logger = logging.getLogger(APP_NAME)
-    logger.info(
-        "Starting init source preparation (schema=%s, clients=%s, delivery_resources=%s)",
-        schema_init,
-        n_of_init_clients,
-        n_delivery_resource,
+    settings = BootstrapSettings()
+    policy = load_policy(
+        n_of_init_clients=settings.n_of_init_clients,
+        n_delivery_resource=settings.n_delivery_resource,
+        project_start_date=settings.project_start_date,
     )
+    initialize_data_sources(settings, policy)
     logger.info(
-        "Configured Postgres target host=%s port=%s db=%s",
-        source_db_host,
-        source_db_port,
-        source_db_name,
+        "Source reset and initialization completed for %s", settings.source_schema
     )
-    mode = os.getenv("SOURCE_INIT_MODE", "").strip().lower()
-    if mode == "reset":
-        initialize_data_sources()
-        logger.info("Source reset and initialization completed")
-    else:
-        raise ValueError("SOURCE_INIT_MODE must be explicitly set to 'reset'")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,10 @@ dependencies = [
     "boto3==1.40.18",
     "faker>=37.3.0",
     "polars-lts-cpu>=1.0.0",
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.12,<3",
     "psycopg[binary]>=3.2.2",
+    "pyyaml>=6.0.2,<7",
     "sqlalchemy>=2.0.43",
 ]
 
@@ -26,4 +29,5 @@ packages = [
 init_source_preparation = "model"
 
 [tool.setuptools.package-data]
+"init_source_preparation" = ["*.yaml"]
 "init_source_preparation.dictionaries" = ["*.csv"]

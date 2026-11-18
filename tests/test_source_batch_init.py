@@ -68,8 +68,32 @@ class SourceBatchInitTests(unittest.TestCase):
         sql = "\n".join(statements).lower()
         self.assertNotIn("source_changes", sql)
         self.assertNotIn("create trigger", sql)
-        self.assertIn("pipeline.batch_table_counts", sql)
-        self.assertIn("pipeline.batches", sql)
+        self.assertIn('"pipeline".batch_table_counts', sql)
+        self.assertIn('"pipeline".batches', sql)
+
+    def test_v2_table_and_control_sql_use_only_v2_namespaces(self):
+        connection = MagicMock()
+        connection.execute.return_value.scalar_one.return_value = 1
+        connection.execute.return_value.mappings.return_value.fetchmany.return_value = []
+
+        with patch.object(source_batches, "StagedChangeBatch") as make_stager:
+            source_batches.initialize_source_dataset(
+                connection,
+                "ampere_source",
+                date(2026, 1, 1),
+                control_schema="ampere_pipeline",
+                bucket="test",
+                prefix="ampere/source-batches/v1/ampere_source",
+            )
+
+        sql = "\n".join(str(call.args[0]) for call in connection.execute.call_args_list)
+        self.assertIn('CREATE SCHEMA IF NOT EXISTS "ampere_pipeline"', sql)
+        self.assertIn('REFERENCES "ampere_pipeline".datasets', sql)
+        self.assertIn('INSERT INTO "ampere_pipeline".batch_table_counts', sql)
+        self.assertIn('SELECT * FROM "ampere_source"."orders"', sql)
+        self.assertNotIn('"pipeline"', sql)
+        self.assertNotIn('"source"', sql)
+        self.assertEqual(make_stager.call_args.kwargs["prefix"], "ampere/source-batches/v1/ampere_source")
 
 
 if __name__ == "__main__":

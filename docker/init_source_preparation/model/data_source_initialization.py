@@ -1,24 +1,13 @@
-from importlib.resources import as_file, files
 import logging
-import os
-from datetime import date
+from importlib.resources import as_file, files
 
+import boto3
 import polars as pl
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
-from init_source_preparation.config import (
-    n_delivery_resource,
-    n_of_init_clients,
-    project_start_date,
-    schema_init,
-)
-from init_source_preparation.db import (
-    ensure_schema,
-    exec_sql,
-    table_exists,
-    truncate_table,
-    upload_new_data,
-)
+from init_source_preparation.config import BootstrapPolicy
+from init_source_preparation.db import get_engine, quote, upload_new_data
 from init_source_preparation.ddl_init import table_queries
 from init_source_preparation.generators.assortment_gen import generate_assortment
 from init_source_preparation.generators.clients_gen_init import generate_clients
@@ -26,8 +15,11 @@ from init_source_preparation.generators.delivery_resource_gen_init import (
     generate_delivery_resource,
 )
 from init_source_preparation.logging_utils import APP_NAME
-from init_source_preparation.db import get_engine
+from init_source_preparation.settings import BootstrapSettings, SourceSchema
 from init_source_preparation.source_batches import (
+    CONTRACT_VERSION,
+    CONTROL_TABLES,
+    SOURCE_TABLES,
     initialize_source_dataset,
 )
 from tools.source_batch_staging import StagedChangeBatch
@@ -36,134 +28,170 @@ logger = logging.getLogger(APP_NAME)
 
 
 def _load_dictionary(table_name: str) -> pl.DataFrame:
-    """Load a seed CSV file that represents a static dictionary table.
-
-    Dictionary tables such as stores, delivery types, and product categories
-    live in the package so the bootstrap image is self-contained. Returning a
-    Polars DataFrame lets the same upload helper insert both static dictionary
-    rows and generated rows through one common code path.
-    """
     dictionaries = files("init_source_preparation.dictionaries")
-    with as_file(dictionaries / f"{table_name}.csv") as path_to_dict:
-        return pl.read_csv(path_to_dict)
+    with as_file(dictionaries / f"{table_name}.csv") as path:
+        return pl.read_csv(path)
 
 
-def initialize_data_sources() -> None:
-    """Create the source schema and populate every source table in bootstrap order.
+def _find_committed_baseline(connection: Connection, target: SourceSchema, run_id: str):
+    control_schema = target.control_schema
+    # Older installations may predate the initialization run identity column.
+    has_run_id = connection.execute(
+        text("""
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema=:control_schema AND table_name='datasets'
+              AND column_name='initialization_run_id'
+        )
+    """),
+        {"control_schema": control_schema},
+    ).scalar_one()
+    if not has_run_id:
+        return None
 
-    This is the heart of the one-time initialization phase. It creates tables
-    when missing, truncates reusable tables when they already exist, loads CSV
-    dictionaries, generates synthetic starter entities, and finally applies
-    indexes so the later daily generator and Spark extract jobs see a ready-made
-    PostgreSQL source schema.
-    """
-    project_date = date.fromisoformat(project_start_date)
-    if schema_init != "source":
-        raise ValueError("SOURCE_INIT_MODE=reset is limited to the Ampere-owned 'source' schema")
-    engine = get_engine()
-    initialization_run_id = os.getenv("AMPERE_AIRFLOW_RUN_ID")
-    if initialization_run_id:
-        with engine.connect() as connection:
-            existing = None
-            has_datasets = connection.execute(
-                text("SELECT to_regclass('pipeline.datasets') IS NOT NULL")
-            ).scalar_one()
-            if has_datasets:
-                has_run_id = connection.execute(text("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema='pipeline' AND table_name='datasets'
-                          AND column_name='initialization_run_id'
-                    )
-                """)).scalar_one()
-                if has_run_id:
-                    existing = connection.execute(text("""
-                        SELECT d.dataset_id,d.project_start_date,b.batch_id,b.batch_sequence
-                        FROM pipeline.datasets d JOIN pipeline.batches b
-                          ON b.dataset_id=d.dataset_id AND b.batch_kind='baseline'
-                         AND b.status='completed'
-                        WHERE d.initialization_run_id=:run_id AND d.status='ready'
-                    """), {"run_id": initialization_run_id}).mappings().one_or_none()
-            if existing is not None:
-                tables = tuple(connection.execute(text(
-                    "SELECT source_table FROM pipeline.source_tables WHERE enabled ORDER BY source_table"
-                )).scalars().all())
+    control = quote(control_schema)
+    return (
+        connection.execute(
+            text(f"""
+        SELECT d.dataset_id,d.project_start_date,b.batch_id,b.batch_sequence
+        FROM {control}.datasets d JOIN {control}.batches b
+          ON b.dataset_id=d.dataset_id AND b.batch_kind='baseline'
+         AND b.status='completed'
+        WHERE d.initialization_run_id=:run_id AND d.status='ready'
+          AND d.source_schema=:source_schema
+    """),
+            {"run_id": run_id, "source_schema": target.value},
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def _reset_schemas(connection: Connection, target: SourceSchema) -> None:
+    source = quote(target.value)
+    control = quote(target.control_schema)
+    if target is SourceSchema.LEGACY:
+        connection.execute(text(f"DROP SCHEMA IF EXISTS {source} CASCADE"))
+        connection.execute(text("DROP SCHEMA IF EXISTS source_changes CASCADE"))
+        connection.execute(text(f"DROP SCHEMA IF EXISTS {control} CASCADE"))
+    else:
+        # Drop owned tables together so their foreign keys are allowed. RESTRICT
+        # protects any external dependencies and blocks resets if unknown objects exist.
+        tables = [
+            *(f"{source}.{quote(name)}" for name in SOURCE_TABLES),
+            *(f"{control}.{quote(name)}" for name in CONTROL_TABLES),
+        ]
+        connection.execute(text(f"DROP TABLE IF EXISTS {', '.join(tables)} RESTRICT"))
+        connection.execute(text(f"DROP SCHEMA IF EXISTS {source}, {control} RESTRICT"))
+    connection.execute(text(f"CREATE SCHEMA {source}"))
+
+
+def _seed_source(
+    connection: Connection, target: SourceSchema, policy: BootstrapPolicy
+) -> None:
+    start_date = policy.project_start_date.isoformat()
+    seeders = {
+        "clients": lambda: generate_clients(
+            policy.n_of_init_clients, project_start_date=start_date
+        ),
+        "assortment": generate_assortment,
+        "delivery_resource": lambda: generate_delivery_resource(
+            policy.n_delivery_resource,
+            project_start_date=start_date,
+        ),
+    }
+    for table_name, definition in table_queries.items():
+        logger.info("Creating %s.%s", target, table_name)
+        connection.execute(text(definition["query"].format(schema=quote(target.value))))
+        if definition["type"] == "dict":
+            frame = _load_dictionary(table_name)
+        elif table_name in seeders:
+            frame = seeders[table_name]()
+        else:
+            continue
+        upload_new_data(frame, table_name, target.value, connection=connection)
+
+
+def initialize_data_sources(
+    settings: BootstrapSettings, policy: BootstrapPolicy
+) -> None:
+    url = settings.postgres_url()
+    target = settings.source_schema
+    logger.info(
+        "Bootstrapping %s.%s at %s:%s (start date=%s, clients=%s, delivery resources=%s, staging=%s/%s)",
+        url.database,
+        target,
+        url.host,
+        url.port,
+        policy.project_start_date,
+        policy.n_of_init_clients,
+        policy.n_delivery_resource,
+        settings.staging_bucket,
+        settings.baseline_prefix,
+    )
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.minio_endpoint,
+        aws_access_key_id=settings.minio_access_key.get_secret_value(),
+        aws_secret_access_key=settings.minio_secret_key.get_secret_value(),
+        region_name=settings.minio_region,
+    )
+    staging = {
+        "client": client,
+        "bucket": settings.staging_bucket,
+        "prefix": settings.baseline_prefix,
+    }
+    engine = get_engine(url)
+    try:
+        with engine.begin() as connection:
+            # Serialize resets and same-run recovery against writers for this target.
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": target.lock_key},
+            )
+            run_id = settings.initialization_run_id
+            if run_id and (
+                existing := _find_committed_baseline(connection, target, run_id)
+            ):
+                tables = tuple(
+                    connection.execute(
+                        text(
+                            f"SELECT source_table FROM {quote(target.control_schema)}.source_tables "
+                            "WHERE enabled ORDER BY source_table"
+                        )
+                    ).scalars()
+                )
                 StagedChangeBatch.recover_committed(
                     dataset_id=str(existing["dataset_id"]),
                     batch_id=str(existing["batch_id"]),
                     batch_sequence=int(existing["batch_sequence"]),
                     business_date=existing["project_start_date"],
-                    contract_version=7,
+                    contract_version=CONTRACT_VERSION,
                     source_tables=tables,
+                    **staging,
                 )
-                logger.info("Recovered already-committed init dataset_id=%s run_id=%s", existing["dataset_id"], initialization_run_id)
+                logger.info(
+                    "Recovered committed dataset %s for run %s",
+                    existing["dataset_id"],
+                    run_id,
+                )
                 return
-    stager = None
-    with engine.begin() as connection:
-        # Init and generation share this lock; a reset cannot race an active
-        # source-writing pod. Existing triggers allow this explicit reset path.
-        connection.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 724614902631})
-        # Task 7 replaces the invalid source/control dataset with a clean
-        # bootstrap. Drop only Ampere-owned schemas; Silver/Gold and shared
-        # platform schemas are outside this reset boundary.
-        quoted_schema = '"' + schema_init.replace('"', '""') + '"'
-        connection.execute(text(f"DROP SCHEMA IF EXISTS {quoted_schema} CASCADE"))
-        connection.execute(text("DROP SCHEMA IF EXISTS source_changes CASCADE"))
-        connection.execute(text("DROP SCHEMA IF EXISTS pipeline CASCADE"))
-        ensure_schema(schema_init, connection=connection)
 
-        # Keep reset, seed rows, baseline staging, and dataset activation in one
-        # transaction. A failed init rolls back rather than leaving a half-ready
-        # source dataset that the generator could extend.
-        for table_name, data in table_queries.items():
-            logger.info("Starting work on %s", table_name)
-            query = data["query"]
-            table_type = data["type"]
-
-            if table_type == "index":
-                logger.info("Ensuring indexes for %s", schema_init)
-                exec_sql(query, connection=connection)
-                continue
-
-            if table_exists(schema_init, table_name, connection=connection):
-                logger.info("Truncating %s", table_name)
-                truncate_table(schema_init, table_name, connection=connection)
-            else:
-                logger.info("Creating %s", table_name)
-                exec_sql(query, connection=connection)
-
-            if table_type == "dict":
-                logger.info("Loading dictionary data for %s", table_name)
-                upload_new_data(_load_dictionary(table_name), table_name, schema_init, connection=connection)
-
-            if table_name == "clients":
-                logger.info("Generating clients")
-                upload_new_data(
-                    generate_clients(n=n_of_init_clients, project_start_date=project_start_date),
-                    table_name,
-                    schema_init,
-                    connection=connection,
-                )
-
-            if table_name == "assortment":
-                logger.info("Generating assortment")
-                upload_new_data(generate_assortment(), table_name, schema_init, connection=connection)
-
-            if table_name == "delivery_resource":
-                logger.info("Generating delivery resources")
-                upload_new_data(
-                    generate_delivery_resource(n_delivery_resource, project_start_date=project_start_date),
-                    table_name,
-                    schema_init,
-                    connection=connection,
-                )
-
-        dataset_id, stager = initialize_source_dataset(
-            connection,
-            schema_init,
-            project_date,
-            source_code_version=os.getenv("AMPERE_SOURCE_CODE_VERSION", "unknown"),
-            initialization_run_id=initialization_run_id,
-        )
-        logger.info("Initialized source dataset_id=%s start_date=%s", dataset_id, project_date)
-    stager.publish_committed()
+            _reset_schemas(connection, target)
+            _seed_source(connection, target, policy)
+            dataset_id, stager = initialize_source_dataset(
+                connection,
+                target.value,
+                policy.project_start_date,
+                source_code_version=settings.source_code_version,
+                initialization_run_id=run_id,
+                control_schema=target.control_schema,
+                chunk_rows=settings.staging_chunk_rows,
+                target_file_bytes=settings.staging_target_file_bytes,
+                **staging,
+            )
+        # The marker becomes visible only after PostgreSQL has committed.
+        stager.publish_committed()
+        logger.info("Initialized source dataset %s", dataset_id)
+    finally:
+        engine.dispose()
