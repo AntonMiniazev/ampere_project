@@ -1,6 +1,6 @@
 # PostgreSQL source generation backfill
 
-For a January 2026 dataset, initialize the PostgreSQL source with this explicit reset configuration first:
+For a January 2026 dataset, initialize the PostgreSQL source with this explicit reset configuration first. January 1 is the bootstrap's YAML default and can also be specified in the run configuration.
 
 ```json
 {
@@ -11,7 +11,7 @@ For a January 2026 dataset, initialize the PostgreSQL source with this explicit 
 
 With the default `ampere_bootstrap_schema=source`, the init DAG recreates the Ampere-owned `source` and `pipeline` schemas, seeds dictionaries and initial clients/resources, and stages a typed baseline (`B`) for all 16 source tables in MinIO. PostgreSQL retains compact dataset, batch, and per-table count records. A batch's Parquet files and manifest are uploaded before the database transaction commits, and `COMMITTED.json` is published only after commit. Raw requires both that marker and a completed PostgreSQL batch record. A retry of the same Airflow init run repairs a missing marker from the committed baseline. The date anchors initial client registrations. Explicitly request `source_init_mode=reset` only when replacing the Ampere source dataset is intended. After init succeeds, confirm `PROJECT_START_DATE` is `2026-01-01`, then run the backfill below.
 
-Setting `ampere_bootstrap_schema=ampere_source` selects the generator v2 development dataset in `ampere_source` and `ampere_pipeline`, with staging under the `ampere_source` child of the configured prefix. The backfill steps below operate on the legacy dataset. [Bootstrap configuration](../docker/init_source_preparation/README.md)
+Setting `ampere_bootstrap_schema=ampere_source` selects the generator v2 development dataset in `ampere_source` and `ampere_pipeline`. Its baseline uses a dedicated MinIO bucket selected by `ampere_source_staging_bucket`. The backfill steps below operate on the legacy dataset. [Bootstrap components](../docker/init_source_preparation/README.md)
 
 The manual Airflow DAG `ampere__pre_raw__generators__backfill` runs the generator for an inclusive date range. It starts one Kubernetes pod on `ampere-k8s-node4` and generates days sequentially, keeping only the active day's working frames in memory. PostgreSQL source changes and compact batch metadata commit in one transaction per calendar month. Each day's exact inserts, update after-images, and delete images are streamed to bounded typed Parquet chunks as mutations occur. Generator mutation/RETURNING batches are capped at 50,000 rows, matching the staging writer's row-slice limit; the staging writer also caps each Parquet file at 128 MiB. After a month commits, its batch markers become visible to Raw. Daily generation uses the same capture path in one transaction per day.
 

@@ -57,16 +57,22 @@ with DAG(
         "SOURCE_INIT_MODE": "{{ dag_run.conf.get('source_init_mode', '') if dag_run.conf else '' }}",
         "SCHEMA_INIT": "{{ var.value.get('ampere_bootstrap_schema', 'source') }}",
         "AMPERE_AIRFLOW_RUN_ID": "{{ run_id }}",
-        # Allow a one-off historical source timeline while preserving the
-        # current-date default for ordinary initialization runs.
-        "PROJECT_START_DATE": "{{ dag_run.conf['project_start_date'] if dag_run.conf and 'project_start_date' in dag_run.conf else (dag_run.logical_date or dag_run.run_after).strftime('%Y-%m-%d') }}",
+        # An empty override lets the bootstrap use its packaged YAML policy.
+        "PROJECT_START_DATE": "{{ dag_run.conf.get('project_start_date', '') if dag_run.conf else '' }}",
         "POLARS_MAX_THREADS": "2",
         "OPENBLAS_NUM_THREADS": "1",
         "OMP_NUM_THREADS": "1",
         "MKL_NUM_THREADS": "1",
         "AMPERE_SOURCE_CODE_VERSION": DAG_CONFIG.image,
         "MINIO_S3_ENDPOINT": resolve_minio_endpoint(),
-        "MINIO_STAGING_BUCKET": get_optional_variable("minio_raw_bucket") or "ampere-iceberg-raw",
+        # An empty v2 bucket fails bootstrap validation, including when it matches Raw.
+        "MINIO_STAGING_BUCKET": (
+            "{%- set raw_bucket = var.value.get('minio_raw_bucket', '') | trim or 'ampere-iceberg-raw' -%}"
+            "{%- if var.value.get('ampere_bootstrap_schema', 'source') == 'ampere_source' -%}"
+            "{%- set v2_bucket = var.value.get('ampere_source_staging_bucket', '') | trim -%}"
+            "{{ '' if v2_bucket == raw_bucket else v2_bucket }}"
+            "{%- else -%}{{ raw_bucket }}{%- endif -%}"
+        ),
         "MINIO_STAGING_PREFIX": get_optional_variable("ampere_staging_prefix") or "ampere/source-batches/v1",
         "AMPERE_STAGING_TARGET_FILE_BYTES": get_optional_variable("ampere_staging_target_file_bytes") or str(128 * 1024 * 1024),
     }

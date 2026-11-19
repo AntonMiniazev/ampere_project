@@ -1,6 +1,6 @@
 from datetime import date
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     AliasChoices,
@@ -9,6 +9,7 @@ from pydantic import (
     PositiveInt,
     SecretStr,
     field_validator,
+    model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL, make_url
@@ -56,7 +57,10 @@ class BootstrapSettings(BaseSettings):
     )
     project_start_date: date | None = Field(None, validation_alias="PROJECT_START_DATE")
     initialization_run_id: str | None = Field(
-        None, validation_alias="AMPERE_AIRFLOW_RUN_ID"
+        None,
+        validation_alias=AliasChoices(
+            "AMPERE_BOOTSTRAP_RUN_ID", "AMPERE_AIRFLOW_RUN_ID"
+        ),
     )
     source_code_version: str = Field(
         "unknown", validation_alias="AMPERE_SOURCE_CODE_VERSION"
@@ -79,6 +83,7 @@ class BootstrapSettings(BaseSettings):
     minio_access_key: SecretStr = Field(validation_alias="MINIO_ACCESS_KEY")
     minio_secret_key: SecretStr = Field(validation_alias="MINIO_SECRET_KEY")
     minio_region: str = Field("us-east-1", validation_alias="MINIO_REGION")
+    minio_ssl_verify: bool | None = Field(None, validation_alias="MINIO_SSL_VERIFY")
     staging_bucket: str = Field(DEFAULT_BUCKET, validation_alias="MINIO_STAGING_BUCKET")
     staging_prefix: str = Field(DEFAULT_PREFIX, validation_alias="MINIO_STAGING_PREFIX")
     staging_chunk_rows: PositiveInt = Field(
@@ -106,6 +111,22 @@ class BootstrapSettings(BaseSettings):
         if not prefix or any(part in {"", ".", ".."} for part in prefix.split("/")):
             raise ValueError("MINIO_STAGING_PREFIX must be a non-empty object path")
         return prefix
+
+    @model_validator(mode="after")
+    def protect_raw_bucket(self) -> Self:
+        if (
+            self.source_schema is SourceSchema.GENERATOR_V2
+            and self.staging_bucket.strip()
+            in {
+                "",
+                DEFAULT_BUCKET,
+            }
+        ):
+            raise ValueError(
+                "Set MINIO_STAGING_BUCKET to a dedicated bucket for ampere_source "
+                f"({DEFAULT_BUCKET} is reserved for the main pipeline)"
+            )
+        return self
 
     @property
     def baseline_prefix(self) -> str:

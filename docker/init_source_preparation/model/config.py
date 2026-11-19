@@ -2,7 +2,7 @@ from datetime import date
 from importlib.resources import files
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
+from pydantic import BaseModel, ConfigDict, NonNegativeInt
 
 
 class BootstrapPolicy(BaseModel):
@@ -10,7 +10,7 @@ class BootstrapPolicy(BaseModel):
 
     n_of_init_clients: NonNegativeInt
     n_delivery_resource: NonNegativeInt
-    project_start_date: date = Field(default_factory=date.today)
+    project_start_date: date
 
 
 def load_policy(

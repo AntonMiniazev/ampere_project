@@ -30,14 +30,15 @@ def open_connection(
     if not layers or any(layer not in LAYERS for layer in layers):
         raise ValueError(f"layers must be selected from {LAYERS}")
     load_project_env()
-    endpoint = os.getenv("AMPERE_MINIO_ENDPOINT") or os.getenv("MINIO_S3_ENDPOINT")
+    endpoint = os.getenv("MINIO_S3_ENDPOINT") or os.getenv("MINIO_ENDPOINT")
     if not endpoint:
-        raise ValueError("Set AMPERE_MINIO_ENDPOINT in .env")
+        raise ValueError("Set MINIO_S3_ENDPOINT in .env")
     parsed = urlparse(endpoint if "://" in endpoint else "https://" + endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("AMPERE_MINIO_ENDPOINT must be an HTTP(S) URL")
-    access_key = os.getenv("AMPERE_MINIO_ACCESS_KEY") or require_env("MINIO_ACCESS_KEY")
-    secret_key = os.getenv("AMPERE_MINIO_SECRET_KEY") or require_env("MINIO_SECRET_KEY")
+        raise ValueError("MINIO_S3_ENDPOINT must be an HTTP(S) URL")
+    access_key = require_env("MINIO_ACCESS_KEY")
+    secret_key = require_env("MINIO_SECRET_KEY")
+    region = os.getenv("MINIO_REGION") or "us-east-1"
     con = duckdb.connect(":memory:", config={"memory_limit": memory_limit, "threads": threads})
     try:
         con.execute("LOAD httpfs")
@@ -48,7 +49,7 @@ def open_connection(
         con.execute(
             "CREATE SECRET ampere_s3 (TYPE S3, PROVIDER CONFIG, "
             f"KEY_ID {_literal(access_key)}, SECRET {_literal(secret_key)}, "
-            f"ENDPOINT {_literal(parsed.netloc)}, REGION 'us-east-1', "
+            f"ENDPOINT {_literal(parsed.netloc)}, REGION {_literal(region)}, "
             f"URL_STYLE 'path', USE_SSL {str(parsed.scheme == 'https').lower()})"
         )
         con.execute(

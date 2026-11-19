@@ -115,6 +115,7 @@ def _seed_source(
 def initialize_data_sources(
     settings: BootstrapSettings, policy: BootstrapPolicy
 ) -> None:
+    bucket = settings.staging_bucket
     url = settings.postgres_url()
     target = settings.source_schema
     logger.info(
@@ -126,7 +127,7 @@ def initialize_data_sources(
         policy.project_start_date,
         policy.n_of_init_clients,
         policy.n_delivery_resource,
-        settings.staging_bucket,
+        bucket,
         settings.baseline_prefix,
     )
     client = boto3.client(
@@ -135,10 +136,11 @@ def initialize_data_sources(
         aws_access_key_id=settings.minio_access_key.get_secret_value(),
         aws_secret_access_key=settings.minio_secret_key.get_secret_value(),
         region_name=settings.minio_region,
+        verify=settings.minio_ssl_verify,
     )
     staging = {
         "client": client,
-        "bucket": settings.staging_bucket,
+        "bucket": bucket,
         "prefix": settings.baseline_prefix,
     }
     engine = get_engine(url)

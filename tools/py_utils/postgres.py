@@ -7,6 +7,7 @@ from typing import Any
 
 import polars as pl
 import psycopg
+from psycopg.conninfo import make_conninfo
 
 from .env import load_project_env
 
@@ -14,14 +15,12 @@ from .env import load_project_env
 def conninfo() -> str:
     """Build PostgreSQL connection info from root `.env` values."""
     load_project_env()
-    host = os.environ.get("AMPERE_POSTGRES_HOST", "postgres.local")
-    port = os.environ.get("AMPERE_POSTGRES_PORT", "5432")
-    dbname = os.environ.get("AMPERE_POSTGRES_DB", "ampere_db")
-    user = os.environ.get("AMPERE_POSTGRES_USER", "postgres")
-    password = os.environ.get("AMPERE_POSTGRES_PASSWORD", "")
-    return (
-        f"host={host} port={port} dbname={dbname} "
-        f"user={user} password={password}"
+    return make_conninfo(
+        host=os.getenv("PGHOST") or "postgres.local",
+        port=os.getenv("PGPORT") or "5432",
+        dbname=os.getenv("PGDATABASE") or "ampere_db",
+        user=os.getenv("PGUSER") or "postgres",
+        password=os.getenv("PGPASSWORD", ""),
     )
 
 
